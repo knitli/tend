@@ -114,6 +114,7 @@
 - [ ] T039 [P] [US1] Contract test daemon IPC `heartbeat` + `end_session` (exit code propagation) in `src-tauri/tests/contract/daemon/lifecycle.rs`
 - [ ] T040 [P] [US1] Integration test: end-to-end `CLI wrapper → daemon IPC → sessions table` using a real temp socket, verifying `session_list` returns the registered row in `src-tauri/tests/integration/cli_to_list.rs`
 - [ ] T041 [P] [US1] Integration test: session whose child process exits marks the row as `ended` within the status monitor's reaction window in `src-tauri/tests/integration/session_crash.rs`
+- [ ] T041b [P] [US1] Contract test `session_spawn` happy path + `PROJECT_NOT_FOUND` + `PROJECT_ARCHIVED` + `WORKING_DIRECTORY_INVALID` + `SPAWN_FAILED { os_error }` in `src-tauri/tests/contract/session_spawn.rs`. MUST be RED before T049 implements `session_spawn`. Closes the TDD gate asserted in plan.md Post-Design Constitution Re-check.
 
 ### Backend: project service & commands
 
@@ -216,7 +217,7 @@
 - [ ] T085 [P] [US3] Contract test `session_activate` returning `{ session, companion }`, first-activation spawns companion, second-activation reuses it, killed companion is respawned, including `SESSION_ENDED` and `COMPANION_SPAWN_FAILED` in `src-tauri/tests/contract/session_activate.rs`
 - [ ] T086 [P] [US3] Contract test `session_send_input`, `session_resize`, `session_end` in `src-tauri/tests/contract/session_io.rs`
 - [ ] T087 [P] [US3] Contract test `companion_send_input`, `companion_resize`, `companion_respawn` in `src-tauri/tests/contract/companion.rs`
-- [ ] T088 [P] [US3] Integration test: worktree path — session's `working_directory` differs from project root; companion spawns in the worktree, not the root, per FR-015 + Edge Cases in `src-tauri/tests/integration/companion_worktree.rs`
+- [ ] T088 [P] [US3] Integration test: worktree path — session's `working_directory` differs from project root; companion spawns in the worktree, not the root, per FR-015 + Edge Cases. Same test file asserts FR-017 negative invariant: after the user writes `cd /tmp\n` into the companion, a subsequent `companion_resize` and a follow-up `session_activate` of the same session MUST NOT reset the companion's cwd back to the session root (verified by sending `pwd\n` and asserting `/tmp` in the output stream). In `src-tauri/tests/integration/companion_worktree.rs`.
 - [ ] T089 [P] [US3] Integration test: activation creates exactly one `companion_terminals` row per session (idempotency) in `src-tauri/tests/integration/companion_idempotency.rs`
 
 ### Backend: companion terminal service
@@ -255,7 +256,7 @@
 - [ ] T102 [P] [US5] Contract tests for `reminder_list` (state filter), `reminder_create`, `reminder_set_state`, `reminder_delete` in `src-tauri/tests/contract/reminders.rs`
 - [ ] T103 [P] [US5] Contract test `cross_project_overview` returning groups ordered by project with per-group reminders ordered `created_at DESC` in `src-tauri/tests/contract/overview.rs`
 - [ ] T104 [P] [US5] Integration test: archive project → all its notes + reminders still queryable; unarchive → scratchpad intact, session rows still ended in `src-tauri/tests/integration/scratchpad_archive.rs`
-- [ ] T105 [P] [US5] Integration test: ending a session leaves its project's scratchpad untouched in `src-tauri/tests/integration/scratchpad_session_lifecycle.rs`
+- [ ] T105 [P] [US5] Integration test: ending a session leaves its project's scratchpad untouched, AND the FR-027 negative invariant holds — running a session that produces several KB of PTY output (including text that looks like a note or a reminder) MUST NOT create, mutate, or delete any row in `notes` or `reminders` for that session's project. Verified by snapshotting both tables before and after the session's lifecycle. In `src-tauri/tests/integration/scratchpad_session_lifecycle.rs`.
 - [ ] T106 [P] [US5] Integration test: done reminder excluded from `cross_project_overview` but retrievable via `reminder_list({ state: "done" })` in `src-tauri/tests/integration/reminder_done.rs`
 
 ### Backend: scratchpad service + commands
@@ -350,12 +351,12 @@
 - [ ] T141 [P] Create `tests/e2e/workspace-restore.spec.ts`: saves a layout, restarts the app, asserts workspace state restored automatically and layout dropdown shows the saved one
 - [ ] T142 Create `tests/integration/session_to_scratchpad.rs` verifying that a session ending does NOT delete or modify any note or reminder in its project
 - [ ] T143 Install and run `cargo tarpaulin --out Html --output-dir target/coverage --workspace --exclude-files "tests/*"` in CI locally; assert ≥ 80 % for `src-tauri/` and `cli/`. Document any justified exclusions inline in the offending modules
-- [ ] T144 Performance sanity pass: spawn 10 long-running sessions across 5 mock projects (helper script), time `session_list` + filter + activation; assert < 100 ms list, < 200 ms activation (SC-004). Record results in `specs/001-cross-repo-workbench/quickstart.md` under "Performance check"
+- [ ] T144 Performance sanity pass: spawn 10 long-running sessions across 5 mock projects (helper script), time `session_list` + filter + activation; assert < 100 ms list, < 200 ms activation (SC-004). Also seed 5 000 notes + 5 000 reminders into a single project and assert `note_list` (paginated) and `cross_project_overview` both return within the same 100 ms list budget (covers the long-scratchpad edge case from spec.md). Record all results in `specs/001-cross-repo-workbench/quickstart.md` under "Performance check"
 - [ ] T145 [P] Accessibility pass: run `pnpm --filter frontend lint:a11y` (axe-core via Vitest component tests) on `Sidebar`, `SessionList`, `SessionRow`, `AlertBar`, `Scratchpad`, `CrossProjectOverview`, `SplitView`; fix any Serious/Critical issues
 - [ ] T146 [P] Update `specs/001-cross-repo-workbench/quickstart.md` if any step required tweaks during implementation; add a "Dev troubleshooting" subsection for gotchas encountered
 - [ ] T147 [P] Write project `README.md` at `/home/knitli/agentui/README.md` with: one-paragraph description, link to `specs/001-cross-repo-workbench/` for the full spec/plan, quickstart commands, known v1 limitations (copied from `research.md` §16)
 - [ ] T148 Run the full quickstart exercise end-to-end (`quickstart.md` §3–§5) from a freshly-built binary; confirm every acceptance scenario from `spec.md` passes. Check off each on a fresh copy of `checklists/requirements.md` if desired
-- [ ] T149 Final sweep: `cargo clippy --workspace -- -D warnings`, `cargo fmt --check`, `pnpm --filter frontend lint`, `pnpm --filter frontend typecheck`. Zero errors, zero warnings before calling this done
+- [ ] T149 Final sweep: `cargo clippy --workspace -- -D warnings`, `cargo fmt --check`, `pnpm --filter frontend lint`, `pnpm --filter frontend typecheck`. Additionally enforce the FR-022 local-only scope fence: grep the `src-tauri/` and `cli/` source trees for `TcpStream`, `TcpListener`, `reqwest`, `hyper::client`, `ssh`, `\\wsl$`, and any `//` or `wss://`/`https://` URL literals; any hit must either be inside a test, behind a documented v2-future feature flag, or removed. Zero errors, zero warnings, zero unexplained network hits before calling this done
 
 ---
 
@@ -392,7 +393,7 @@
 
 - **Phase 1 Setup**: T004–T009 all [P]; run together after T001–T003 create the workspace scaffold.
 - **Phase 2 Foundational**: T013 (model files), T020 (PTY), T021 (protocol types), T024 (handler stub), T026 (tracing), T027–T030 (test infra + frontend foundation) are all [P] once T011, T012, T014, T015, T017, T018 are in.
-- **Phase 3 US1**: All contract tests T031–T041 run in parallel. Services T042 (project) + T045–T047 (session actor pieces) + T054–T056 (CLI wrapper pieces) all parallelizable. Frontend files T059–T064 all parallelizable.
+- **Phase 3 US1**: All contract tests T031–T041b run in parallel. Services T042 (project) + T045–T047 (session actor pieces) + T054–T056 (CLI wrapper pieces) all parallelizable. Frontend files T059–T064 all parallelizable.
 - **Phase 4 US2**: Tests T066–T071 parallel. Services T072, T075, T076 parallel. Frontend T080–T083 parallel.
 - **Phase 5 US3**: Tests T085–T089 parallel. Backend T090 + T094 parallel. Frontend T095–T097, T100 parallel.
 - **Phase 6 US5**: Tests T101–T106 parallel. Services T107–T109 parallel. Frontend T111–T116 parallel.
@@ -485,13 +486,13 @@ With multiple developers after US1 ships:
 |---|---|---|
 | 1. Setup | 10 (T001–T010) | 6 |
 | 2. Foundational | 20 (T011–T030) | 9 |
-| 3. US1 — Unified overview (P1 MVP) | 35 (T031–T065) | ~20 |
+| 3. US1 — Unified overview (P1 MVP) | 36 (T031–T065, incl. T041b) | ~21 |
 | 4. US2 — Alerts (P1) | 19 (T066–T084) | ~12 |
 | 5. US3 — Activation + companion (P1) | 16 (T085–T100) | ~10 |
 | 6. US5 — Scratchpad (P1) | 17 (T101–T117) | ~12 |
 | 7. US6 — Workspace state + layouts (P1) | 13 (T118–T130) | ~8 |
 | 8. US4 — Activity summary (P2) | 7 (T131–T137) | ~4 |
 | 9. Polish | 12 (T138–T149) | ~7 |
-| **Total** | **149** | **~88 [P]** |
+| **Total** | **150** | **~89 [P]** |
 
 Suggested MVP scope: **Phases 1 + 2 + 3 (T001–T065)** — the smallest slice that delivers the unified cross-repo session view and validates the entire backend/CLI/frontend pipeline end-to-end.

@@ -208,7 +208,7 @@ Summary of decisions (full rationale in research.md):
 
 - [`data-model.md`](./data-model.md) — 9 SQLite tables (`projects`, `sessions`, `companion_terminals`, `notes`, `reminders`, `workspace_state`, `layouts`, `notification_preferences`, `alerts`), in-memory `LiveSession` actor handle, derived views, invariants, migration plan.
 - [`contracts/README.md`](./contracts/README.md) — surface overview.
-- [`contracts/tauri-commands.md`](./contracts/tauri-commands.md) — 33 Tauri commands across 7 domains (projects, sessions, companions, scratchpad, workspace/layouts, notifications, events), plus error code catalog and test layering.
+- [`contracts/tauri-commands.md`](./contracts/tauri-commands.md) — 32 Tauri commands across 7 domains (projects, sessions, companions, scratchpad, workspace/layouts, notifications, events), plus error code catalog and test layering.
 - [`contracts/daemon-ipc.md`](./contracts/daemon-ipc.md) — framing, message shapes (`hello`, `register_session`, `update_status`, `emit_alert`, `heartbeat`, `end_session`), responses, error codes, CLI wrapper flow, compatibility rules.
 - [`quickstart.md`](./quickstart.md) — dev bootstrap, first build, first project, first session, test commands, troubleshooting, known v1 limitations.
 - **Agent context file** — updated via `.specify/scripts/bash/update-agent-context.sh claude` (see Phase 1 closing step).
@@ -219,7 +219,7 @@ Re-evaluating the gates against the completed Phase 1 design:
 
 | Gate | Phase 1 status | Notes |
 |---|---|---|
-| Scope discipline | **PASS** | The 33 Tauri commands and 6 daemon IPC verbs each map to at least one FR in `spec.md`. No orphan features. |
+| Scope discipline | **PASS** | The 32 Tauri commands and 6 daemon IPC verbs each map to at least one FR in `spec.md`. No orphan features. |
 | Test-first | **PASS** | Contracts specify the test layering explicitly: every command has contract + integration + frontend-unit tests before implementation. |
 | Small focused files | **PASS** | Directory breakdown maps one concern per file; no module is planned > 500 LoC. |
 | Immutable data flow | **PASS** | Backend types are `Clone`-friendly newtypes; mutations funneled through `WorkbenchState`. Frontend stores use Svelte 5 runes with derived state. |
