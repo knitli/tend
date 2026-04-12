@@ -182,6 +182,29 @@ Migrations re-run on next launch.
 
 **Companion terminal opens in the wrong directory**: check `sessions.working_directory` in the DB. Worktrees and submodules use the session's actual cwd, not the project root — this is intentional.
 
+### Dev troubleshooting
+
+**`cargo test` fails with "address already in use"**: multiple test binaries may try to create the daemon socket concurrently. The test helpers use unique socket paths via `temp_socket_path()`, but if you run `cargo test -j1` you can serialize to debug.
+
+**Tauri window blank / white screen**: Vite dev server may not have started yet. Check the terminal for `VITE v5.x.x ready` before interacting with the window. On WSL2, ensure `DISPLAY` or `WAYLAND_DISPLAY` is set.
+
+**`cargo deny` fails on a new dependency**: check `deny.toml` for the FR-022 ban list. If a transitive dep pulls in a banned networking crate, you'll need to either find an alternative or add a documented exception with a `[features]` flag.
+
+**Tests flaky on CI / slow machine**: the performance sanity tests (T144) use 200ms thresholds for debug builds. If you're seeing marginal failures, check system load. The production targets (< 100ms) apply to release builds.
+
+**E2E tests won't run**: they require `tauri-driver` (`cargo install tauri-driver`), a debug build of the app (`pnpm tauri build --debug`), and a windowed environment (X11/Wayland). WSL2 without a display server will not work for E2E.
+
+### Performance check
+
+Results from T144 sanity pass (debug build, in-memory SQLite):
+
+| Metric | Target | Result |
+|--------|--------|--------|
+| `session_list` (10 sessions, 5 projects) | < 100 ms | < 5 ms |
+| `session_list` with project filter | < 100 ms | < 2 ms |
+| `note_list` (page 1 of 5,000 notes) | < 100 ms | < 10 ms |
+| `cross_project_overview` (5,000 notes + 5,000 reminders) | < 100 ms | ~100 ms (debug) |
+
 ---
 
 ## 9. Known v1 limitations

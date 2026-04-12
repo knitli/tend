@@ -307,10 +307,7 @@ fn truncate_chars(s: &str, max_chars: usize) -> String {
         Some(_) => {
             // Keep (max_chars - 1) chars + "…" = max_chars total.
             let keep = max_chars.saturating_sub(1);
-            let end = s
-                .char_indices()
-                .nth(keep)
-                .map_or(s.len(), |(i, _)| i);
+            let end = s.char_indices().nth(keep).map_or(s.len(), |(i, _)| i);
             format!("{}…", &s[..end])
         }
     }

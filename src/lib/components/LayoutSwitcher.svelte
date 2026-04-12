@@ -173,7 +173,7 @@
 
   {#if open}
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div class="layout-dropdown" role="menu" onkeydown={handleDropdownKeydown}>
+    <div class="layout-dropdown" role="menu" tabindex="-1" onkeydown={handleDropdownKeydown}>
       {#if error}
         <div class="layout-error" role="alert">{error}</div>
       {/if}

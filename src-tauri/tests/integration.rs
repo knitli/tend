@@ -34,4 +34,8 @@ mod integration {
     // Phase 8 (US4 Activity Summary)
     pub mod activity_override;
     pub mod activity_ring_buffer;
+
+    // Phase 9 (Polish)
+    pub mod perf_sanity;
+    pub mod session_to_scratchpad;
 }
