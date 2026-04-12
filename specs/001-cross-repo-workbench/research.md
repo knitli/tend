@@ -109,9 +109,26 @@ Migrations handled by `sqlx migrate` with versioned SQL files under `src-tauri/m
 
 ## 6. Session discovery: how sessions get into the workbench
 
-**Decision**: **Workbench-owned sessions by default, with a `agentui run` CLI wrapper** that registers any session started from a terminal. A Unix-domain-socket (named-pipe on Windows) **daemon IPC** exposes a tiny protocol so the wrapper — and future agent integrations — can register sessions, push status, and emit "needs input" events.
+**Decision**: **Two session-ownership shapes**, both registered with the workbench but with different input semantics:
 
-This resolves FR-008 ("sessions started outside the workbench"): from the user's point of view the session is started from a plain terminal command, but the wrapper pipes it under the workbench's PTY and registers it over the socket. Sessions started without the wrapper are a known limitation in v1, surfaced clearly in the quickstart and mentioned as a known gap below.
+- **Workbench-owned sessions** — spawned by `session_spawn` from the UI. The backend owns the PTY master end directly via `portable-pty`. Input (`session_send_input`), resize, and signal delivery all flow from the workbench frontend → Rust backend → PTY child.
+- **Wrapper-owned sessions** — spawned outside the workbench by the `agentui run` CLI wrapper. The wrapper process owns the PTY master and proxies between the user's real tty and the agent child. The workbench is registered over the daemon-IPC socket and receives a mirror of the output stream plus cooperative status updates, but it does **not** own the PTY and therefore cannot accept keystrokes, resize events, or signals from the UI for these sessions. Input MUST be typed into the launching terminal; the UI explicitly disables its input path for wrapper-owned sessions.
+
+**Why this split (decision made during spec-panel review, 2026-04-11)**:
+
+We considered three options:
+
+1. **Always-daemon-owned** — CLI wrapper hands the PTY master fd to the daemon over `SCM_RIGHTS`. Unifies input but adds real v1 complexity (fd ownership dance, tty restore on disconnect, cross-platform named-pipe equivalent).
+2. **Always-wrapper-owned for CLI-registered sessions** (chosen). Honest about who owns the tty, removes a class of write-race bugs, keeps the wire protocol simple, and costs the user exactly one learned rule: "type in the terminal you launched it from."
+3. **Bifurcated with runtime `WRITE_FAILED`** — accept both shapes but leave the UI to discover ownership reactively. Same user-visible behavior as (2) but worse ergonomics and smelly error semantics.
+
+We chose (2). The cost is asymmetric: workbench-spawned sessions are fully interactive; wrapper-spawned sessions are observable-only. The `Session` entity carries an explicit `ownership` field (`workbench` | `wrapper`) so the frontend can render the correct affordances and the backend can reject misrouted inputs with a crisp `SESSION_READ_ONLY` error code rather than a generic `WRITE_FAILED`.
+
+**Restart caveat**: the PTY master fd for a workbench-owned session is scoped to the original workbench process. When the workbench restarts (crash or graceful), the child process may still be alive (`sysinfo` reports it), but the fd is gone — the OS handed it to init. `reconcile_and_reattach` (T025) therefore reattaches workbench-owned sessions as **read-only mirrors** across a restart: the row keeps `ownership = 'workbench'` for identity purposes but the frontend treats it as non-interactive for the rest of its lifetime, because there is no fd left to write into. Users regain interactivity by ending the stale mirror and respawning from the UI. This is an acknowledged v1 limitation; a future iteration could checkpoint PTY state via `dup2` / fd-passing into a supervising daemon process, but that is out of scope for v1.
+
+Sessions started with neither path (plain `claude` in a terminal, no `agentui run` wrapper) will not appear in the workbench. This is the same known v1 gap as before.
+
+This resolves FR-008 ("sessions started outside the workbench"): from the user's point of view the session is started from a plain terminal command, but the wrapper pipes it under its own PTY and registers it over the socket.
 
 **Protocol sketch** (full contract in `contracts/daemon-ipc.md`):
 
@@ -140,17 +157,27 @@ This resolves FR-008 ("sessions started outside the workbench"): from the user's
 
 **Decision**: **Two-tier detection**:
 
-- **Tier 1 (preferred): cooperative IPC events.** Agents (or the wrapper) send `update_status` over the daemon socket. This gives us exact, low-latency state transitions including `needs_input` with a reason string.
-- **Tier 2 (fallback): output-activity heuristic + prompt-pattern detection.** For sessions that don't emit IPC events:
+- **Tier 1 (preferred): cooperative IPC events.** Agents (or the wrapper) send `update_status` over the daemon socket. This gives us exact, low-latency state transitions including `needs_input` with a reason string. Tier 1 *always wins* over Tier 2 for any given session — once a session has emitted any cooperative status in its lifetime, the heuristic stops flipping state on it.
+- **Tier 2 (fallback): output-activity + high-confidence prompt patterns only.** For sessions that have never emitted a cooperative status:
   - `working` = PTY produced output within the last 2 seconds
-  - `idle` = no output for ≥ 5 seconds *and* the last line of the terminal buffer matches a shell prompt pattern (configurable; defaults cover `bash/zsh/fish` prompt endings `$ `, `% `, `> `, `# `)
-  - `needs_input` = heuristic match against a small regex library of known agent prompt forms (`[y/N]`, `? `, `Please choose`, `Do you want`, trailing `: ` on an otherwise-idle buffer) — **best-effort**, documented as fallback only
+  - `idle` = no output for ≥ 5 seconds
+  - `needs_input` is flipped **only** when:
+    1. No output for ≥ 1 second, AND
+    2. The current tail of the PTY ring buffer (last 256 bytes, ANSI-stripped) matches one of a **small, high-precision** pattern set:
+       - `\[y/N\]` / `\[Y/n\]` / `\[yes/no\]` / `\(yes/no\)` (case-insensitive)
+       - `password:` / `passphrase:` at end of last non-empty line
+       - a last non-empty line ending in `?` or `:` with no newline after, *AND* the preceding ≥ 1 s of output was also silent (reduces diff/log false positives)
+  - Deliberately **excluded** from the v1 pattern set: bare `> ` or `continue?` matches, both of which false-positive heavily on agent-narrated diff output and shell-style prose.
+
+**False-positive budget (SC-011)**: the heuristic MUST produce no more than **1 spurious `needs_input` alert per 100 sessions** against the committed adversarial PTY-output corpus under `tests/fixtures/ptyoutput/`. The corpus is checked into the repo and includes: multi-KB unified diffs containing `[y/N]` inside context lines, code listings containing `continue?` and `password:` as string literals, ANSI-decorated agent narration with `>` markers, and long README renders. This is a hard CI gate on Tier 2, separate from the correctness tests for the cooperative-IPC path.
 
 **Rationale**:
 
 - Tier 1 gives us the experience the user actually wants (crisp alerts, no false positives).
-- Tier 2 keeps the workbench useful for non-cooperating agents without being load-bearing. We do not want to pretend our heuristic is perfect — we'll flag fallback-sourced "needs input" events visually as "best-effort" so the user isn't misled.
-- Matching shell prompts avoids the worst failure mode of treating a session as "needs input" every time output pauses.
+- Tier 2 is intentionally a small pattern set with a measured false-positive ceiling. An alerting tool that cries wolf is worse than one that sometimes misses — alert fatigue destroys the product's value prop.
+- Matching shell prompts to infer `idle` is dropped entirely; `idle` is a time-since-output threshold only. Shell-prompt matching was adding noise without improving `needs_input` fidelity.
+- Cooperative-IPC monotonicity (once a session speaks cooperatively, heuristic is muted for its remaining lifetime) prevents the common failure mode where an agent that mostly cooperates occasionally emits noise that the heuristic misreads.
+- `needs_input` events sourced from Tier 2 are visually flagged as "best-effort" (`status_source = heuristic`) so the user isn't misled about precision.
 
 **Alternatives considered**:
 
@@ -182,7 +209,7 @@ No cross-process window focus integration is needed for v1. This dramatically si
 
 **Decision**: **Tauri's `tauri-plugin-notification`** for OS-native notifications on Linux, macOS, and Windows. In-workbench alerts are rendered as a pinned alert bar showing every session currently in `needs_input`. Notification channel (OS / in-app / silent-but-visible / terminal bell) is configurable per-project and globally per FR-013.
 
-Quiet-hours: stored as a time range per preference; during quiet hours the workbench suppresses the OS-level channel but still shows the in-app alert, honoring FR-013 and SC-007.
+Quiet-hours: stored as a time range per preference; during quiet hours the workbench suppresses the OS-level channel but still shows the in-app alert, honoring FR-013 and SC-006.
 
 **Rationale**:
 

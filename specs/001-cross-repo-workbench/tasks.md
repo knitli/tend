@@ -37,7 +37,8 @@
 - [ ] T007 [P] Create `pnpm-workspace.yaml`, `vite.config.ts` (Svelte plugin, Tauri-aware clearScreen/server.port/envPrefix), `svelte.config.js`, `tsconfig.json` (strict, bundler module resolution)
 - [ ] T008 [P] Create `src/app.html`, `src/app.css` (reset + theme tokens), `src/main.ts` (mount Svelte app), `src/routes/+page.svelte` (empty shell)
 - [ ] T009 [P] Create `rustfmt.toml` (edition 2021, max_width 100), `.clippy.toml`, workspace `.editorconfig`
-- [ ] T010 Verify `pnpm install && cargo check && pnpm tauri dev` opens an empty window; document in `specs/001-cross-repo-workbench/quickstart.md` if any system-dep gotchas appear
+- [ ] T009b [P] Create `deny.toml` at workspace root with a `[bans]` section enforcing the FR-022 local-only scope at **build time**: deny `reqwest`, `hyper`, `isahc`, `ureq`, `surf`, `tonic`, `curl`, `tungstenite`, `tokio-tungstenite`, `native-tls`, `rustls-native-certs`, `openssl-sys` (and any other networking stack that sneaks in via a transitive dep). `cargo deny check bans` becomes the primary gate; T149's grep remains as a belt-and-braces layer. Allow exceptions only behind an explicit `[features]` flag with a comment referencing a future v2 feature.
+- [ ] T010 Verify `pnpm install && cargo check && cargo install cargo-deny && cargo deny check bans && pnpm tauri dev` opens an empty window and the ban list passes; document in `specs/001-cross-repo-workbench/quickstart.md` if any system-dep gotchas appear
 
 ---
 
@@ -49,10 +50,10 @@
 
 ### Data model & error boundaries
 
-- [ ] T011 Create `src-tauri/migrations/20260411000001_init.sql` containing all 9 tables from `data-model.md`: `projects`, `sessions`, `companion_terminals`, `notes`, `reminders`, `workspace_state` (single-row), `layouts`, `notification_preferences`, `alerts` — with all indexes, foreign keys, and CHECK constraints from the data model
+- [ ] T011 Create `src-tauri/migrations/20260411000001_init.sql` containing all 9 tables from `data-model.md`: `projects`, `sessions`, `companion_terminals`, `notes`, `reminders`, `workspace_state` (single-row), `layouts`, `notification_preferences`, `alerts` — with all indexes, foreign keys, and CHECK constraints from the data model. **Ensure the `sessions` table includes the `ownership TEXT NOT NULL CHECK (ownership IN ('workbench','wrapper'))` column** per the updated data model (item #2 of the spec-panel review)
 - [ ] T012 Create `src-tauri/src/model/mod.rs` defining Rust newtype IDs (`ProjectId`, `SessionId`, `CompanionId`, `NoteId`, `ReminderId`, `LayoutId`, `AlertId`, `NotificationPreferenceId`) wrapping `i64`, each `#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]`
-- [ ] T013 [P] Create `src-tauri/src/model/project.rs` with `Project`, `ProjectSettings`, status enums; `src-tauri/src/model/session.rs` with `Session`, `SessionStatus` (`Working`/`Idle`/`NeedsInput`/`Ended`/`Error`), `StatusSource` (`Cooperative`/`Heuristic`); `src-tauri/src/model/alert.rs`, `src-tauri/src/model/companion.rs`, `src-tauri/src/model/note.rs`, `src-tauri/src/model/reminder.rs`, `src-tauri/src/model/workspace.rs`, `src-tauri/src/model/layout.rs`, `src-tauri/src/model/notification.rs` — each with `Serialize`/`Deserialize` for Tauri command JSON boundary
-- [ ] T014 Create `src-tauri/src/error.rs` defining `WorkbenchError { code, message, details }` and variant enum `ErrorCode` matching `contracts/tauri-commands.md` §8 catalog (`NOT_FOUND`, `ALREADY_EXISTS`, `ALREADY_REGISTERED`, `NOT_ARCHIVED`, `PATH_NOT_FOUND`, `PATH_NOT_A_DIRECTORY`, `WORKING_DIRECTORY_INVALID`, `PROJECT_ARCHIVED`, `SPAWN_FAILED`, `COMPANION_SPAWN_FAILED`, `WRITE_FAILED`, `SESSION_ENDED`, `CONTENT_EMPTY`, `NAME_TAKEN`, `INTERNAL`) plus daemon-IPC extras (`PROTOCOL_ERROR`, `MESSAGE_TOO_LARGE`, `UNAUTHORIZED`); implement `Serialize` for Tauri JSON error boundary and `From<sqlx::Error>`, `From<std::io::Error>` conversions
+- [ ] T013 [P] Create `src-tauri/src/model/project.rs` with `Project`, `ProjectSettings`, status enums; `src-tauri/src/model/session.rs` with `Session`, `SessionStatus` (`Working`/`Idle`/`NeedsInput`/`Ended`/`Error`), `StatusSource` (`Ipc`/`Heuristic`), and `SessionOwnership` (`Workbench`/`Wrapper`); `src-tauri/src/model/alert.rs`, `src-tauri/src/model/companion.rs`, `src-tauri/src/model/note.rs`, `src-tauri/src/model/reminder.rs`, `src-tauri/src/model/workspace.rs`, `src-tauri/src/model/layout.rs`, `src-tauri/src/model/notification.rs` — each with `Serialize`/`Deserialize` for Tauri command JSON boundary. `SessionOwnership` is immutable after `Session` row creation (enforced in `SessionService`, not at the type level)
+- [ ] T014 Create `src-tauri/src/error.rs` defining `WorkbenchError { code, message, details }` and variant enum `ErrorCode` matching `contracts/tauri-commands.md` §8 catalog (`NOT_FOUND`, `ALREADY_EXISTS`, `ALREADY_REGISTERED`, `NOT_ARCHIVED`, `PATH_NOT_FOUND`, `PATH_NOT_A_DIRECTORY`, `WORKING_DIRECTORY_INVALID`, `PROJECT_ARCHIVED`, `SPAWN_FAILED`, `COMPANION_SPAWN_FAILED`, `WRITE_FAILED`, `SESSION_ENDED`, `SESSION_READ_ONLY`, `CONTENT_EMPTY`, `NAME_TAKEN`, `INTERNAL`) plus daemon-IPC extras (`PROTOCOL_ERROR`, `MESSAGE_TOO_LARGE`, `UNAUTHORIZED`); implement `Serialize` for Tauri JSON error boundary and `From<sqlx::Error>`, `From<std::io::Error>` conversions
 
 ### Database layer
 
@@ -78,12 +79,13 @@
 
 ### Crash recovery & tracing
 
-- [ ] T025 Create `src-tauri/src/session/recovery.rs` with `reconcile_stale_sessions(db) -> Result<usize>` that updates any `sessions.status = 'working'` or `'needs_input'` row whose `ended_at IS NULL` to `status = 'ended', ended_at = now(), exit_code = NULL, error = 'workbench_restart'`; wired into `run()` after DB open, before Tauri start
+- [ ] T025 Create `src-tauri/src/session/recovery.rs` with a single merged-pass function `reconcile_and_reattach(db, live_sessions) -> Result<ReconcileReport>` that scans every `sessions` row where `status IN ('working','idle','needs_input')` AND `ended_at IS NULL`, and **per-row**: (a) if `pid` is null OR the pid is not alive per `sysinfo::System::refresh_process`, marks the row `status = 'ended', ended_at = now(), error = 'workbench_restart'` and emits a `session:ended` once the event bus is wired; (b) if the pid IS alive, creates an **attached-mirror** `LiveSessionHandle` for it (no PTY ownership — wrapper-owned sessions always reattach in mirror mode; workbench-owned sessions detected by `ownership = 'workbench'` are reattached as read-only mirrors in v1 because we do not resurrect the original PTY fd across restarts — document this as a known behavior in `research.md §6`), installs the handle in `state.live_sessions`, sets `status_source = 'heuristic'`, and does NOT mark the row ended. Return a `ReconcileReport { reattached: Vec<SessionId>, ended: Vec<SessionId> }` for logging. **Critical ordering invariant**: this is one pass, not two — do not split into a "mark-stale-first, reattach-second" sequence or the reattach step will find nothing to work with. Wired into `run()` after DB open, before Tauri's frontend is ready to call `session_list`.
+- [ ] T025b Create `src-tauri/tests/integration/startup_reattach.rs` that (1) spawns a real long-running child (`std::process::Command::new("sleep").arg("600").spawn()`), (2) writes a `sessions` row with that pid, `status = 'working'`, `ownership = 'wrapper'`, `status_source = 'ipc'`, and `ended_at = NULL`, (3) runs `reconcile_and_reattach` against a fresh `WorkbenchState` pointing at that DB, (4) asserts the row is still `status IN ('working','idle')` (the status may have transitioned to `idle` via the 5-second rule but MUST NOT be `ended`), (5) asserts `state.live_sessions` contains a handle keyed by that session id, (6) then SIGKILLs the child, writes another row with its defunct pid, re-runs `reconcile_and_reattach`, and asserts that second row transitions to `ended` with `error = 'workbench_restart'`. This test is the hard gate against the "ordering bug" this function was written to prevent.
 - [ ] T026 [P] Configure `tracing_subscriber` in `lib.rs` with env-controlled filter (`AGENTUI_LOG`), JSON output in release, pretty in dev
 
 ### Test infrastructure
 
-- [ ] T027 [P] Create `src-tauri/tests/common/mod.rs` with helpers: `temp_db()` returning an isolated in-memory SQLite + migrations, `temp_socket_path()` yielding a unique socket path under `std::env::temp_dir()`, `mock_state()` building a `WorkbenchState` on top of `temp_db()`
+- [ ] T027 [P] Create `src-tauri/tests/common/mod.rs` with helpers: `temp_db()` returning an isolated in-memory SQLite + migrations, `temp_socket_path()` yielding a unique socket path under `std::env::temp_dir()`, `mock_state()` building a `WorkbenchState` on top of `temp_db()`, and a seeder `seed_wrapper_session(&state, project_id) -> SessionId` for the ownership-aware contract tests (T035, T086). **Rust integration-test convention note**: each file under `src-tauri/tests/` compiles as its own binary, so this shared module is NOT auto-included — every contract/integration test file that uses it MUST begin with `mod common;` (which resolves to `common/mod.rs`). Document this incantation in a header comment in `common/mod.rs` so future contributors don't hit "unresolved import" on the second test file.
 - [ ] T028 [P] Create `cli/tests/common/mod.rs` with a mock workbench IPC server that accepts a connection and responds to `hello` with `welcome`, for CLI happy-path tests
 
 ### Frontend foundation
@@ -107,14 +109,14 @@
 - [ ] T032 [P] [US1] Contract test `project_list` with `include_archived` flag in `src-tauri/tests/contract/project_list.rs`
 - [ ] T033 [P] [US1] Contract test `project_update` (display_name, settings) + `NOT_FOUND` in `src-tauri/tests/contract/project_update.rs`
 - [ ] T034 [P] [US1] Contract test `project_archive` + `project_unarchive` including `NOT_ARCHIVED` and the invariant that scratchpad rows survive archival in `src-tauri/tests/contract/project_archive.rs`
-- [ ] T035 [P] [US1] Contract test `session_list` filtered by project and by `include_ended` in `src-tauri/tests/contract/session_list.rs`
+- [ ] T035 [P] [US1] Contract test `session_list` filtered by project, by `include_ended`, **asserting the status ↔ alert snapshot invariant** (item #4 of spec-panel review): seed a session with `status = 'needs_input'` and an open `alert` row in the same transaction; assert the returned `SessionSummary.alert` is non-null and its session's `status` is `needs_input` in the same row (no cross-row lying). Also seed a race case: flip `status = 'working'` and clear the alert in one transaction, call `session_list`, assert neither "working + alert" nor "needs_input + no alert" ever appears within a single returned row. In `src-tauri/tests/contract/session_list.rs`. Also assert that `SessionSummary.ownership` is populated and round-trips from the DB correctly.
 - [ ] T036 [P] [US1] Contract test daemon IPC `hello` → `welcome`, including `protocol_version` mismatch → `PROTOCOL_ERROR` in `src-tauri/tests/contract/daemon/hello.rs`
-- [ ] T037 [P] [US1] Contract test daemon IPC `register_session` happy path + creates project if unknown + `PATH_NOT_FOUND` in `src-tauri/tests/contract/daemon/register_session.rs`
+- [ ] T037 [P] [US1] Contract test daemon IPC `register_session` happy path (asserts the created session has `ownership = "wrapper"` in the DB) + creates project if unknown + `PATH_NOT_FOUND` in `src-tauri/tests/contract/daemon/register_session.rs`
 - [ ] T038 [P] [US1] Contract test daemon IPC `update_status` status enum validation + `NOT_FOUND` for unknown session in `src-tauri/tests/contract/daemon/update_status.rs`
 - [ ] T039 [P] [US1] Contract test daemon IPC `heartbeat` + `end_session` (exit code propagation) in `src-tauri/tests/contract/daemon/lifecycle.rs`
 - [ ] T040 [P] [US1] Integration test: end-to-end `CLI wrapper → daemon IPC → sessions table` using a real temp socket, verifying `session_list` returns the registered row in `src-tauri/tests/integration/cli_to_list.rs`
 - [ ] T041 [P] [US1] Integration test: session whose child process exits marks the row as `ended` within the status monitor's reaction window in `src-tauri/tests/integration/session_crash.rs`
-- [ ] T041b [P] [US1] Contract test `session_spawn` happy path + `PROJECT_NOT_FOUND` + `PROJECT_ARCHIVED` + `WORKING_DIRECTORY_INVALID` + `SPAWN_FAILED { os_error }` in `src-tauri/tests/contract/session_spawn.rs`. MUST be RED before T049 implements `session_spawn`. Closes the TDD gate asserted in plan.md Post-Design Constitution Re-check.
+- [ ] T041b [P] [US1] Contract test `session_spawn` happy path (asserts returned `session.ownership == "workbench"`) + `PROJECT_NOT_FOUND` + `PROJECT_ARCHIVED` + `WORKING_DIRECTORY_INVALID` + `SPAWN_FAILED { os_error }` in `src-tauri/tests/contract/session_spawn.rs`. MUST be RED before T049 implements `session_spawn`. Closes the TDD gate asserted in plan.md Post-Design Constitution Re-check.
 
 ### Backend: project service & commands
 
@@ -127,13 +129,13 @@
 - [ ] T045 [P] [US1] Create `src-tauri/src/session/live.rs` with `LiveSession` struct owning the `Pty`, reader/writer channels, and a status-monitor task handle; `LiveSessionHandle` (Clone) exposing `write(bytes)`, `resize(cols, rows)`, `end(signal)`, `status_rx()`, `output_rx()`
 - [ ] T046 [P] [US1] Create `src-tauri/src/session/status.rs` with a minimal cooperative-first status monitor: listens for `update_status` signals from the daemon IPC handler, falls back to basic output-activity idle detection (`Instant::now() - last_output > 5s` ⇒ `idle`); heuristic prompt-pattern detection deferred to US2
 - [ ] T047 [P] [US1] Create `src-tauri/src/session/supervisor.rs` that spawns per-session tokio tasks: a reader task forwarding PTY output to `event_bus` as `session:event { chunk }`, a writer task, and a monitor task calling `status::run(…)`
-- [ ] T048 [US1] Create `src-tauri/src/session/mod.rs` with `SessionService` exposing `create_from_ipc(project_id, label, working_directory, command, pid, metadata) -> Session`, `list(project_id, include_ended) -> Vec<SessionSummary>`, `mark_ended(id, exit_code)`, `set_status(id, status, source)`
-- [ ] T049 [US1] Create `src-tauri/src/commands/sessions.rs` with `session_list` and `session_spawn` (for future GUI-initiated spawns; delegates to `SessionService::spawn_local` which uses `Pty::spawn` directly); register handlers in `lib.rs`
+- [ ] T048 [US1] Create `src-tauri/src/session/mod.rs` with `SessionService` exposing `create_from_ipc(project_id, label, working_directory, command, pid, metadata) -> Session` (sets `ownership = Wrapper`), `spawn_local(project_id, label, working_directory, command, env) -> (Session, LiveSessionHandle)` (sets `ownership = Workbench` and spawns a PTY directly), `list(project_id, include_ended) -> Vec<SessionSummary>`, `mark_ended(id, exit_code)`, `set_status(id, status, source)`, and a helper `require_workbench_owned(id) -> Result<Session, WorkbenchError>` that returns `SESSION_READ_ONLY` for wrapper-owned sessions (used by T093's input/resize/end paths)
+- [ ] T049 [US1] Create `src-tauri/src/commands/sessions.rs` with `session_list` and `session_spawn` for GUI-initiated spawns; `session_spawn` delegates to `SessionService::spawn_local` (which creates a `Session` row with `ownership = "workbench"`) and installs the returned handle in `state.live_sessions`; register handlers in `lib.rs`
 
 ### Backend: daemon IPC handlers
 
 - [ ] T050 [US1] Implement `src-tauri/src/daemon/handlers.rs::dispatch` for `Hello` → `Welcome { server_version, protocol_version: 1, session_id_format: "i64" }`, rejecting mismatched `protocol_version` with `PROTOCOL_ERROR`
-- [ ] T051 [US1] Implement `dispatch` for `RegisterSession`: canonicalize `project_path`, call `ProjectService::ensure_exists` (creates project if unknown using basename as display name), create session row via `SessionService::create_from_ipc`, spawn a `LiveSession` actor (but the CLI wrapper owns the PTY — actor runs in "attached-mirror" mode, owning no PTY, forwarding update_status inbound), return `SessionRegistered { session_id, project_id }`
+- [ ] T051 [US1] Implement `dispatch` for `RegisterSession`: canonicalize `project_path`, call `ProjectService::ensure_exists` (creates project if unknown using basename as display name), create session row via `SessionService::create_from_ipc` (which sets `ownership = "wrapper"`), create an **attached-mirror** `LiveSessionHandle` (no PTY ownership — the wrapper process owns the PTY master; the handle exists purely to receive `update_status` / `heartbeat` signals and to broadcast events for the UI mirror), install in `state.live_sessions`, return `SessionRegistered { session_id, project_id }`. Do NOT spawn a new PTY here — the wrapper already owns one.
 - [ ] T052 [US1] Implement `dispatch` for `UpdateStatus` (session existence check, enum validation, updates row + broadcasts on `event_bus`), `Heartbeat` (updates `last_heartbeat_at`), `EndSession` (calls `SessionService::mark_ended`, broadcasts `session:ended`)
 
 ### Event emission
@@ -180,8 +182,8 @@
 ### Backend: alert service + heuristic status
 
 - [ ] T072 [P] [US2] Create `src-tauri/src/notifications/alerts.rs` with `AlertService::raise(session_id, kind, reason) -> Alert`, `clear(alert_id, by)`, `list_open(session_id)`, deduping identical consecutive raises within a 2 s window
-- [ ] T073 [US2] Extend `src-tauri/src/session/status.rs` with heuristic prompt detection: maintain a rolling last-N-bytes buffer per session, match against a small pattern set (`\[y/N\]`, `password:`, `continue?`, `> ` at EOL after inactivity ≥ 1 s), flip status to `NeedsInput` with `StatusSource::Heuristic` and call `AlertService::raise`
-- [ ] T074 [US2] Add status transition hooks in `session/mod.rs::set_status` that call `AlertService::clear(…, "session_resumed")` when a session leaves `NeedsInput` for `Working` or `Idle`, and `"session_ended"` when it enters `Ended`/`Error`
+- [ ] T073 [US2] Extend `src-tauri/src/session/status.rs` with heuristic prompt detection per the pruned pattern set in `research.md §7`: maintain a rolling last-256-byte buffer per session (ANSI-stripped), match against the **high-precision** set only — `\[y/N\]` / `\[Y/n\]` / `\[yes/no\]` / `\(yes/no\)` (case-insensitive), `password:` / `passphrase:` at end of last non-empty line, and the weak signal "last non-empty line ends in `?` or `:`, no trailing newline, ≥ 1 s of no output before AND after." **Explicitly do NOT** match bare `> ` at EOL or standalone `continue?` — these caused unacceptable false positives on diff and log output. Cooperative-IPC monotonicity: once a session has ever emitted an `update_status` from the daemon socket, the heuristic is muted for the remainder of the session's lifetime (stored as a `cooperative_seen: bool` on `LiveSession`). On a match, flip status to `NeedsInput` with `StatusSource::Heuristic` and call `AlertService::raise`.
+- [ ] T073b [US2] Create `tests/fixtures/ptyoutput/` with an adversarial PTY-output corpus: `diff_with_y_N.txt` (a multi-KB unified diff whose context lines contain the literal `[y/N]`), `code_with_password_literal.txt` (a Python/Rust file containing `password:` as a string literal), `agent_narration_with_gt.txt` (agent-narrated plan text using `>` as a marker, with ANSI escapes), `readme_render.txt` (a long README rendered through `less -R` capture), `mixed_ansi_prompts.txt` (mix of real prompts and decoy text with ANSI coloring). Commit all fixtures to the repo. Create `src-tauri/tests/integration/heuristic_false_positives.rs` that feeds each fixture byte-by-byte into the heuristic monitor (as if it were PTY output over time) and asserts the total number of `needs_input` flips across a 100-session simulation (each session = 1 fixture, replayed) is **≤ 1**. This is the enforcement gate for SC-011. MUST be RED before T073 lands. Failure means the pattern set needs further pruning, not the test loosening.
 
 ### Backend: notification preferences + Tauri plugin glue
 
@@ -215,7 +217,7 @@
 ### Contract + integration tests (write FIRST)
 
 - [ ] T085 [P] [US3] Contract test `session_activate` returning `{ session, companion }`, first-activation spawns companion, second-activation reuses it, killed companion is respawned, including `SESSION_ENDED` and `COMPANION_SPAWN_FAILED` in `src-tauri/tests/contract/session_activate.rs`
-- [ ] T086 [P] [US3] Contract test `session_send_input`, `session_resize`, `session_end` in `src-tauri/tests/contract/session_io.rs`
+- [ ] T086 [P] [US3] Contract test `session_send_input`, `session_resize`, `session_end` — happy path on a workbench-owned session AND `SESSION_READ_ONLY` on a wrapper-owned session (seeded via `SessionService::create_from_ipc`) for all three commands — in `src-tauri/tests/contract/session_io.rs`
 - [ ] T087 [P] [US3] Contract test `companion_send_input`, `companion_resize`, `companion_respawn` in `src-tauri/tests/contract/companion.rs`
 - [ ] T088 [P] [US3] Integration test: worktree path — session's `working_directory` differs from project root; companion spawns in the worktree, not the root, per FR-015 + Edge Cases. Same test file asserts FR-017 negative invariant: after the user writes `cd /tmp\n` into the companion, a subsequent `companion_resize` and a follow-up `session_activate` of the same session MUST NOT reset the companion's cwd back to the session root (verified by sending `pwd\n` and asserting `/tmp` in the output stream). In `src-tauri/tests/integration/companion_worktree.rs`.
 - [ ] T089 [P] [US3] Integration test: activation creates exactly one `companion_terminals` row per session (idempotency) in `src-tauri/tests/integration/companion_idempotency.rs`
@@ -228,13 +230,13 @@
 ### Backend: commands
 
 - [ ] T092 [US3] Implement `session_activate` in `src-tauri/src/commands/sessions.rs`: validates session is not `ended`, calls `CompanionService::ensure`, returns `{ session, companion }`, emits `companion:spawned` on fresh creation
-- [ ] T093 [US3] Implement `session_send_input`, `session_resize`, `session_end` in `commands/sessions.rs` — each dispatches to the `LiveSessionHandle` from `state.live_sessions`; v1 note: for attached-mirror sessions (daemon-IPC-owned), `session_send_input` returns `WRITE_FAILED` with details `"input must be sent to the wrapping terminal"` per the research.md §6 tradeoff
+- [ ] T093 [US3] Implement `session_send_input`, `session_resize`, `session_end` in `commands/sessions.rs`. Each call first invokes `SessionService::require_workbench_owned(id)` which returns `SESSION_READ_ONLY` for wrapper-owned sessions — this is the crisp, schema-backed rejection path, not a reactive `WRITE_FAILED`. Only workbench-owned sessions proceed to the `LiveSessionHandle` dispatch. Contract tests (T086) MUST assert `SESSION_READ_ONLY` is returned for a wrapper-owned session id across all three commands.
 - [ ] T094 [P] [US3] Create `src-tauri/src/commands/companions.rs` implementing `companion_send_input`, `companion_resize`, `companion_respawn`; register all in `lib.rs`
 
 ### Frontend: split view & panes
 
 - [ ] T095 [P] [US3] Create `src/lib/api/companions.ts` with typed wrappers + event subscribers `onCompanionSpawned`, `onCompanionOutput`
-- [ ] T096 [P] [US3] Create `src/lib/components/AgentPane.svelte` mounting an xterm.js instance, subscribing to `session:event` chunks for the active session, dispatching keystrokes to `sessionSendInput` (gracefully degrading if the backend returns `WRITE_FAILED` for attached-mirror sessions — displays a "input this session from your launching terminal" banner)
+- [ ] T096 [P] [US3] Create `src/lib/components/AgentPane.svelte` mounting an xterm.js instance, subscribing to `session:event` chunks for the active session. **Input path is gated on a derived `isInteractive` flag**: `isInteractive = session.ownership === "workbench" && !session.reattached_mirror`. The `reattached_mirror` flag is set by `reconcile_and_reattach` (T025) on workbench-owned rows that survived a restart, because the original PTY fd is gone and we can't write to it (see `research.md §6` restart caveat). For interactive sessions, keystrokes are dispatched to `sessionSendInput` normally. For non-interactive sessions (wrapper-owned OR reattached-mirror workbench-owned), the xterm is rendered in a read-only mode (stdin dropped, cursor styled as non-interactive) with a persistent banner: "Read-only mirror — type in the launching terminal" for wrapper-owned, or "Read-only after workbench restart — end and respawn to regain input" for reattached-mirror workbench-owned. The frontend uses these flags as the source of truth and never relies on reactively catching `SESSION_READ_ONLY` errors from the backend.
 - [ ] T097 [P] [US3] Create `src/lib/components/CompanionPane.svelte` mounting an xterm.js instance, subscribing to `companion:output` for the active session, dispatching keystrokes to `companionSendInput`; handles `companion_resize` on container resize via `FitAddon`
 - [ ] T098 [US3] Create `src/lib/components/SplitView.svelte` rendering `AgentPane` + `CompanionPane` horizontally with a draggable divider, calling `sessionActivate(id)` on mount to fetch the session + companion, emitting lifecycle cleanup on unmount
 - [ ] T099 [US3] Wire `SessionRow.svelte` click handler to set `activeSessionId` in the sessions store; `+page.svelte` renders `SplitView` when `activeSessionId !== null`
@@ -297,7 +299,7 @@
 
 - [ ] T122 [P] [US6] Create `src-tauri/src/workspace/mod.rs` with `WorkspaceService::get()` (reads the single `workspace_state` row; if absent returns `WorkspaceState::default()`), `save(state)` with debounced write (100 ms) coalescing rapid consecutive saves, `flush()` called on graceful shutdown
 - [ ] T123 [P] [US6] Create `src-tauri/src/workspace/layouts.rs` with `LayoutService::list()`, `save(name, state)` (`NAME_TAKEN` on duplicate), `restore(id) -> (WorkspaceState, Vec<SessionId>)` that returns missing session ids after checking which referenced sessions are still alive in the live-sessions map, `delete(id)`
-- [ ] T124 [US6] Extend `src-tauri/src/session/recovery.rs` with `reattach_live_sessions(state)` that scans `sessions` rows whose `ended_at IS NULL`, checks each pid via `sysinfo`, for alive pids creates attached-mirror `LiveSession` handles with `status_source = Heuristic` (no cooperative IPC until the wrapper reconnects), for dead pids calls `mark_ended` — wired into `run()` after DB open
+- [ ] T124 [US6] Extend `src-tauri/src/session/recovery.rs::reconcile_and_reattach` (already delivered in T025 as the merged single-pass function) to also emit `session:spawned` events via `state.event_bus` for each reattached session id so the US6 frontend hydration path sees them as "running, reattached" rather than having to hit `session_list` separately. Also extend the integration test T025b with an additional assertion: after reattach, a `session:spawned` event has been broadcast for every reattached id within 500 ms. No new `reattach_live_sessions` function — that logic lives in T025's single pass per the ordering invariant.
 
 ### Backend: commands + events
 
@@ -350,13 +352,13 @@
 - [ ] T140 [P] Create `tests/e2e/scratchpad.spec.ts`: adds notes and reminders, relaunches, verifies persistence, opens cross-project overview, marks a reminder done
 - [ ] T141 [P] Create `tests/e2e/workspace-restore.spec.ts`: saves a layout, restarts the app, asserts workspace state restored automatically and layout dropdown shows the saved one
 - [ ] T142 Create `tests/integration/session_to_scratchpad.rs` verifying that a session ending does NOT delete or modify any note or reminder in its project
-- [ ] T143 Install and run `cargo tarpaulin --out Html --output-dir target/coverage --workspace --exclude-files "tests/*"` in CI locally; assert ≥ 80 % for `src-tauri/` and `cli/`. Document any justified exclusions inline in the offending modules
+- [ ] T143 Install and run `cargo tarpaulin --out Html --output-dir target/coverage --workspace --exclude-files "tests/*"` in CI locally; assert ≥ 80 % for `src-tauri/` and `cli/`. Document any justified exclusions inline in the offending modules. Also run `cargo deny check bans` (from T009b) as a hard gate in the same step — a banned networking crate appearing in `Cargo.lock` fails the pipeline.
 - [ ] T144 Performance sanity pass: spawn 10 long-running sessions across 5 mock projects (helper script), time `session_list` + filter + activation; assert < 100 ms list, < 200 ms activation (SC-004). Also seed 5 000 notes + 5 000 reminders into a single project and assert `note_list` (paginated) and `cross_project_overview` both return within the same 100 ms list budget (covers the long-scratchpad edge case from spec.md). Record all results in `specs/001-cross-repo-workbench/quickstart.md` under "Performance check"
 - [ ] T145 [P] Accessibility pass: run `pnpm --filter frontend lint:a11y` (axe-core via Vitest component tests) on `Sidebar`, `SessionList`, `SessionRow`, `AlertBar`, `Scratchpad`, `CrossProjectOverview`, `SplitView`; fix any Serious/Critical issues
 - [ ] T146 [P] Update `specs/001-cross-repo-workbench/quickstart.md` if any step required tweaks during implementation; add a "Dev troubleshooting" subsection for gotchas encountered
 - [ ] T147 [P] Write project `README.md` at `/home/knitli/agentui/README.md` with: one-paragraph description, link to `specs/001-cross-repo-workbench/` for the full spec/plan, quickstart commands, known v1 limitations (copied from `research.md` §16)
 - [ ] T148 Run the full quickstart exercise end-to-end (`quickstart.md` §3–§5) from a freshly-built binary; confirm every acceptance scenario from `spec.md` passes. Check off each on a fresh copy of `checklists/requirements.md` if desired
-- [ ] T149 Final sweep: `cargo clippy --workspace -- -D warnings`, `cargo fmt --check`, `pnpm --filter frontend lint`, `pnpm --filter frontend typecheck`. Additionally enforce the FR-022 local-only scope fence: grep the `src-tauri/` and `cli/` source trees for `TcpStream`, `TcpListener`, `reqwest`, `hyper::client`, `ssh`, `\\wsl$`, and any `//` or `wss://`/`https://` URL literals; any hit must either be inside a test, behind a documented v2-future feature flag, or removed. Zero errors, zero warnings, zero unexplained network hits before calling this done
+- [ ] T149 Final sweep: `cargo clippy --workspace -- -D warnings`, `cargo fmt --check`, `cargo deny check` (from T009b — the primary FR-022 gate), `pnpm --filter frontend lint`, `pnpm --filter frontend typecheck`. Additionally enforce the FR-022 local-only scope fence as a **belt-and-braces layer on top of `cargo deny`**: grep the `src-tauri/` and `cli/` source trees for `TcpStream`, `TcpListener`, `reqwest`, `hyper::client`, `ssh`, `\\wsl$`, and any `//` or `wss://`/`https://` URL literals; any hit must either be inside a test, behind a documented v2-future feature flag, or removed. Zero errors, zero warnings, zero unexplained network hits before calling this done
 
 ---
 
@@ -484,15 +486,28 @@ With multiple developers after US1 ships:
 
 | Phase | Tasks | Parallelizable |
 |---|---|---|
-| 1. Setup | 10 (T001–T010) | 6 |
-| 2. Foundational | 20 (T011–T030) | 9 |
+| 1. Setup | 11 (T001–T010, incl. T009b) | 7 |
+| 2. Foundational | 21 (T011–T030, incl. T025b) | 10 |
 | 3. US1 — Unified overview (P1 MVP) | 36 (T031–T065, incl. T041b) | ~21 |
-| 4. US2 — Alerts (P1) | 19 (T066–T084) | ~12 |
+| 4. US2 — Alerts (P1) | 20 (T066–T084, incl. T073b) | ~13 |
 | 5. US3 — Activation + companion (P1) | 16 (T085–T100) | ~10 |
 | 6. US5 — Scratchpad (P1) | 17 (T101–T117) | ~12 |
 | 7. US6 — Workspace state + layouts (P1) | 13 (T118–T130) | ~8 |
 | 8. US4 — Activity summary (P2) | 7 (T131–T137) | ~4 |
 | 9. Polish | 12 (T138–T149) | ~7 |
-| **Total** | **150** | **~89 [P]** |
+| **Total** | **153** | **~92 [P]** |
 
-Suggested MVP scope: **Phases 1 + 2 + 3 (T001–T065)** — the smallest slice that delivers the unified cross-repo session view and validates the entire backend/CLI/frontend pipeline end-to-end.
+Suggested MVP scope: **Phases 1 + 2 + 3 (T001–T065, plus T009b and T025b from the earlier phases)** — the smallest slice that delivers the unified cross-repo session view and validates the entire backend/CLI/frontend pipeline end-to-end.
+
+### Changelog — spec-panel review, 2026-04-11
+
+Items resolved from `/sc:spec-panel` critique:
+
+- **#1 startup ordering**: T025 rewritten as single merged pass `reconcile_and_reattach`; T025b added as the integration gate against the ordering bug; T124 folded into an event-emission extension of T025.
+- **#2 session ownership**: adopted Option B — wrapper-owned sessions are read-only from the workbench. Added `ownership` column to `sessions` (T011), `SessionOwnership` enum (T013), `SESSION_READ_ONLY` error code (T014), `require_workbench_owned` guard (T048), gated `session_send_input`/`resize`/`end` (T093), ownership-gated frontend input path (T096), contract test coverage (T035, T037, T041b, T086).
+- **#3 needs_input heuristics**: pruned pattern set (T073), added adversarial corpus + FP-budget integration test (T073b), added SC-011 as a hard gate, updated FR-003 and `research.md §7`.
+- **#4 session.status ↔ alert consistency**: documented in `contracts/tauri-commands.md §2 session_list`; T035 extended to assert the snapshot invariant under concurrent transitions.
+- **#5 cargo-deny**: T009b adds `deny.toml` at build-time gate; T143 and T149 reference it as primary enforcement of FR-022.
+- **#6 SC-006 / SC-009**: demoted to Assumptions (validate-in-beta); new SC-011 added for heuristic FP ceiling; SC numbering re-flowed.
+- **#7 T027 common module**: annotated with the `mod common;` per-binary incantation note.
+- **#8 debounce window**: documented the ≈ 350 ms worst-case loss window in `contracts/tauri-commands.md §5 workspace_save`.

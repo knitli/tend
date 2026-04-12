@@ -55,16 +55,17 @@ Conventions:
 
 - **Request**: `{ project_id?: ProjectId, include_ended?: boolean }` (default `include_ended = false`)
 - **Response**: `{ sessions: SessionSummary[] }`
-- **Purpose**: Overview query. `SessionSummary` is `Session` plus a derived `activity_summary: string | null` and current `alert: Alert | null`.
+- **Purpose**: Overview query. `SessionSummary` is `Session` (including the persisted `ownership` field) plus derived fields: `activity_summary: string | null`, current `alert: Alert | null`, and `reattached_mirror: boolean` (true iff the live-session handle was created by crash-recovery reattach — this only applies to workbench-owned sessions that survived a restart; wrapper-owned sessions are always observable-only regardless of this flag). Frontend uses `ownership === "workbench" && !reattached_mirror` to decide whether the agent pane is interactive.
+- **Consistency**: Each `SessionSummary` is computed within a **single SQL read** via a `LEFT JOIN sessions → alerts` filtered by `alerts.acknowledged_at IS NULL`. Inside one `session_list` response every row is internally consistent: if `alert != null` for a session, that alert reflects the same transactional snapshot as the session's `status`. Across separate writes (a quick `working → needs_input → working` transition), `sessions.status` and the `alerts` table are updated in two statements and may be briefly out of sync — callers MUST treat `session_list` responses as point-in-time snapshots, not a stream.
 - **Spec refs**: FR-001, FR-003, FR-011.
 
 ### `session_spawn`
 
 - **Request**: `{ project_id: ProjectId, label?: string, command: string[], working_directory?: string, env?: Record<string, string> }`
 - **Response**: `{ session: Session }`
-- **Behavior**: Spawns a child process under a PTY in the requested working directory (defaulting to project root), creates the session row, and returns immediately. Session output begins flowing via `session:event` events.
+- **Behavior**: Spawns a child process under a PTY in the requested working directory (defaulting to project root), creates the session row with `ownership = "workbench"`, and returns immediately. Session output begins flowing via `session:event` events. Sessions created this way accept input via `session_send_input` / `session_resize` / `session_end`.
 - **Errors**: `PROJECT_NOT_FOUND`, `PROJECT_ARCHIVED`, `WORKING_DIRECTORY_INVALID`, `SPAWN_FAILED { os_error }`
-- **Spec refs**: FR-008 (via CLI wrapper path, see daemon IPC).
+- **Spec refs**: FR-008 (workbench-owned path). For wrapper-owned sessions see `contracts/daemon-ipc.md` `register_session`.
 
 ### `session_activate`
 
@@ -78,20 +79,22 @@ Conventions:
 
 - **Request**: `{ session_id: SessionId, bytes: string }` (base64 or plain UTF-8)
 - **Response**: `{}`
-- **Behavior**: Writes bytes to the session's PTY stdin. Used by the embedded xterm.js on user keystrokes.
-- **Errors**: `NOT_FOUND`, `SESSION_ENDED`, `WRITE_FAILED`
+- **Behavior**: Writes bytes to the session's PTY stdin. Used by the embedded xterm.js on user keystrokes. **Only valid for workbench-owned sessions** (`ownership = "workbench"`). Wrapper-owned sessions reject input with `SESSION_READ_ONLY` because the wrapper process owns the PTY and the user inputs via the launching terminal.
+- **Errors**: `NOT_FOUND`, `SESSION_ENDED`, `SESSION_READ_ONLY`, `WRITE_FAILED`
 
 ### `session_resize`
 
 - **Request**: `{ session_id: SessionId, cols: number, rows: number }`
 - **Response**: `{}`
-- **Behavior**: Resizes the PTY (`TIOCSWINSZ`).
+- **Behavior**: Resizes the PTY (`TIOCSWINSZ`). **Only valid for workbench-owned sessions**; wrapper-owned sessions return `SESSION_READ_ONLY`.
+- **Errors**: `NOT_FOUND`, `SESSION_ENDED`, `SESSION_READ_ONLY`
 
 ### `session_end`
 
 - **Request**: `{ session_id: SessionId, signal?: "TERM" | "KILL" }` (default `TERM`)
 - **Response**: `{ session: Session }`
-- **Behavior**: Sends a signal to the child. Does not block on exit.
+- **Behavior**: Sends a signal to the child. Does not block on exit. **Only valid for workbench-owned sessions**; wrapper-owned sessions return `SESSION_READ_ONLY` (terminate them by ending the process in the launching terminal).
+- **Errors**: `NOT_FOUND`, `SESSION_ENDED`, `SESSION_READ_ONLY`
 
 ### `session_acknowledge_alert`
 
@@ -190,6 +193,7 @@ Conventions:
 - **Request**: `{ state: WorkspaceState }`
 - **Response**: `{}`
 - **Behavior**: Debounced write to the `workspace_state` table. Called by the frontend on UI changes. Also flushed automatically by the backend on graceful shutdown.
+- **Debounce window**: writes are debounced **250 ms in the frontend store** and **100 ms in the backend** before landing on disk. Worst-case state-loss window on hard crash is therefore ≈ **350 ms** of unflushed UI changes. Graceful shutdown always flushes both layers synchronously.
 
 ### `layout_list`
 
@@ -268,6 +272,7 @@ Event payloads are versioned implicitly by a contract-test snapshot; changes req
 | `COMPANION_SPAWN_FAILED` | Companion terminal could not be created |
 | `WRITE_FAILED` | PTY write returned an error |
 | `SESSION_ENDED` | Operation requires a live session |
+| `SESSION_READ_ONLY` | Operation not valid on a wrapper-owned session; input via the launching terminal instead |
 | `CONTENT_EMPTY` | Note / reminder content rejected |
 | `NAME_TAKEN` | Layout name already exists |
 | `INTERNAL` | Fallback; `message` carries detail |

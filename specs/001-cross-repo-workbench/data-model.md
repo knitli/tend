@@ -98,6 +98,7 @@ Validation (enforced in Rust, not SQL):
 | `pid` | INTEGER NULL | OS pid of the agent child process (null before spawn, null after exit) |
 | `status` | TEXT NOT NULL | Enum: `working` \| `idle` \| `needs_input` \| `ended` \| `error` |
 | `status_source` | TEXT NOT NULL | Enum: `ipc` \| `heuristic` — tracks whether the status came from cooperative IPC or fallback detection |
+| `ownership` | TEXT NOT NULL | Enum: `workbench` \| `wrapper` — who owns the PTY master end; determines whether `session_send_input` / `session_resize` / `session_end` are accepted (see spec FR-008 and research.md §6) |
 | `started_at` | TEXT NOT NULL | ISO-8601 UTC |
 | `ended_at` | TEXT NULL | Set on exit |
 | `last_activity_at` | TEXT NOT NULL | Updated on every PTY output byte |
@@ -144,8 +145,10 @@ Validation:
 
 - `status ∈ {working, idle, needs_input, ended, error}` — enforced in Rust, CHECK constraint in SQL
 - `status_source ∈ {ipc, heuristic}`
+- `ownership ∈ {workbench, wrapper}` — CHECK constraint; immutable after row creation
 - `pid` must be set whenever `status ∈ {working, idle, needs_input}` and null when `ended`/`error`
 - `ended_at` must be set iff `status ∈ {ended, error}`
+- `ownership = wrapper` implies the backend MUST reject `session_send_input`, `session_resize`, and `session_end` with `SESSION_READ_ONLY` — the wrapper process owns the PTY and the user inputs via the launching terminal
 
 Lifecycle / persistence rules:
 
@@ -348,6 +351,7 @@ pub struct Session {
     pub pid: Option<Pid>,
     pub status: SessionStatus,
     pub status_source: StatusSource,
+    pub ownership: SessionOwnership,
     pub started_at: DateTime<Utc>,
     pub ended_at: Option<DateTime<Utc>>,
     pub last_activity_at: DateTime<Utc>,
@@ -357,6 +361,7 @@ pub struct Session {
 
 pub enum SessionStatus { Working, Idle, NeedsInput, Ended, Error }
 pub enum StatusSource { Ipc, Heuristic }
+pub enum SessionOwnership { Workbench, Wrapper }
 
 pub struct CompanionTerminal { /* … */ }
 pub struct Note { /* … */ }
@@ -380,12 +385,13 @@ pub struct AlertId(i64);
 
 ### 3.2 In-memory-only types (runtime state)
 
-**`LiveSession`** — the actor handle for an active session. Owns the PTY, the reader/writer/monitor tasks, a ring buffer of recent output, and a broadcast channel of session events.
+**`LiveSession`** — the actor handle for an active session. For workbench-owned sessions in their first lifetime, owns the PTY master end; for wrapper-owned sessions and for workbench-owned sessions reattached after a workbench restart, runs in **attached-mirror** mode with no PTY ownership (the `pty` field is `None`, writes are rejected by the backend with `SESSION_READ_ONLY`, and the handle exists only to broadcast session events to subscribers). The `reattached_mirror: bool` flag distinguishes the post-restart workbench-owned mirror from a live workbench-owned handle — see `research.md §6` restart caveat and `tasks.md T025` for the reattach pass.
 
 ```rust
 pub struct LiveSession {
     pub record: Session,
-    pub pty: Arc<dyn Pty>,
+    pub pty: Option<Arc<dyn Pty>>, // None for wrapper-owned and reattached-mirror
+    pub reattached_mirror: bool,    // true iff this handle was created by `reconcile_and_reattach`
     pub output_ring: ArrayQueue<OutputFrame>, // last 200 lines
     pub events: broadcast::Sender<SessionEvent>,
     pub supervisor: JoinHandle<()>,
@@ -420,6 +426,7 @@ These invariants are maintained by the backend and tested in integration tests:
 6. **`workspace_state` has exactly one row.** Enforced by `CHECK(id = 1)` and reconciled on startup.
 7. **Companion terminal's initial cwd is always the session's `working_directory` at the time of pairing**, not the project root. Respects worktrees and submodules.
 8. **Every session's `last_activity_at` is monotonically non-decreasing.** Clock adjustments are clamped, not reversed.
+9. **Wrapper-owned sessions are read-only from the workbench.** `session_send_input`, `session_resize`, and `session_end` MUST return `SESSION_READ_ONLY` for any session with `ownership = wrapper`. The wrapper process owns the PTY master and the user inputs via the launching terminal. `ownership` is set at row creation and is immutable.
 
 ---
 

@@ -224,7 +224,7 @@ Re-evaluating the gates against the completed Phase 1 design:
 | Small focused files | **PASS** | Directory breakdown maps one concern per file; no module is planned > 500 LoC. |
 | Immutable data flow | **PASS** | Backend types are `Clone`-friendly newtypes; mutations funneled through `WorkbenchState`. Frontend stores use Svelte 5 runes with derived state. |
 | Security / input validation | **PASS** | Every Tauri command and daemon verb lists its error codes in the contract; contract tests enforce them. Socket permissions documented. |
-| Failure investigation | **PASS** | `status_source = heuristic` tracks fallback detection; crash recovery on workbench startup reconciles stale session rows to `ended` rather than leaving them spinning. |
+| Failure investigation | **PASS** | `status_source = heuristic` tracks fallback detection; crash recovery on workbench startup runs a single-pass `reconcile_and_reattach` (T025) — reattaching live pids as attached-mirror handles and marking dead pids `ended` in one transaction — eliminating a latent ordering bug flagged in the spec-panel review. T025b is the integration gate that enforces this invariant. |
 | Temporal awareness | **PASS** | Timestamps are ISO-8601 UTC throughout data model; age is derived, not stored. |
 | Professional honesty | **PASS** | Known v1 gaps list in research.md §16 matches the quickstart's "Known v1 limitations" section verbatim in intent. |
 
