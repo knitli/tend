@@ -7,6 +7,7 @@
 #![warn(missing_docs)]
 
 pub mod commands;
+pub mod companion;
 pub mod daemon;
 pub mod db;
 pub mod error;
@@ -102,6 +103,13 @@ pub fn run() {
             commands::projects::project_unarchive,
             commands::sessions::session_list,
             commands::sessions::session_spawn,
+            commands::sessions::session_activate,
+            commands::sessions::session_send_input,
+            commands::sessions::session_resize,
+            commands::sessions::session_end,
+            commands::companions::companion_send_input,
+            commands::companions::companion_resize,
+            commands::companions::companion_respawn,
             commands::notifications::notification_preference_get,
             commands::notifications::notification_preference_set,
             commands::notifications::session_acknowledge_alert,

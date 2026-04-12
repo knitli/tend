@@ -87,6 +87,32 @@ async fn emit_envelope(app: &AppHandle, db: &Database, envelope: SessionEventEnv
                 },
             );
         }
+        SessionEventEnvelope::CompanionSpawned {
+            session_id,
+            companion,
+        } => {
+            let _ = app.emit(
+                "companion:spawned",
+                CompanionSpawnedPayload {
+                    session_id: session_id.get(),
+                    companion: CompanionInfo {
+                        id: companion.id.get(),
+                        pid: companion.pid.map(|p| p.0 as i64),
+                    },
+                },
+            );
+        }
+        SessionEventEnvelope::CompanionOutput { session_id, bytes } => {
+            use base64::Engine;
+            let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            let _ = app.emit(
+                "companion:output",
+                CompanionOutputPayload {
+                    session_id: session_id.get(),
+                    bytes: encoded,
+                },
+            );
+        }
     }
 }
 
@@ -117,4 +143,22 @@ struct AlertClearedPayload {
 #[derive(Clone, Serialize)]
 struct ProjectPathPayload {
     project_id: i64,
+}
+
+#[derive(Clone, Serialize)]
+struct CompanionSpawnedPayload {
+    session_id: i64,
+    companion: CompanionInfo,
+}
+
+#[derive(Clone, Serialize)]
+struct CompanionInfo {
+    id: i64,
+    pid: Option<i64>,
+}
+
+#[derive(Clone, Serialize)]
+struct CompanionOutputPayload {
+    session_id: i64,
+    bytes: String,
 }

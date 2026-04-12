@@ -5,6 +5,7 @@
   import Sidebar from '$lib/components/Sidebar.svelte';
   import SessionList from '$lib/components/SessionList.svelte';
   import AlertBar from '$lib/components/AlertBar.svelte';
+  import SplitView from '$lib/components/SplitView.svelte';
   import SettingsDialog from '$lib/components/SettingsDialog.svelte';
   import { projectsStore } from '$lib/stores/projects.svelte';
   import { sessionsStore } from '$lib/stores/sessions.svelte';
@@ -76,7 +77,7 @@
     </div>
 
     <div class="content-panel">
-      {#if activeSession}
+      {#if activeSession && activeSessionId !== null}
         <div class="active-session-header">
           <h2>{activeSession.label}</h2>
           <span class="session-status">{activeSession.status}</span>
@@ -84,11 +85,9 @@
             <span class="readonly-banner">Read-only</span>
           {/if}
         </div>
-        <div class="terminal-placeholder">
-          <p class="muted">
-            Terminal pane will be wired in the activation task (T085+).
-          </p>
-        </div>
+        {#key activeSessionId}
+          <SplitView sessionId={activeSessionId} session={activeSession} />
+        {/key}
       {:else}
         <div class="empty-content">
           <h2>agentui</h2>
@@ -192,14 +191,6 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.03em;
-  }
-
-  .terminal-placeholder {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--space-6, 1.5rem);
   }
 
   .empty-content {

@@ -1,10 +1,12 @@
 //! Tauri command handlers for session management.
 //!
 //! T049: `session_list` and `session_spawn` (GUI-initiated).
-//! T093: `session_send_input`, `session_resize`, `session_end` (US3, stubs for now).
+//! T092: `session_activate` (US3).
+//! T093: `session_send_input`, `session_resize`, `session_end` (US3).
 
+use crate::companion::CompanionService;
 use crate::error::{ErrorCode, WorkbenchError};
-use crate::model::ProjectId;
+use crate::model::{ProjectId, SessionId};
 use crate::session::SessionService;
 use crate::state::WorkbenchState;
 use serde::Deserialize;
@@ -91,6 +93,146 @@ pub async fn session_spawn(
     // supervisor tasks, so no separate insert is needed here.
     let (session, _handle) =
         SessionService::spawn_local(&state, project_id, &label, &cwd, &args.command, &env).await?;
+
+    Ok(serde_json::json!({ "session": session }))
+}
+
+/// Args for `session_activate`.
+#[derive(Deserialize)]
+pub struct SessionActivateArgs {
+    /// Session id to activate.
+    pub session_id: i64,
+}
+
+/// Activate a session — brings it to the foreground and ensures a companion
+/// terminal exists.
+#[tauri::command]
+pub async fn session_activate(
+    state: State<'_, WorkbenchState>,
+    args: SessionActivateArgs,
+) -> Result<serde_json::Value, WorkbenchError> {
+    let session_id = SessionId::new(args.session_id);
+
+    // Fetch the session.
+    let sessions = SessionService::list(&state, None, true).await?;
+    let session_summary = sessions
+        .into_iter()
+        .find(|s| s.session.id == session_id)
+        .ok_or_else(|| WorkbenchError::not_found(format!("session {session_id}")))?;
+
+    if session_summary.session.status == crate::model::SessionStatus::Ended
+        || session_summary.session.status == crate::model::SessionStatus::Error
+    {
+        return Err(WorkbenchError::new(
+            ErrorCode::SessionEnded,
+            format!("session {session_id} has ended"),
+        ));
+    }
+
+    // Ensure companion terminal exists.
+    let companion = CompanionService::ensure(&state, session_id).await?;
+
+    Ok(serde_json::json!({
+        "session": session_summary.session,
+        "companion": companion,
+    }))
+}
+
+/// Args for `session_send_input`.
+#[derive(Deserialize)]
+pub struct SessionSendInputArgs {
+    /// Session id.
+    pub session_id: i64,
+    /// Bytes to write (UTF-8 string).
+    pub bytes: String,
+}
+
+/// Write bytes to a workbench-owned session's PTY stdin.
+#[tauri::command]
+pub async fn session_send_input(
+    state: State<'_, WorkbenchState>,
+    args: SessionSendInputArgs,
+) -> Result<serde_json::Value, WorkbenchError> {
+    let session_id = SessionId::new(args.session_id);
+
+    // Ownership check — rejects wrapper-owned sessions with SESSION_READ_ONLY.
+    SessionService::require_workbench_owned(&state.db, session_id).await?;
+
+    let live = state.live_sessions.read().await;
+    let handle = live.get(&session_id).ok_or_else(|| {
+        WorkbenchError::new(ErrorCode::SessionEnded, format!("session {session_id} not live"))
+    })?;
+
+    handle.write(args.bytes.as_bytes())?;
+    Ok(serde_json::json!({}))
+}
+
+/// Args for `session_resize`.
+#[derive(Deserialize)]
+pub struct SessionResizeArgs {
+    /// Session id.
+    pub session_id: i64,
+    /// New column count.
+    pub cols: u16,
+    /// New row count.
+    pub rows: u16,
+}
+
+/// Resize a workbench-owned session's PTY.
+#[tauri::command]
+pub async fn session_resize(
+    state: State<'_, WorkbenchState>,
+    args: SessionResizeArgs,
+) -> Result<serde_json::Value, WorkbenchError> {
+    let session_id = SessionId::new(args.session_id);
+
+    SessionService::require_workbench_owned(&state.db, session_id).await?;
+
+    let live = state.live_sessions.read().await;
+    let handle = live.get(&session_id).ok_or_else(|| {
+        WorkbenchError::new(ErrorCode::SessionEnded, format!("session {session_id} not live"))
+    })?;
+
+    handle.resize(args.cols, args.rows)?;
+    Ok(serde_json::json!({}))
+}
+
+/// Args for `session_end`.
+#[derive(Deserialize)]
+pub struct SessionEndArgs {
+    /// Session id.
+    pub session_id: i64,
+    /// Signal to send (default TERM).
+    #[serde(default)]
+    pub signal: Option<String>,
+}
+
+/// End a workbench-owned session by sending a signal to the child process.
+#[tauri::command]
+pub async fn session_end(
+    state: State<'_, WorkbenchState>,
+    args: SessionEndArgs,
+) -> Result<serde_json::Value, WorkbenchError> {
+    let session_id = SessionId::new(args.session_id);
+
+    SessionService::require_workbench_owned(&state.db, session_id).await?;
+
+    let live = state.live_sessions.read().await;
+    let handle = live.get(&session_id).ok_or_else(|| {
+        WorkbenchError::new(ErrorCode::SessionEnded, format!("session {session_id} not live"))
+    })?;
+
+    handle.end()?;
+
+    // Fetch updated session for the response (the reaper will mark it ended
+    // asynchronously, so we return the current state).
+    drop(live);
+    let sessions = SessionService::list(&state, None, true).await?;
+    let session = sessions
+        .into_iter()
+        .find(|s| s.session.id == session_id)
+        .map(|s| s.session)
+        .ok_or_else(|| WorkbenchError::not_found(format!("session {session_id}")))?;
 
     Ok(serde_json::json!({ "session": session }))
 }

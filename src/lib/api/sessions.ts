@@ -147,6 +147,18 @@ export async function sessionEnd(
   });
 }
 
+/**
+ * Activate a session — ensures a companion terminal exists and returns both.
+ */
+export async function sessionActivate(
+  opts: { sessionId: number },
+): Promise<{ session: Session; companion: import('./companions').CompanionTerminal }> {
+  return invoke<{ session: Session; companion: import('./companions').CompanionTerminal }>(
+    'session_activate',
+    { args: { session_id: opts.sessionId } },
+  );
+}
+
 // ---------- Event subscribers ----------
 
 /**

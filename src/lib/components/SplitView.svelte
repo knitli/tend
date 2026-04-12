@@ -1,0 +1,152 @@
+<!--
+  T098: SplitView — horizontal split with AgentPane (left) + CompanionPane (right).
+
+  Calls sessionActivate on mount to fetch the session + companion,
+  has a draggable divider, cleans up on unmount.
+-->
+<script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
+  import AgentPane from '$lib/components/AgentPane.svelte';
+  import CompanionPane from '$lib/components/CompanionPane.svelte';
+  import { sessionActivate, type Session, type SessionSummary } from '$lib/api/sessions';
+  import type { CompanionTerminal } from '$lib/api/companions';
+
+  interface Props {
+    sessionId: number;
+    /** Full session summary from the store — used for display. */
+    session: SessionSummary;
+  }
+
+  let { sessionId, session }: Props = $props();
+
+  let companion = $state<CompanionTerminal | null>(null);
+  let activating = $state(true);
+  let error = $state<string | null>(null);
+
+  // Divider drag state.
+  let splitPercent = $state(50);
+  let dragging = $state(false);
+  let containerEl: HTMLDivElement | undefined = $state();
+
+  onMount(async () => {
+    try {
+      const result = await sessionActivate({ sessionId });
+      companion = result.companion;
+      error = null;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      error = msg;
+    } finally {
+      activating = false;
+    }
+  });
+
+  function handleMouseDown(e: MouseEvent) {
+    e.preventDefault();
+    dragging = true;
+
+    function handleMouseMove(e: MouseEvent) {
+      if (!containerEl) return;
+      const rect = containerEl.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const pct = Math.max(20, Math.min(80, (x / rect.width) * 100));
+      splitPercent = pct;
+    }
+
+    function handleMouseUp() {
+      dragging = false;
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    }
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }
+</script>
+
+<div class="split-view" bind:this={containerEl} class:dragging>
+  {#if activating}
+    <div class="loading">
+      <p class="muted">Activating session...</p>
+    </div>
+  {:else if error}
+    <div class="error-state">
+      <p class="muted">Failed to activate: {error}</p>
+    </div>
+  {:else}
+    <div class="left-pane" style="flex: {splitPercent} 0 0%">
+      <AgentPane {session} />
+    </div>
+
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div
+      class="divider"
+      role="separator"
+      aria-orientation="vertical"
+      onmousedown={handleMouseDown}
+    ></div>
+
+    <div class="right-pane" style="flex: {100 - splitPercent} 0 0%">
+      {#if companion}
+        <CompanionPane {sessionId} />
+      {:else}
+        <div class="no-companion">
+          <p class="muted">No companion terminal available.</p>
+        </div>
+      {/if}
+    </div>
+  {/if}
+</div>
+
+<style>
+  .split-view {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .split-view.dragging {
+    cursor: col-resize;
+    user-select: none;
+  }
+
+  .left-pane,
+  .right-pane {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .divider {
+    width: 4px;
+    flex-shrink: 0;
+    background: var(--color-border, #2a2d35);
+    cursor: col-resize;
+    transition: background-color 150ms;
+  }
+
+  .divider:hover,
+  .split-view.dragging .divider {
+    background: var(--color-accent, #60a5fa);
+  }
+
+  .loading,
+  .error-state,
+  .no-companion {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+  }
+
+  .muted {
+    margin: 0;
+    color: var(--color-text-muted, #8b8fa3);
+    font-size: 0.875rem;
+  }
+</style>
