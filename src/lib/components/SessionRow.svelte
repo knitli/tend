@@ -8,10 +8,12 @@
   interface Props {
     session: SessionSummary;
     projectName?: string;
+    /** True when this session was referenced by a layout restore but is no longer running. */
+    missing?: boolean;
     onActivate?: (session: SessionSummary) => void;
   }
 
-  let { session, projectName = '', onActivate }: Props = $props();
+  let { session, projectName = '', missing = false, onActivate }: Props = $props();
 
   let tick = $state(Date.now());
   const tickInterval = setInterval(() => { tick = Date.now(); }, 30_000);
@@ -79,6 +81,9 @@
   <div class="session-main">
     <div class="session-label-row">
       <span class="session-label">{session.label}</span>
+      {#if missing}
+        <span class="badge badge-missing" title="Session no longer running">not running</span>
+      {/if}
       {#if !isInteractive}
         <span class="badge badge-readonly" title="Read-only session">RO</span>
       {/if}
@@ -206,6 +211,15 @@
     font-size: 0.625rem;
     text-transform: uppercase;
     letter-spacing: 0.03em;
+  }
+
+  .badge-missing {
+    background: var(--color-muted-bg, #1e2028);
+    color: var(--color-text-muted, #8b8fa3);
+    font-size: 0.5625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    opacity: 0.8;
   }
 
   .badge-pulse {

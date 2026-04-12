@@ -26,6 +26,8 @@
 
   function handleSelectProject(project: Project): void {
     selectedProjectId = project.id;
+    // L4: persist active project selection.
+    workspaceStore.update({ active_project_ids: project.id !== null ? [project.id] : [] });
   }
 
   function handleActivateSession(session: SessionSummary): void {
@@ -41,6 +43,11 @@
       // 1. Workspace state first.
       await workspaceStore.hydrate();
       const ws = workspaceStore.current;
+
+      // L4: restore active project + session from workspace state.
+      if (ws.active_project_ids.length > 0) {
+        selectedProjectId = ws.active_project_ids[0];
+      }
       if (ws.focused_session_id !== null) {
         activeSessionId = ws.focused_session_id;
       }
@@ -58,14 +65,27 @@
       cleanup = unsub;
     });
 
-    // Log hydration errors for debugging (non-blocking)
-    Promise.all([boot, subscribe]).catch((err) => {
-      console.warn('Store hydration/subscription failed:', err);
-    });
+    // M6: Use Tauri window close event so flush completes before exit.
+    let closeCleanup: (() => void) | undefined;
+    (async () => {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const unlisten = await getCurrentWindow().onCloseRequested(async () => {
+          await workspaceStore.flush();
+        });
+        closeCleanup = unlisten;
+      } catch {
+        // Not in Tauri context (dev/test) — onMount cleanup handles flush.
+      }
+    })();
+
+    // L5: errors are surfaced via store .error fields; no console.warn.
+    Promise.all([boot, subscribe]).catch(() => {});
 
     return () => {
       cleanup?.();
-      // Flush workspace state on unmount / close.
+      closeCleanup?.();
+      // Best-effort flush on unmount (fire-and-forget for non-Tauri contexts).
       workspaceStore.flush();
     };
   });
@@ -89,7 +109,7 @@
         >
           Overview
         </button>
-        <LayoutSwitcher />
+        <LayoutSwitcher onMissingSessions={(ids) => { missingSessions = new Set(ids); }} />
         <button
           class="settings-btn"
           onclick={() => settingsOpen = true}
@@ -102,6 +122,7 @@
       <AlertBar onActivateSession={handleActivateSession} />
       <SessionList
         {selectedProjectId}
+        {missingSessions}
         onActivateSession={handleActivateSession}
       />
     </div>

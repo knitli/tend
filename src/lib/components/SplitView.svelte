@@ -11,6 +11,7 @@
   import Scratchpad from '$lib/components/Scratchpad.svelte';
   import { sessionActivate, type Session, type SessionSummary } from '$lib/api/sessions';
   import type { CompanionTerminal } from '$lib/api/companions';
+  import { workspaceStore } from '$lib/stores/workspace.svelte';
 
   interface Props {
     sessionId: number;
@@ -42,14 +43,21 @@
     }
   });
 
-  // T117: Scratchpad toggle.
-  let scratchpadVisible = $state(false);
+  // T117: Scratchpad toggle. L3: persist via workspace ui map.
+  let scratchpadVisible = $state(
+    workspaceStore.current.ui?.scratchpad_visible === true
+  );
+
+  function toggleScratchpad(): void {
+    scratchpadVisible = !scratchpadVisible;
+    workspaceStore.setUi('scratchpad_visible', scratchpadVisible);
+  }
 
   function handleGlobalKeydown(e: KeyboardEvent) {
     // Ctrl+Shift+S toggles the scratchpad.
     if (e.key === 'S' && e.ctrlKey && e.shiftKey) {
       e.preventDefault();
-      scratchpadVisible = !scratchpadVisible;
+      toggleScratchpad();
     }
   }
 
@@ -152,7 +160,7 @@
       <div class="scratchpad-panel">
         <div class="scratchpad-toolbar">
           <span class="scratchpad-title">Scratchpad</span>
-          <button class="close-btn" onclick={() => scratchpadVisible = false} title="Close scratchpad (Ctrl+Shift+S)">
+          <button class="close-btn" onclick={toggleScratchpad} title="Close scratchpad (Ctrl+Shift+S)">
             Close
           </button>
         </div>

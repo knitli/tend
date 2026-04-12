@@ -71,8 +71,17 @@ export interface CompanionOutputEvent {
   readonly bytes: string;
 }
 
+/** Best-effort startup event — may be missed if the frontend listener
+ * attaches after the backend emits. Always call `workspace_get` on mount
+ * as the primary hydration path (M1 documented). */
 export interface WorkspaceRestoredEvent {
-  readonly state: unknown;
+  readonly state: {
+    readonly version: number;
+    readonly active_project_ids: number[];
+    readonly focused_session_id: number | null;
+    readonly pane_layout: string;
+    readonly ui: Record<string, unknown>;
+  };
 }
 
 /** Map from event name → payload. Used by [`listen`] for type safety. */

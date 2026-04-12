@@ -18,6 +18,7 @@
 mod common;
 
 use agentui_workbench::session::recovery::reconcile_and_reattach;
+use agentui_workbench::state::SessionEventEnvelope;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -47,6 +48,10 @@ async fn reconcile_reattaches_live_and_ends_dead() {
 
         // 2. Insert a wrapper-owned row pointing at that live pid.
         let live_session = common::seed_wrapper_session(&state, project_id, Some(live_pid)).await;
+
+        // T124: subscribe to event_bus BEFORE reconcile so we can assert
+        // that session:spawned is broadcast for the reattached session.
+        let mut rx = state.event_bus.subscribe();
 
         // 3. Run reconcile.
         let report = reconcile_and_reattach(&state).await.expect("reconcile ok");
@@ -81,6 +86,23 @@ async fn reconcile_reattaches_live_and_ends_dead() {
             "expected live_sessions to contain a handle for the reattached session"
         );
         drop(live_sessions);
+
+        // T124: Assert session:spawned was broadcast for the reattached session
+        // within 500 ms.
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(500);
+        let mut found_spawned = false;
+        while let Ok(Ok(envelope)) = tokio::time::timeout_at(deadline, rx.recv()).await {
+            if let SessionEventEnvelope::Spawned { session } = envelope {
+                if session.id == live_session {
+                    found_spawned = true;
+                    break;
+                }
+            }
+        }
+        assert!(
+            found_spawned,
+            "T124: session:spawned must be broadcast for reattached session {live_session:?}"
+        );
 
         // 5. SIGKILL the child and give the OS a moment to reap it, then
         //    seed another row with the now-defunct pid. sysinfo should report

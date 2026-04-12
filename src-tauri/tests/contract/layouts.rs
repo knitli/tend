@@ -1,7 +1,7 @@
 //! T119: `LayoutService` contract tests.
 //!
-//! Exercises layout_list, layout_save (+ NAME_TAKEN), layout_restore (returns
-//! missing_sessions for dead refs), and layout_delete.
+//! Exercises layout_list, layout_save (+ NAME_TAKEN + overwrite), layout_restore
+//! (returns missing_sessions for dead refs), and layout_delete.
 
 use agentui_workbench::error::ErrorCode;
 use agentui_workbench::model::{LayoutId, ProjectId, SessionId, WorkspaceState};
@@ -27,7 +27,7 @@ async fn layout_save_and_list() {
         ..Default::default()
     };
 
-    let layout = LayoutService::save(&state.db, "my layout", &ws)
+    let layout = LayoutService::save(&state.db, "my layout", &ws, false)
         .await
         .expect("save");
 
@@ -39,22 +39,78 @@ async fn layout_save_and_list() {
     assert_eq!(layouts[0].name, "my layout");
 }
 
-/// Duplicate name returns NAME_TAKEN.
+/// Duplicate name returns NAME_TAKEN when overwrite is false.
 #[tokio::test]
 async fn layout_save_name_taken() {
     let state = crate::common::mock_state().await;
 
     let ws = WorkspaceState::default();
 
-    LayoutService::save(&state.db, "dup", &ws)
+    LayoutService::save(&state.db, "dup", &ws, false)
         .await
         .expect("first save");
 
-    let err = LayoutService::save(&state.db, "dup", &ws)
+    let err = LayoutService::save(&state.db, "dup", &ws, false)
         .await
         .expect_err("duplicate must fail");
 
     assert_eq!(err.code, ErrorCode::NameTaken);
+}
+
+/// Empty/whitespace-only name returns CONTENT_EMPTY (M5).
+#[tokio::test]
+async fn layout_save_rejects_empty_name() {
+    let state = crate::common::mock_state().await;
+    let ws = WorkspaceState::default();
+
+    let err = LayoutService::save(&state.db, "   ", &ws, false)
+        .await
+        .expect_err("whitespace-only name must fail");
+
+    assert_eq!(err.code, ErrorCode::ContentEmpty);
+}
+
+/// Name exceeding 255 chars returns CONTENT_EMPTY (M7).
+#[tokio::test]
+async fn layout_save_rejects_long_name() {
+    let state = crate::common::mock_state().await;
+    let ws = WorkspaceState::default();
+    let long_name = "a".repeat(256);
+
+    let err = LayoutService::save(&state.db, &long_name, &ws, false)
+        .await
+        .expect_err("long name must fail");
+
+    assert_eq!(err.code, ErrorCode::ContentEmpty);
+}
+
+/// Duplicate name with overwrite=true updates the existing layout (H2).
+#[tokio::test]
+async fn layout_save_overwrite_replaces_existing() {
+    let state = crate::common::mock_state().await;
+
+    let ws1 = WorkspaceState {
+        pane_layout: "split".into(),
+        ..Default::default()
+    };
+    let original = LayoutService::save(&state.db, "overwrite-test", &ws1, false)
+        .await
+        .expect("first save");
+
+    let ws2 = WorkspaceState {
+        pane_layout: "agent_only".into(),
+        ..Default::default()
+    };
+    let updated = LayoutService::save(&state.db, "overwrite-test", &ws2, true)
+        .await
+        .expect("overwrite save");
+
+    assert_eq!(updated.id, original.id, "id must be preserved on overwrite");
+    assert_eq!(updated.payload.pane_layout, "agent_only");
+
+    // Only one layout should exist.
+    let layouts = LayoutService::list(&state.db).await.expect("list");
+    assert_eq!(layouts.len(), 1);
 }
 
 /// Restore returns the layout state + empty missing_sessions when all sessions
@@ -71,11 +127,7 @@ async fn layout_restore_happy() {
     {
         let handle =
             agentui_workbench::session::live::LiveSessionHandle::attached_mirror(session_id);
-        state
-            .live_sessions
-            .write()
-            .await
-            .insert(session_id, handle);
+        state.live_sessions.write().await.insert(session_id, handle);
     }
 
     let ws = WorkspaceState {
@@ -83,7 +135,7 @@ async fn layout_restore_happy() {
         active_project_ids: vec![project_id],
         ..Default::default()
     };
-    let layout = LayoutService::save(&state.db, "test-restore", &ws)
+    let layout = LayoutService::save(&state.db, "test-restore", &ws, false)
         .await
         .expect("save");
 
@@ -105,7 +157,7 @@ async fn layout_restore_with_missing_sessions() {
         active_project_ids: vec![ProjectId::new(1)],
         ..Default::default()
     };
-    let layout = LayoutService::save(&state.db, "dead-ref", &ws)
+    let layout = LayoutService::save(&state.db, "dead-ref", &ws, false)
         .await
         .expect("save");
 
@@ -121,7 +173,7 @@ async fn layout_restore_with_missing_sessions() {
 async fn layout_delete_happy() {
     let state = crate::common::mock_state().await;
 
-    let layout = LayoutService::save(&state.db, "del", &WorkspaceState::default())
+    let layout = LayoutService::save(&state.db, "del", &WorkspaceState::default(), false)
         .await
         .expect("save");
 

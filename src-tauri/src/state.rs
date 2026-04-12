@@ -132,6 +132,8 @@ pub struct WorkbenchState {
     pub companion_locks: Arc<RwLock<HashMap<SessionId, Arc<Mutex<()>>>>>,
     /// Broadcast bus for session events forwarded to the frontend.
     pub event_bus: broadcast::Sender<SessionEventEnvelope>,
+    /// Debounced workspace writer (C1/C2 fix). Initialized once in `run()`.
+    pub workspace_debouncer: Option<crate::workspace::WorkspaceDebouncer>,
 }
 
 impl WorkbenchState {
@@ -144,7 +146,15 @@ impl WorkbenchState {
             live_companions: Arc::new(RwLock::new(HashMap::new())),
             companion_locks: Arc::new(RwLock::new(HashMap::new())),
             event_bus,
+            workspace_debouncer: None,
         }
+    }
+
+    /// Initialize the workspace debouncer. Called once from `run()` after
+    /// the tokio runtime is available.
+    pub fn init_debouncer(&mut self) {
+        self.workspace_debouncer =
+            Some(crate::workspace::WorkspaceDebouncer::spawn(self.db.clone()));
     }
 
     /// Get or create a per-session mutex for companion operations.

@@ -16,31 +16,43 @@ pub async fn workspace_get(
     Ok(WorkspaceGetResponse { state: ws })
 }
 
-/// Persist workspace state (debounced by the frontend store).
+/// Persist workspace state. Backend debounces at 100 ms; frontend debounces
+/// at 250 ms. Graceful shutdown flushes both layers synchronously.
 #[tauri::command]
 pub async fn workspace_save(
     state: State<'_, WorkbenchState>,
     args: WorkspaceSaveArgs,
 ) -> WorkbenchResult<()> {
-    WorkspaceService::save(&state.db, &args.state).await
+    if let Some(ref debouncer) = state.workspace_debouncer {
+        debouncer.save(args.state);
+        Ok(())
+    } else {
+        // Fallback: direct write (tests or debouncer not yet initialized).
+        WorkspaceService::save(&state.db, &args.state).await
+    }
 }
 
 /// List all named layouts.
 #[tauri::command]
-pub async fn layout_list(
-    state: State<'_, WorkbenchState>,
-) -> WorkbenchResult<LayoutListResponse> {
+pub async fn layout_list(state: State<'_, WorkbenchState>) -> WorkbenchResult<LayoutListResponse> {
     let layouts = LayoutService::list(&state.db).await?;
     Ok(LayoutListResponse { layouts })
 }
 
-/// Save a named layout snapshot.
+/// Save a named layout snapshot. Pass `overwrite: true` to replace an
+/// existing layout with the same name (H2 fix).
 #[tauri::command]
 pub async fn layout_save(
     state: State<'_, WorkbenchState>,
     args: LayoutSaveArgs,
 ) -> WorkbenchResult<LayoutSaveResponse> {
-    let layout = LayoutService::save(&state.db, &args.name, &args.state).await?;
+    let layout = LayoutService::save(
+        &state.db,
+        &args.name,
+        &args.state,
+        args.overwrite.unwrap_or(false),
+    )
+    .await?;
     Ok(LayoutSaveResponse { layout })
 }
 
@@ -92,10 +104,12 @@ pub struct LayoutListResponse {
 /// Args for `layout_save`.
 #[derive(serde::Deserialize)]
 pub struct LayoutSaveArgs {
-    /// Layout name (must be unique).
+    /// Layout name (must be unique unless overwrite is true).
     name: String,
     /// Workspace state snapshot.
     state: WorkspaceState,
+    /// If true, overwrite an existing layout with the same name.
+    overwrite: Option<bool>,
 }
 
 /// Response for `layout_save`.

@@ -1,5 +1,7 @@
-<!-- T129: Layout switcher — dropdown listing saved layouts with save/delete. -->
+<!-- T129: Layout switcher — dropdown listing saved layouts with save/delete.
+     M3: click-outside-to-close. M4: keyboard nav (Escape, ArrowUp/Down). -->
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
   import {
     layoutList,
     layoutSave,
@@ -8,13 +10,24 @@
     type Layout,
     type WorkspaceState,
   } from '$lib/api/workspace';
+  import { WorkbenchError } from '$lib/api/invoke';
   import { workspaceStore } from '$lib/stores/workspace.svelte';
+
+  interface Props {
+    onMissingSessions?: (ids: number[]) => void;
+  }
+
+  let { onMissingSessions }: Props = $props();
 
   let layouts = $state<Layout[]>([]);
   let open = $state(false);
   let saveName = $state('');
   let saving = $state(false);
   let error = $state<string | null>(null);
+  let rootEl: HTMLDivElement | undefined = $state();
+  let triggerEl: HTMLButtonElement | undefined = $state();
+  /** Index of the focused layout item for roving tabindex (-1 = none). */
+  let focusedIndex = $state(-1);
 
   async function refresh(): Promise<void> {
     try {
@@ -35,7 +48,20 @@
       saveName = '';
       await refresh();
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      if (err instanceof WorkbenchError && err.code === 'NAME_TAKEN') {
+        const confirmed = confirm(`Layout "${name}" already exists. Overwrite?`);
+        if (confirmed) {
+          try {
+            await layoutSave(name, workspaceStore.current, true);
+            saveName = '';
+            await refresh();
+          } catch (retryErr) {
+            error = retryErr instanceof Error ? retryErr.message : String(retryErr);
+          }
+        }
+      } else {
+        error = err instanceof Error ? err.message : String(err);
+      }
     } finally {
       saving = false;
     }
@@ -45,11 +71,12 @@
     error = null;
     try {
       const result = await layoutRestore(id);
-      workspaceStore.update(result.state);
+      workspaceStore.replace(result.state);
       if (result.missing_sessions.length > 0) {
         error = `${result.missing_sessions.length} session(s) no longer running`;
+        onMissingSessions?.(result.missing_sessions);
       }
-      open = false;
+      close();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     }
@@ -66,19 +93,78 @@
   }
 
   function toggle(): void {
-    open = !open;
     if (open) {
+      close();
+    } else {
+      open = true;
+      focusedIndex = -1;
       refresh();
     }
   }
+
+  function close(): void {
+    open = false;
+    focusedIndex = -1;
+    triggerEl?.focus();
+  }
+
+  // M3: click-outside-to-close.
+  function handleDocumentClick(event: MouseEvent): void {
+    if (open && rootEl && !rootEl.contains(event.target as Node)) {
+      close();
+    }
+  }
+
+  // M4: keyboard navigation on the dropdown.
+  function handleDropdownKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      close();
+      return;
+    }
+    if (!layouts.length) return;
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      focusedIndex = Math.min(focusedIndex + 1, layouts.length - 1);
+      focusLayoutItem();
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      focusedIndex = Math.max(focusedIndex - 1, 0);
+      focusLayoutItem();
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      focusedIndex = 0;
+      focusLayoutItem();
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      focusedIndex = layouts.length - 1;
+      focusLayoutItem();
+    }
+  }
+
+  function focusLayoutItem(): void {
+    if (focusedIndex < 0 || !rootEl) return;
+    const items = rootEl.querySelectorAll<HTMLButtonElement>('.layout-name');
+    items[focusedIndex]?.focus();
+  }
+
+  onMount(() => {
+    document.addEventListener('click', handleDocumentClick, true);
+  });
+
+  onDestroy(() => {
+    document.removeEventListener('click', handleDocumentClick, true);
+  });
 </script>
 
-<div class="layout-switcher">
+<div class="layout-switcher" bind:this={rootEl}>
   <button
     class="layout-trigger"
+    bind:this={triggerEl}
     onclick={toggle}
     aria-expanded={open}
-    aria-haspopup="true"
+    aria-haspopup="menu"
     title="Workspace layouts"
     aria-label="Workspace layouts"
   >
@@ -86,7 +172,8 @@
   </button>
 
   {#if open}
-    <div class="layout-dropdown" role="menu">
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div class="layout-dropdown" role="menu" onkeydown={handleDropdownKeydown}>
       {#if error}
         <div class="layout-error" role="alert">{error}</div>
       {/if}
@@ -97,7 +184,8 @@
           bind:value={saveName}
           placeholder="Save current as…"
           aria-label="Layout name"
-          onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') handleSave(); }}
+          maxlength={255}
+          onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') close(); }}
         />
         <button
           onclick={handleSave}
@@ -110,12 +198,14 @@
 
       {#if layouts.length > 0}
         <ul class="layout-list" role="list">
-          {#each layouts as layout (layout.id)}
-            <li class="layout-item" role="menuitem">
+          {#each layouts as layout, i (layout.id)}
+            <li class="layout-item">
               <button
                 class="layout-name"
                 onclick={() => handleRestore(layout.id)}
                 title="Restore {layout.name}"
+                role="menuitem"
+                tabindex={focusedIndex === i ? 0 : -1}
               >
                 {layout.name}
               </button>
@@ -124,6 +214,7 @@
                 onclick={() => handleDelete(layout.id)}
                 aria-label="Delete layout {layout.name}"
                 title="Delete"
+                tabindex={-1}
               >
                 &times;
               </button>
@@ -237,8 +328,10 @@
     text-align: left;
   }
 
-  .layout-name:hover {
+  .layout-name:hover,
+  .layout-name:focus-visible {
     background: var(--color-surface-hover, #1a1d25);
+    outline: 1px solid var(--color-accent, #60a5fa);
   }
 
   .layout-delete {

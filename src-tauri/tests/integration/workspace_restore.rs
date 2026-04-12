@@ -20,8 +20,7 @@ async fn workspace_restore_after_crash_recovery() {
         crate::common::seed_workbench_session(&state, project_id, Some(std::process::id() as i64))
             .await;
     // Spawn a session with a bogus dead pid.
-    let dead_sid =
-        crate::common::seed_workbench_session(&state, project_id, Some(999_999)).await;
+    let dead_sid = crate::common::seed_workbench_session(&state, project_id, Some(999_999)).await;
 
     // Save workspace state referencing the alive session.
     let ws = WorkspaceState {
@@ -37,9 +36,7 @@ async fn workspace_restore_after_crash_recovery() {
     let restarted = AppState::new(state.db.clone());
 
     // Run crash recovery.
-    let report = reconcile_and_reattach(&restarted)
-        .await
-        .expect("reconcile");
+    let report = reconcile_and_reattach(&restarted).await.expect("reconcile");
 
     // The alive session should be reattached.
     assert!(

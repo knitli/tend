@@ -84,7 +84,7 @@ pub fn run() {
         Ok((state, daemon_handle))
     });
 
-    let (state, _daemon_handle) = match bootstrap {
+    let (mut state, _daemon_handle) = match bootstrap {
         Ok(pair) => pair,
         Err(e) => {
             eprintln!("agentui-workbench bootstrap failed: {e}");
@@ -92,7 +92,11 @@ pub fn run() {
         }
     };
 
+    // C1: Initialize the workspace debouncer (100 ms coalescing).
+    state.init_debouncer();
+
     let state_clone = state.clone();
+    let shutdown_state = state.clone();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
@@ -143,7 +147,9 @@ pub fn run() {
                 match workspace::WorkspaceService::get(&db).await {
                     Ok(ws) => {
                         use tauri::Emitter;
-                        let _ = app_handle.emit("workspace:restored", &ws);
+                        // M2 fix: wrap in { state: ... } to match WorkspaceRestoredEvent shape.
+                        let _ = app_handle
+                            .emit("workspace:restored", serde_json::json!({ "state": ws }));
                         info!("emitted workspace:restored on startup");
                     }
                     Err(e) => {
@@ -153,8 +159,22 @@ pub fn run() {
             });
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(move |_app, event| {
+            // C2: Flush workspace debouncer on graceful exit.
+            if let tauri::RunEvent::ExitRequested { .. } = &event {
+                if let Some(ref debouncer) = shutdown_state.workspace_debouncer {
+                    // Block the exit until the flush completes.
+                    let debouncer = debouncer.clone();
+                    let rt = tokio::runtime::Handle::try_current();
+                    if let Ok(handle) = rt {
+                        handle.block_on(debouncer.flush());
+                    }
+                    info!("workspace debouncer flushed on exit");
+                }
+            }
+        });
 }
 
 /// Convenience wrapper for tests: open an in-memory DB and build a

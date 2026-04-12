@@ -9,10 +9,11 @@
 
   interface Props {
     selectedProjectId?: number | null;
+    missingSessions?: Set<number>;
     onActivateSession?: (session: SessionSummary) => void;
   }
 
-  let { selectedProjectId = null, onActivateSession }: Props = $props();
+  let { selectedProjectId = null, missingSessions = new Set(), onActivateSession }: Props = $props();
 
   let filterText = $state('');
   let debouncedFilter = $state('');
@@ -126,6 +127,7 @@
             <SessionRow
               {session}
               projectName={selectedProjectId !== null ? '' : getProjectName(session.project_id)}
+              missing={missingSessions.has(session.id)}
               onActivate={handleActivate}
             />
           {/each}

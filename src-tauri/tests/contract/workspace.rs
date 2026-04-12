@@ -37,9 +37,7 @@ async fn workspace_save_then_get_roundtrips() {
     ws.ui
         .insert("scratchpad_visible".to_string(), serde_json::json!(true));
 
-    WorkspaceService::save(&state.db, &ws)
-        .await
-        .expect("save");
+    WorkspaceService::save(&state.db, &ws).await.expect("save");
 
     let loaded = WorkspaceService::get(&state.db).await.expect("get");
 

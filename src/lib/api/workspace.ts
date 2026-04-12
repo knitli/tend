@@ -42,8 +42,9 @@ export async function layoutList(): Promise<{ layouts: Layout[] }> {
 export async function layoutSave(
   name: string,
   state: WorkspaceState,
+  overwrite?: boolean,
 ): Promise<{ layout: Layout }> {
-  return invoke('layout_save', { args: { name, state } });
+  return invoke('layout_save', { args: { name, state, overwrite } });
 }
 
 export async function layoutRestore(
@@ -58,10 +59,12 @@ export async function layoutDelete(id: number): Promise<void> {
 
 // ---------- Events ----------
 
+/** Best-effort startup event listener. The primary hydration path is
+ * `workspaceGet()` called from `onMount`. This listener is supplementary. */
 export async function onWorkspaceRestored(
   handler: (state: WorkspaceState) => void,
 ): Promise<UnlistenFn> {
   return listen('workspace:restored', (payload) => {
-    handler(payload.state as WorkspaceState);
+    handler(payload.state);
   });
 }

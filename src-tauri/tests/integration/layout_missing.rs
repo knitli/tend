@@ -12,8 +12,7 @@ async fn layout_restore_reports_missing_dead_sessions() {
     let project_id = crate::common::seed_project(&state, "layout-missing").await;
 
     // Create a session with a dead pid.
-    let dead_sid =
-        crate::common::seed_workbench_session(&state, project_id, Some(999_999)).await;
+    let dead_sid = crate::common::seed_workbench_session(&state, project_id, Some(999_999)).await;
 
     // Save a layout referencing that session.
     let ws = WorkspaceState {
@@ -21,7 +20,7 @@ async fn layout_restore_reports_missing_dead_sessions() {
         active_project_ids: vec![project_id],
         ..Default::default()
     };
-    let layout = LayoutService::save(&state.db, "missing-test", &ws)
+    let layout = LayoutService::save(&state.db, "missing-test", &ws, false)
         .await
         .expect("save");
 
@@ -49,8 +48,7 @@ async fn layout_restore_live_session_not_missing() {
 
     // Install a live handle.
     {
-        let handle =
-            agentui_workbench::session::live::LiveSessionHandle::attached_mirror(live_sid);
+        let handle = agentui_workbench::session::live::LiveSessionHandle::attached_mirror(live_sid);
         state.live_sessions.write().await.insert(live_sid, handle);
     }
 
@@ -58,7 +56,7 @@ async fn layout_restore_live_session_not_missing() {
         focused_session_id: Some(live_sid),
         ..Default::default()
     };
-    let layout = LayoutService::save(&state.db, "live-test", &ws)
+    let layout = LayoutService::save(&state.db, "live-test", &ws, false)
         .await
         .expect("save");
 
