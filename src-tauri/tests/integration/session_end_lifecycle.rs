@@ -7,17 +7,17 @@
 #[path = "../common/mod.rs"]
 mod common;
 
-use agentui_workbench::companion::CompanionService;
-use agentui_workbench::model::SessionId;
-use agentui_workbench::project::ProjectService;
-use agentui_workbench::session::live::KillSignal;
-use agentui_workbench::session::SessionService;
+use tend_workbench::companion::CompanionService;
+use tend_workbench::model::SessionId;
+use tend_workbench::project::ProjectService;
+use tend_workbench::session::live::KillSignal;
+use tend_workbench::session::SessionService;
 use sqlx::Row;
 use std::collections::BTreeMap;
 
 /// Helper: spawn a real session with a long-running child.
 async fn spawn_test_session(
-    state: &agentui_workbench::state::WorkbenchState,
+    state: &tend_workbench::state::WorkbenchState,
 ) -> (SessionId, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("create temp dir");
     let project =
@@ -69,7 +69,7 @@ async fn session_end_transitions_to_ended() {
     // Wait for the reaper to process the exit. The reaper listens on the event
     // bus, so we need to give it time to run.
     // Spawn the reaper first — it wasn't started by mock_state.
-    agentui_workbench::session::reaper::spawn_reaper(state.clone());
+    tend_workbench::session::reaper::spawn_reaper(state.clone());
 
     // Poll DB until status changes or timeout.
     let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(5);
@@ -124,7 +124,7 @@ async fn session_end_cleans_up_companion() {
 
     // Start the reaper BEFORE sending the kill signal so it's subscribed
     // to the event bus when the Ended event fires.
-    agentui_workbench::session::reaper::spawn_reaper(state.clone());
+    tend_workbench::session::reaper::spawn_reaper(state.clone());
 
     // End the session.
     {

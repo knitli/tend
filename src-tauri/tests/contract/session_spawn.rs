@@ -5,10 +5,10 @@
 //! They are RED by design — the service stub returns Internal errors.
 //! They will turn GREEN when T049 implements the real spawn.
 
-use agentui_workbench::error::ErrorCode;
-use agentui_workbench::model::{ProjectId, SessionOwnership};
-use agentui_workbench::project::ProjectService;
-use agentui_workbench::session::SessionService;
+use tend_workbench::error::ErrorCode;
+use tend_workbench::model::{ProjectId, SessionOwnership};
+use tend_workbench::project::ProjectService;
+use tend_workbench::session::SessionService;
 use std::collections::BTreeMap;
 
 /// Happy path: spawn a session, assert ownership == Workbench.

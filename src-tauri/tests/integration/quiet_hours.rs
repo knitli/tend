@@ -8,8 +8,8 @@
 //! "now", the effective channel list must exclude `OsNotification` but include
 //! `InApp`.
 
-use agentui_workbench::model::{NotificationChannel, QuietHours};
-use agentui_workbench::notifications::PreferenceService;
+use tend_workbench::model::{NotificationChannel, QuietHours};
+use tend_workbench::notifications::PreferenceService;
 
 /// During quiet hours, OsNotification is filtered out but InApp remains.
 #[tokio::test]

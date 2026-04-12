@@ -26,9 +26,9 @@
 
 #![allow(dead_code)] // Shared helpers; not every test file uses every helper.
 
-use agentui_workbench::db::Database;
-use agentui_workbench::model::{ProjectId, SessionId};
-use agentui_workbench::state::WorkbenchState;
+use tend_workbench::db::Database;
+use tend_workbench::model::{ProjectId, SessionId};
+use tend_workbench::state::WorkbenchState;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -52,7 +52,7 @@ pub async fn mock_state() -> WorkbenchState {
 pub fn temp_socket_path() -> PathBuf {
     let seq = SEQ.fetch_add(1, Ordering::SeqCst);
     let pid = std::process::id();
-    std::env::temp_dir().join(format!("agentui-test-{pid}-{seq}.sock"))
+    std::env::temp_dir().join(format!("tend-test-{pid}-{seq}.sock"))
 }
 
 /// Insert a bare-bones project row so session seeders have a parent row.
@@ -65,7 +65,7 @@ pub async fn seed_project(state: &WorkbenchState, display_name: &str) -> Project
         RETURNING id
         "#,
     )
-    .bind(format!("/tmp/agentui-test-{display_name}"))
+    .bind(format!("/tmp/tend-test-{display_name}"))
     .bind(display_name)
     .bind(&now)
     .fetch_one(state.db.pool())

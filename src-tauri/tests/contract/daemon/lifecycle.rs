@@ -1,7 +1,7 @@
 //! T039: daemon IPC lifecycle contract tests (heartbeat + end_session).
 
-use agentui_protocol::{Request, Response};
-use agentui_workbench::daemon::handlers::dispatch;
+use tend_protocol::{Request, Response};
+use tend_workbench::daemon::handlers::dispatch;
 
 /// Heartbeat updates last_heartbeat_at on a live session.
 #[tokio::test]
@@ -64,7 +64,7 @@ async fn heartbeat_not_found() {
         Response::Err { code, .. } => {
             assert_eq!(
                 code,
-                agentui_protocol::ErrorCode::NotFound,
+                tend_protocol::ErrorCode::NotFound,
                 "heartbeat for unknown session should return NOT_FOUND"
             );
         }
@@ -130,7 +130,7 @@ async fn end_session_not_found() {
         Response::Err { code, .. } => {
             assert_eq!(
                 code,
-                agentui_protocol::ErrorCode::NotFound,
+                tend_protocol::ErrorCode::NotFound,
                 "end_session for unknown session should return NOT_FOUND"
             );
         }

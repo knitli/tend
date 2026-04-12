@@ -1,8 +1,8 @@
 //! T033: `project_update` contract tests.
 
-use agentui_workbench::error::ErrorCode;
-use agentui_workbench::model::ProjectId;
-use agentui_workbench::project::ProjectService;
+use tend_workbench::error::ErrorCode;
+use tend_workbench::model::ProjectId;
+use tend_workbench::project::ProjectService;
 
 /// Happy path: update display_name and verify the change.
 #[tokio::test]

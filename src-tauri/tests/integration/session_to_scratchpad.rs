@@ -5,9 +5,9 @@
 //! the session-lifecycle boundary: ending a session must leave the scratchpad
 //! tables completely untouched.
 
-use agentui_workbench::project::ProjectService;
-use agentui_workbench::scratchpad::notes::NoteService;
-use agentui_workbench::scratchpad::reminders::ReminderService;
+use tend_workbench::project::ProjectService;
+use tend_workbench::scratchpad::notes::NoteService;
+use tend_workbench::scratchpad::reminders::ReminderService;
 use sqlx::Row;
 use std::collections::BTreeMap;
 
@@ -43,7 +43,7 @@ async fn session_end_preserves_scratchpad() {
 
     // Spawn a real session, let it run briefly, then end it.
     let env = BTreeMap::new();
-    let result = agentui_workbench::session::SessionService::spawn_local(
+    let result = tend_workbench::session::SessionService::spawn_local(
         &state,
         project.id,
         "t142-session",
@@ -72,7 +72,7 @@ async fn session_end_preserves_scratchpad() {
                 }
                 if tokio::time::Instant::now() > deadline {
                     // Child didn't exit in time; force-end via service.
-                    let _ = agentui_workbench::session::SessionService::mark_ended(
+                    let _ = tend_workbench::session::SessionService::mark_ended(
                         &state.db,
                         session.id,
                         Some(0),
@@ -84,8 +84,8 @@ async fn session_end_preserves_scratchpad() {
             }
         }
         Err(e)
-            if e.code == agentui_workbench::error::ErrorCode::SpawnFailed
-                || (e.code == agentui_workbench::error::ErrorCode::Internal
+            if e.code == tend_workbench::error::ErrorCode::SpawnFailed
+                || (e.code == tend_workbench::error::ErrorCode::Internal
                     && e.message.contains("not yet implemented")) =>
         {
             // PTY spawn may fail in CI. Simulate session ending via DB:
@@ -182,7 +182,7 @@ async fn rapid_session_ends_preserve_scratchpad() {
     );
 }
 
-async fn count_table(state: &agentui_workbench::state::WorkbenchState, table: &str) -> i64 {
+async fn count_table(state: &tend_workbench::state::WorkbenchState, table: &str) -> i64 {
     debug_assert!(
         matches!(table, "notes" | "reminders"),
         "count_table only supports known table names"
@@ -196,7 +196,7 @@ async fn count_table(state: &agentui_workbench::state::WorkbenchState, table: &s
     row.try_get::<i64, _>("cnt").expect("cnt")
 }
 
-async fn get_note_content(state: &agentui_workbench::state::WorkbenchState, id: i64) -> String {
+async fn get_note_content(state: &tend_workbench::state::WorkbenchState, id: i64) -> String {
     let row = sqlx::query("SELECT content FROM notes WHERE id = ?1")
         .bind(id)
         .fetch_one(state.db.pool())
@@ -205,7 +205,7 @@ async fn get_note_content(state: &agentui_workbench::state::WorkbenchState, id: 
     row.try_get::<String, _>("content").expect("content")
 }
 
-async fn get_reminder_content(state: &agentui_workbench::state::WorkbenchState, id: i64) -> String {
+async fn get_reminder_content(state: &tend_workbench::state::WorkbenchState, id: i64) -> String {
     let row = sqlx::query("SELECT content FROM reminders WHERE id = ?1")
         .bind(id)
         .fetch_one(state.db.pool())
@@ -216,7 +216,7 @@ async fn get_reminder_content(state: &agentui_workbench::state::WorkbenchState, 
 
 /// L5: Generic field getter for timestamp snapshot assertions.
 async fn get_field(
-    state: &agentui_workbench::state::WorkbenchState,
+    state: &tend_workbench::state::WorkbenchState,
     table: &str,
     column: &str,
     id: i64,

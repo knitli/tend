@@ -1,7 +1,7 @@
-//! Wire format for the agentui daemon IPC protocol.
+//! Wire format for the tend daemon IPC protocol.
 //!
 //! This crate is the **single source of truth** for the daemon IPC wire shape.
-//! Both `agentui-workbench` (the Tauri backend) and `agentui-cli` depend on it
+//! Both `tend-workbench` (the Tauri backend) and `tend-cli` depend on it
 //! via `{ path = "../protocol" }`. Neither crate is permitted to redefine
 //! `Request` / `Response` / `ErrorCode` locally, and neither crate imports
 //! internals from the other — the dep flows `{src-tauri, cli} → protocol`,
@@ -43,7 +43,7 @@ pub const MAX_FRAME_SIZE: usize = 64 * 1024;
 pub enum Request {
     /// Initial handshake. MUST be the first frame on every connection.
     Hello {
-        /// Client identifier string (e.g. `"agentui-run"`).
+        /// Client identifier string (e.g. `"tend-run"`).
         client: String,
         /// Client's own version string.
         client_version: String,
@@ -160,7 +160,7 @@ pub enum Response {
 /// The wire-visible subset of workbench error codes.
 ///
 /// This is a superset of the codes the daemon IPC surface can return; the
-/// Tauri-command surface uses a broader [`agentui_workbench::error::ErrorCode`]
+/// Tauri-command surface uses a broader [`tend_workbench::error::ErrorCode`]
 /// enum that includes the full catalog. Round-tripping through the `err` wire
 /// shape is the enforcement gate.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -223,7 +223,7 @@ mod tests {
     #[test]
     fn hello_roundtrips() {
         let req = Request::Hello {
-            client: "agentui-run".into(),
+            client: "tend-run".into(),
             client_version: "0.1.0".into(),
             protocol_version: PROTOCOL_VERSION,
         };

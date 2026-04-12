@@ -4,10 +4,10 @@
 //! WorkbenchState from the same DB, runs crash recovery, and verifies
 //! still-alive sessions reattach while dead pids are marked ended.
 
-use agentui_workbench::model::WorkspaceState;
-use agentui_workbench::session::recovery::reconcile_and_reattach;
-use agentui_workbench::state::WorkbenchState as AppState;
-use agentui_workbench::workspace::WorkspaceService;
+use tend_workbench::model::WorkspaceState;
+use tend_workbench::session::recovery::reconcile_and_reattach;
+use tend_workbench::state::WorkbenchState as AppState;
+use tend_workbench::workspace::WorkspaceService;
 
 /// Simulate workbench close + reopen with workspace persistence.
 #[tokio::test]

@@ -1,7 +1,7 @@
 //! T132: Integration test — after 300 output chunks, the ring buffer contains
 //! only the last N lines and the summary is the most-recent non-empty line.
 
-use agentui_workbench::session::activity::ActivitySummary;
+use tend_workbench::session::activity::ActivitySummary;
 
 /// After 300 output chunks, the ring buffer stays bounded and the summary
 /// reflects the most-recent meaningful line.

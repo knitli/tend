@@ -6,7 +6,7 @@
 
 mod common;
 
-use agentui_protocol::{Request, Response, PROTOCOL_VERSION};
+use tend_protocol::{Request, Response, PROTOCOL_VERSION};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -49,7 +49,7 @@ async fn start_mock_daemon(socket_path: &std::path::Path) -> tokio::task::JoinHa
                 } => {
                     if protocol_version != PROTOCOL_VERSION {
                         Response::Err {
-                            code: agentui_protocol::ErrorCode::ProtocolError,
+                            code: tend_protocol::ErrorCode::ProtocolError,
                             message: "version mismatch".into(),
                             details: None,
                         }

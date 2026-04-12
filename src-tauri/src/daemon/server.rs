@@ -1,14 +1,14 @@
 //! Unix-domain-socket IPC server.
 //!
 //! T022: length-prefixed-JSON framing over a Unix stream socket at
-//! `$XDG_RUNTIME_DIR/agentui.sock` (fallback `/tmp/agentui-$UID.sock`). Socket
-//! permissions are `0600`. Wire types come from `agentui-protocol` — no
+//! `$XDG_RUNTIME_DIR/tend.sock` (fallback `/tmp/tend-$UID.sock`). Socket
+//! permissions are `0600`. Wire types come from `tend-protocol` — no
 //! local `protocol.rs`.
 
 use crate::daemon::handlers::dispatch;
 use crate::error::{WorkbenchError, WorkbenchResult};
 use crate::state::WorkbenchState;
-use agentui_protocol::{
+use tend_protocol::{
     error as protocol_error, ErrorCode as ProtocolErrorCode, Request, Response, MAX_FRAME_SIZE,
 };
 use std::path::{Path, PathBuf};
@@ -21,12 +21,12 @@ use tracing::{debug, error, info, warn};
 /// Environment variable the workbench sets for spawned CLI clients.
 pub const SOCKET_ENV: &str = "AGENTUI_SOCKET";
 
-/// Resolve the default socket path: `$XDG_RUNTIME_DIR/agentui.sock` with
-/// `/tmp/agentui-$UID.sock` as the fallback when `$XDG_RUNTIME_DIR` is unset
+/// Resolve the default socket path: `$XDG_RUNTIME_DIR/tend.sock` with
+/// `/tmp/tend-$UID.sock` as the fallback when `$XDG_RUNTIME_DIR` is unset
 /// (macOS, some containers).
 pub fn default_socket_path() -> PathBuf {
     if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
-        return PathBuf::from(dir).join("agentui.sock");
+        return PathBuf::from(dir).join("tend.sock");
     }
     let uid = {
         #[cfg(unix)]
@@ -39,7 +39,7 @@ pub fn default_socket_path() -> PathBuf {
             0_u32
         }
     };
-    PathBuf::from(format!("/tmp/agentui-{uid}.sock"))
+    PathBuf::from(format!("/tmp/tend-{uid}.sock"))
 }
 
 #[cfg(unix)]

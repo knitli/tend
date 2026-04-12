@@ -7,17 +7,17 @@
 //! Written RED-first (TDD gate) — they will turn GREEN when the companion
 //! service and Tauri commands are fully wired.
 
-use agentui_workbench::companion::CompanionService;
-use agentui_workbench::project::ProjectService;
-use agentui_workbench::session::SessionService;
+use tend_workbench::companion::CompanionService;
+use tend_workbench::project::ProjectService;
+use tend_workbench::session::SessionService;
 use std::collections::BTreeMap;
 
 /// Helper: spawn a workbench session with a real PTY and then ensure a companion.
 async fn setup_session_with_companion(
-    state: &agentui_workbench::state::WorkbenchState,
+    state: &tend_workbench::state::WorkbenchState,
 ) -> (
-    agentui_workbench::model::SessionId,
-    agentui_workbench::model::CompanionTerminal,
+    tend_workbench::model::SessionId,
+    tend_workbench::model::CompanionTerminal,
     tempfile::TempDir,
 ) {
     let tmp = tempfile::tempdir().expect("create temp dir");
@@ -196,13 +196,13 @@ async fn resize_no_companion_returns_not_found() {
 #[tokio::test]
 async fn respawn_nonexistent_session_returns_not_found() {
     let state = crate::common::mock_state().await;
-    let bogus = agentui_workbench::model::SessionId::new(999999);
+    let bogus = tend_workbench::model::SessionId::new(999999);
     let err = CompanionService::respawn(&state, bogus)
         .await
         .expect_err("respawn on nonexistent session must fail");
     assert_eq!(
         err.code,
-        agentui_workbench::error::ErrorCode::NotFound,
+        tend_workbench::error::ErrorCode::NotFound,
         "error code must be NOT_FOUND"
     );
 }
@@ -224,7 +224,7 @@ async fn respawn_ended_session_returns_session_ended() {
         .expect_err("respawn on ended session must fail");
     assert_eq!(
         err.code,
-        agentui_workbench::error::ErrorCode::SessionEnded,
+        tend_workbench::error::ErrorCode::SessionEnded,
         "error code must be SESSION_ENDED"
     );
 }

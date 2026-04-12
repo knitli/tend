@@ -87,7 +87,7 @@ pub fn run() {
     let (mut state, _daemon_handle) = match bootstrap {
         Ok(pair) => pair,
         Err(e) => {
-            eprintln!("agentui-workbench bootstrap failed: {e}");
+            eprintln!("tend-workbench bootstrap failed: {e}");
             std::process::exit(1);
         }
     };

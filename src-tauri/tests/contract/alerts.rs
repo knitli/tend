@@ -4,8 +4,8 @@
 //! They are RED by design and will turn GREEN when Phase 4 wires alert
 //! acknowledgment end-to-end (service + Tauri command + event emission).
 
-use agentui_workbench::model::AlertId;
-use agentui_workbench::notifications::AlertService;
+use tend_workbench::model::AlertId;
+use tend_workbench::notifications::AlertService;
 
 /// Acknowledging an open alert sets `acknowledged_at` and `cleared_by = user`.
 #[tokio::test]
@@ -68,7 +68,7 @@ async fn acknowledge_nonexistent_alert_returns_not_found() {
     let state = crate::common::mock_state().await;
     let bogus_id = AlertId::new(999_999);
 
-    let bogus_session = agentui_workbench::model::SessionId::new(999_998);
+    let bogus_session = tend_workbench::model::SessionId::new(999_998);
     let result = AlertService::acknowledge(&state.db, bogus_id, bogus_session).await;
 
     assert!(

@@ -1,6 +1,6 @@
 //! T032: `project_list` contract tests.
 
-use agentui_workbench::project::ProjectService;
+use tend_workbench::project::ProjectService;
 
 /// Register two projects, list with include_archived=false, get both.
 #[tokio::test]

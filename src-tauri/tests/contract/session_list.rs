@@ -4,7 +4,7 @@
 //! They are RED by design — the service stub returns Internal errors.
 //! They will turn GREEN when T049 implements the real query.
 
-use agentui_workbench::session::SessionService;
+use tend_workbench::session::SessionService;
 
 /// Filtered by project: only sessions for the given project are returned.
 #[tokio::test]
@@ -108,7 +108,7 @@ async fn status_alert_snapshot_invariant() {
 /// Ownership roundtrip: seed a wrapper session, list, verify ownership == Wrapper.
 #[tokio::test]
 async fn ownership_roundtrip_wrapper() {
-    use agentui_workbench::model::SessionOwnership;
+    use tend_workbench::model::SessionOwnership;
 
     let state = crate::common::mock_state().await;
     let project = crate::common::seed_project(&state, "ownership-test").await;

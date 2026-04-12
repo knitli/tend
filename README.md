@@ -1,4 +1,4 @@
-# agentui
+# tend
 
 A local, always-on desktop workbench that unifies AI agent sessions across multiple repositories into a single view with live status, needs-input alerts, one-action activation, paired companion terminals, a per-project scratchpad, and automatic workspace persistence.
 
@@ -46,10 +46,10 @@ pnpm e2e
 ## Architecture
 
 ```
-agentui/
+tend/
   protocol/       # Shared daemon IPC wire types (serde enums)
   src-tauri/      # Rust backend: PTY management, SQLite, daemon IPC, Tauri commands
-  cli/            # CLI wrapper: `agentui run` — launches agents under PTY, registers with workbench
+  cli/            # CLI wrapper: `tend run` — launches agents under PTY, registers with workbench
   src/            # Svelte 5 frontend: session list, split view, scratchpad, alerts
   tests/e2e/      # Playwright E2E specs
 ```
@@ -60,7 +60,7 @@ For the full specification, plan, and technical decisions, see [`specs/001-cross
 
 ## Known v1 limitations
 
-- Sessions started without `agentui run` (or without cooperating IPC) will not appear in the workbench.
+- Sessions started without `tend run` (or without cooperating IPC) will not appear in the workbench.
 - Remote sessions (SSH, cloud workstations, WSL-to-Windows) are not supported.
 - No VS Code / editor companion — terminal only.
 - Scratchpads are plain text with light markdown; no images or attachments.

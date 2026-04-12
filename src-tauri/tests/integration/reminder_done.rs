@@ -3,10 +3,10 @@
 //! A done reminder must be excluded from the cross-project overview but still
 //! retrievable via `ReminderService::list` with `state = Done`.
 
-use agentui_workbench::model::ReminderState;
-use agentui_workbench::project::ProjectService;
-use agentui_workbench::scratchpad::overview::OverviewService;
-use agentui_workbench::scratchpad::reminders::ReminderService;
+use tend_workbench::model::ReminderState;
+use tend_workbench::project::ProjectService;
+use tend_workbench::scratchpad::overview::OverviewService;
+use tend_workbench::scratchpad::reminders::ReminderService;
 
 /// Done reminder excluded from overview but retrievable via list(state=done).
 #[tokio::test]

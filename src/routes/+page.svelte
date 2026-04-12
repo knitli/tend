@@ -143,7 +143,7 @@
         {/key}
       {:else}
         <div class="empty-content">
-          <h2>agentui</h2>
+          <h2>tend</h2>
           <p class="muted">
             Select a session from the list to view its terminal output.
           </p>

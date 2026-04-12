@@ -1,6 +1,6 @@
-//! T055: IPC client for communicating with the agentui workbench daemon.
+//! T055: IPC client for communicating with the tend workbench daemon.
 //!
-//! Uses `agentui_protocol::{Request, Response, ...}` as the single source
+//! Uses `tend_protocol::{Request, Response, ...}` as the single source
 //! of truth for wire types. Frame format: u32 LE length prefix + JSON body,
 //! capped at [`MAX_FRAME_SIZE`].
 
@@ -10,7 +10,7 @@ use anyhow::{bail, Context, Result};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
-use agentui_protocol::{Request, Response, SessionStatusWire, MAX_FRAME_SIZE, PROTOCOL_VERSION};
+use tend_protocol::{Request, Response, SessionStatusWire, MAX_FRAME_SIZE, PROTOCOL_VERSION};
 
 /// IPC client wrapping a Unix domain socket connection.
 pub struct IpcClient {
@@ -25,8 +25,8 @@ impl IpcClient {
     /// Resolution order for the socket path:
     /// 1. `path` argument (if `Some`)
     /// 2. `$AGENTUI_SOCKET` environment variable
-    /// 3. `$XDG_RUNTIME_DIR/agentui.sock`
-    /// 4. `/tmp/agentui-$UID.sock`
+    /// 3. `$XDG_RUNTIME_DIR/tend.sock`
+    /// 4. `/tmp/tend-$UID.sock`
     pub async fn connect(path: Option<PathBuf>) -> Result<Self> {
         let sock = match path {
             Some(p) => p,
@@ -97,7 +97,7 @@ impl IpcClient {
     /// Perform the initial `Hello` handshake and expect `Welcome`.
     pub async fn hello(&mut self) -> Result<Response> {
         let req = Request::Hello {
-            client: "agentui-run".into(),
+            client: "tend-run".into(),
             client_version: env!("CARGO_PKG_VERSION").into(),
             protocol_version: PROTOCOL_VERSION,
         };
@@ -191,19 +191,19 @@ fn expect_ack(verb: &str, resp: &Response) -> Result<()> {
 /// Resolve the default daemon socket path.
 ///
 /// 1. `$AGENTUI_SOCKET`
-/// 2. `$XDG_RUNTIME_DIR/agentui.sock`
-/// 3. `/tmp/agentui-$UID.sock`
+/// 2. `$XDG_RUNTIME_DIR/tend.sock`
+/// 3. `/tmp/tend-$UID.sock`
 fn resolve_socket_path() -> Result<PathBuf> {
     if let Ok(p) = std::env::var("AGENTUI_SOCKET") {
         return Ok(PathBuf::from(p));
     }
     if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
-        return Ok(PathBuf::from(dir).join("agentui.sock"));
+        return Ok(PathBuf::from(dir).join("tend.sock"));
     }
-    // Fallback: /tmp/agentui-$UID.sock
+    // Fallback: /tmp/tend-$UID.sock
     // SAFETY: getuid(2) has no preconditions, takes no arguments, and cannot fail.
     let uid = unsafe { libc::getuid() };
-    Ok(PathBuf::from(format!("/tmp/agentui-{uid}.sock")))
+    Ok(PathBuf::from(format!("/tmp/tend-{uid}.sock")))
 }
 
 #[cfg(test)]

@@ -41,8 +41,8 @@ First run takes several minutes — `tauri dev` compiles the Rust backend, spins
 
 A successful first run should:
 
-1. Create `~/.local/share/agentui/workbench.db` (Linux) and run initial migrations.
-2. Create the IPC socket at `$XDG_RUNTIME_DIR/agentui.sock` (fallback `/tmp/agentui-$UID.sock`).
+1. Create `~/.local/share/tend/workbench.db` (Linux) and run initial migrations.
+2. Create the IPC socket at `$XDG_RUNTIME_DIR/tend.sock` (fallback `/tmp/tend-$UID.sock`).
 3. Log `workbench ready` to stdout.
 4. Open the main window to an empty "No projects registered" state.
 
@@ -56,7 +56,7 @@ From the CLI (coming later in the task sequence):
 
 ```bash
 # Explicit registration
-agentuictl project add ~/code/marque --name "Marque"
+tendctl project add ~/code/marque --name "Marque"
 ```
 
 Confirm it appears in the sidebar. The project row in SQLite should have:
@@ -74,7 +74,7 @@ The v1 session path is the CLI wrapper. From a terminal:
 
 ```bash
 # AGENTUI_SOCKET is exported automatically if the workbench is running
-agentui run -p marque -- claude
+tend run -p marque -- claude
 ```
 
 What happens:
@@ -89,8 +89,8 @@ What happens:
 Start a second session in a different repo:
 
 ```bash
-cd ~/code/agentui
-agentui run -p agentui -- claude
+cd ~/code/tend
+tend run -p tend -- claude
 ```
 
 You now have two sessions in the workbench, grouped by project. Switching between them via the workbench sidebar brings up each one's split view (agent + companion terminal) without you alt-tabbing through terminals.
@@ -104,7 +104,7 @@ You now have two sessions in the workbench, grouped by project. Switching betwee
 Start a session that will prompt you. Easiest reproducible example:
 
 ```bash
-agentui run -p marque -- bash -c 'read -p "continue? [y/N] " x; echo you said: $x'
+tend run -p marque -- bash -c 'read -p "continue? [y/N] " x; echo you said: $x'
 ```
 
 Within a second or two the workbench should mark that session `needs_input` and raise an OS notification. Typing `y` in your actual terminal clears the alert automatically.
@@ -152,18 +152,18 @@ E2E tests require `tauri-driver` installed and a WebDriver binary on PATH.
 
 ## 7. Database tinkering
 
-The SQLite file is at `~/.local/share/agentui/workbench.db`. It's a plain SQLite 3 database — inspect with `sqlite3` or any GUI (DB Browser, TablePlus, etc.):
+The SQLite file is at `~/.local/share/tend/workbench.db`. It's a plain SQLite 3 database — inspect with `sqlite3` or any GUI (DB Browser, TablePlus, etc.):
 
 ```bash
-sqlite3 ~/.local/share/agentui/workbench.db '.tables'
-sqlite3 ~/.local/share/agentui/workbench.db 'SELECT status, COUNT(*) FROM sessions GROUP BY status;'
+sqlite3 ~/.local/share/tend/workbench.db '.tables'
+sqlite3 ~/.local/share/tend/workbench.db 'SELECT status, COUNT(*) FROM sessions GROUP BY status;'
 ```
 
 To reset completely:
 
 ```bash
 # stop the workbench first
-rm ~/.local/share/agentui/workbench.db
+rm ~/.local/share/tend/workbench.db
 ```
 
 Migrations re-run on next launch.
@@ -176,7 +176,7 @@ Migrations re-run on next launch.
 
 **`sqlx` compile errors about SQLITE_VERSION**: upgrade `libsqlite3-dev` to 3.38+ or enable the bundled feature in `src-tauri/Cargo.toml`.
 
-**`agentui run` says "socket not found"**: the workbench isn't running, or `AGENTUI_SOCKET` isn't exported in your shell. Start the workbench, then re-source your shell's env (or explicitly `export AGENTUI_SOCKET=$XDG_RUNTIME_DIR/agentui.sock`).
+**`tend run` says "socket not found"**: the workbench isn't running, or `AGENTUI_SOCKET` isn't exported in your shell. Start the workbench, then re-source your shell's env (or explicitly `export AGENTUI_SOCKET=$XDG_RUNTIME_DIR/tend.sock`).
 
 **Session stuck on `working` with no output**: almost always a PTY flush issue. Run `ps -o pid,stat,comm -p <pid>` — if it's in `S+` (TTY-foreground sleep) the agent is genuinely waiting on input; otherwise investigate the session supervisor.
 
@@ -209,7 +209,7 @@ Results from T144 sanity pass (debug build, in-memory SQLite):
 
 ## 9. Known v1 limitations
 
-- Sessions started without `agentui run` (or without cooperating IPC) will not appear in the workbench.
+- Sessions started without `tend run` (or without cooperating IPC) will not appear in the workbench.
 - Remote sessions (SSH, WSL-to-Windows) are not supported.
 - No VS Code / editor companion — terminal only.
 - Scratchpads are plain text with light markdown; no images or attachments.

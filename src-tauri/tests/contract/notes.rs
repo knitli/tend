@@ -3,9 +3,9 @@
 //! Exercises note CRUD: list, create, update, delete — including error paths
 //! for CONTENT_EMPTY, PROJECT_NOT_FOUND, and NOT_FOUND.
 
-use agentui_workbench::error::ErrorCode;
-use agentui_workbench::model::{NoteId, ProjectId};
-use agentui_workbench::scratchpad::notes::NoteService;
+use tend_workbench::error::ErrorCode;
+use tend_workbench::model::{NoteId, ProjectId};
+use tend_workbench::scratchpad::notes::NoteService;
 
 // ── note_list ────────────────────────────────────────────────────────────
 
@@ -28,7 +28,7 @@ async fn note_list_empty() {
 async fn note_list_after_creates() {
     let state = crate::common::mock_state().await;
     let tmp = tempfile::tempdir().expect("tempdir");
-    let project = agentui_workbench::project::ProjectService::register(
+    let project = tend_workbench::project::ProjectService::register(
         &state.db,
         tmp.path().to_str().unwrap(),
         Some("notes-list"),
@@ -60,7 +60,7 @@ async fn note_list_after_creates() {
 async fn note_create_happy() {
     let state = crate::common::mock_state().await;
     let tmp = tempfile::tempdir().expect("tempdir");
-    let project = agentui_workbench::project::ProjectService::register(
+    let project = tend_workbench::project::ProjectService::register(
         &state.db,
         tmp.path().to_str().unwrap(),
         Some("notes-create"),
@@ -81,7 +81,7 @@ async fn note_create_happy() {
 async fn note_create_content_empty_for_whitespace() {
     let state = crate::common::mock_state().await;
     let tmp = tempfile::tempdir().expect("tempdir");
-    let project = agentui_workbench::project::ProjectService::register(
+    let project = tend_workbench::project::ProjectService::register(
         &state.db,
         tmp.path().to_str().unwrap(),
         Some("notes-empty-content"),
@@ -116,7 +116,7 @@ async fn note_create_project_not_found() {
 async fn note_update_happy() {
     let state = crate::common::mock_state().await;
     let tmp = tempfile::tempdir().expect("tempdir");
-    let project = agentui_workbench::project::ProjectService::register(
+    let project = tend_workbench::project::ProjectService::register(
         &state.db,
         tmp.path().to_str().unwrap(),
         Some("notes-update"),
@@ -144,7 +144,7 @@ async fn note_update_happy() {
 async fn note_update_content_empty() {
     let state = crate::common::mock_state().await;
     let tmp = tempfile::tempdir().expect("tempdir");
-    let project = agentui_workbench::project::ProjectService::register(
+    let project = tend_workbench::project::ProjectService::register(
         &state.db,
         tmp.path().to_str().unwrap(),
         Some("notes-update-empty"),
@@ -183,7 +183,7 @@ async fn note_update_not_found() {
 async fn note_delete_happy() {
     let state = crate::common::mock_state().await;
     let tmp = tempfile::tempdir().expect("tempdir");
-    let project = agentui_workbench::project::ProjectService::register(
+    let project = tend_workbench::project::ProjectService::register(
         &state.db,
         tmp.path().to_str().unwrap(),
         Some("notes-delete"),

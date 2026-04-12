@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// The full catalog of error codes. Superset of the wire-visible codes from
-/// `agentui-protocol::ErrorCode` — the daemon server translates between the
+/// `tend-protocol::ErrorCode` — the daemon server translates between the
 /// two surfaces in `daemon/server.rs`.
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -57,8 +57,8 @@ impl ErrorCode {
     /// Translate to the wire-visible protocol subset. Panics only if a code
     /// that is not wire-representable ends up on the daemon surface, which is
     /// a bug that the daemon `dispatch` should have caught upstream.
-    pub fn to_protocol(self) -> agentui_protocol::ErrorCode {
-        use agentui_protocol::ErrorCode as P;
+    pub fn to_protocol(self) -> tend_protocol::ErrorCode {
+        use tend_protocol::ErrorCode as P;
         match self {
             Self::NotFound => P::NotFound,
             Self::PathNotFound => P::PathNotFound,

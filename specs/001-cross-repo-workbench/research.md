@@ -87,9 +87,9 @@ This document resolves technical unknowns for the Cross-Repo Agent Workbench bef
 
 **Decision**: **SQLite** via **`sqlx`** (async, compile-time-checked queries) with `sqlite` feature, stored under the XDG data directory:
 
-- Linux: `$XDG_DATA_HOME/agentui/workbench.db` (default `~/.local/share/agentui/workbench.db`)
-- macOS: `~/Library/Application Support/agentui/workbench.db`
-- Windows: `%APPDATA%/agentui/workbench.db`
+- Linux: `$XDG_DATA_HOME/tend/workbench.db` (default `~/.local/share/tend/workbench.db`)
+- macOS: `~/Library/Application Support/tend/workbench.db`
+- Windows: `%APPDATA%/tend/workbench.db`
 
 Migrations handled by `sqlx migrate` with versioned SQL files under `src-tauri/migrations/`.
 
@@ -112,7 +112,7 @@ Migrations handled by `sqlx migrate` with versioned SQL files under `src-tauri/m
 **Decision**: **Two session-ownership shapes**, both registered with the workbench but with different input semantics:
 
 - **Workbench-owned sessions** — spawned by `session_spawn` from the UI. The backend owns the PTY master end directly via `portable-pty`. Input (`session_send_input`), resize, and signal delivery all flow from the workbench frontend → Rust backend → PTY child.
-- **Wrapper-owned sessions** — spawned outside the workbench by the `agentui run` CLI wrapper. The wrapper process owns the PTY master and proxies between the user's real tty and the agent child. The workbench is registered over the daemon-IPC socket and receives a mirror of the output stream plus cooperative status updates, but it does **not** own the PTY and therefore cannot accept keystrokes, resize events, or signals from the UI for these sessions. Input MUST be typed into the launching terminal; the UI explicitly disables its input path for wrapper-owned sessions.
+- **Wrapper-owned sessions** — spawned outside the workbench by the `tend run` CLI wrapper. The wrapper process owns the PTY master and proxies between the user's real tty and the agent child. The workbench is registered over the daemon-IPC socket and receives a mirror of the output stream plus cooperative status updates, but it does **not** own the PTY and therefore cannot accept keystrokes, resize events, or signals from the UI for these sessions. Input MUST be typed into the launching terminal; the UI explicitly disables its input path for wrapper-owned sessions.
 
 **Why this split (decision made during spec-panel review, 2026-04-11)**:
 
@@ -126,13 +126,13 @@ We chose (2). The cost is asymmetric: workbench-spawned sessions are fully inter
 
 **Restart caveat**: the PTY master fd for a workbench-owned session is scoped to the original workbench process. When the workbench restarts (crash or graceful), the child process may still be alive (`sysinfo` reports it), but the fd is gone — the OS handed it to init. `reconcile_and_reattach` (T025) therefore reattaches workbench-owned sessions as **read-only mirrors** across a restart: the row keeps `ownership = 'workbench'` for identity purposes but the frontend treats it as non-interactive for the rest of its lifetime, because there is no fd left to write into. Users regain interactivity by ending the stale mirror and respawning from the UI. This is an acknowledged v1 limitation; a future iteration could checkpoint PTY state via `dup2` / fd-passing into a supervising daemon process, but that is out of scope for v1.
 
-Sessions started with neither path (plain `claude` in a terminal, no `agentui run` wrapper) will not appear in the workbench. This is the same known v1 gap as before.
+Sessions started with neither path (plain `claude` in a terminal, no `tend run` wrapper) will not appear in the workbench. This is the same known v1 gap as before.
 
 This resolves FR-008 ("sessions started outside the workbench"): from the user's point of view the session is started from a plain terminal command, but the wrapper pipes it under its own PTY and registers it over the socket.
 
 **Protocol sketch** (full contract in `contracts/daemon-ipc.md`):
 
-- Socket path: `$XDG_RUNTIME_DIR/agentui.sock` (fallback `/tmp/agentui-$UID.sock`)
+- Socket path: `$XDG_RUNTIME_DIR/tend.sock` (fallback `/tmp/tend-$UID.sock`)
 - Advertised via env var `AGENTUI_SOCKET` for child processes
 - Message framing: length-prefixed JSON (line-delimited JSON as fallback)
 - Request verbs: `hello`, `register_session`, `update_status`, `heartbeat`, `end_session` (v1 — `emit_alert` dropped; re-adding it later requires a `protocol_version` bump)
@@ -141,7 +141,7 @@ This resolves FR-008 ("sessions started outside the workbench"): from the user's
 **Rationale**:
 
 - Embedding owned sessions sidesteps the entire "focus an external window" rabbit hole. "Activating a session" means switching the visible split in the workbench — no cross-process focus API, no per-WM integration.
-- The CLI wrapper path is ergonomic: `agentui run -p marque -- claude` feels like a terminal command, which matches how users already start agents.
+- The CLI wrapper path is ergonomic: `tend run -p marque -- claude` feels like a terminal command, which matches how users already start agents.
 - The IPC protocol also lets us support agent-native integrations later: a cooperating agent can speak it directly without the wrapper, improving "needs input" fidelity without architectural change.
 - v1 known gap (agents started with no wrapper and no IPC) is explicitly limited — the product value comes from the 95% case where users launch via the wrapper.
 
@@ -331,7 +331,7 @@ Tauri commands dispatch into a single `WorkbenchState` (wrapped in `Arc<tokio::s
 
 - **Rust backend**: `cargo test` with `tokio::test` for async units. Contract tests for every Tauri command and every daemon IPC verb. Integration tests for session lifecycle (spawn → output → idle → needs-input → end) using a scripted shell as the child process.
 - **Frontend**: **Vitest** for component logic and Svelte stores; **Playwright via Tauri's `tauri-driver`** for a small suite of end-to-end happy paths (launch, register project, activate session, save note, restore workspace).
-- **CLI wrapper (`agentui run`)**: integration tests against a local daemon socket.
+- **CLI wrapper (`tend run`)**: integration tests against a local daemon socket.
 - **Coverage target**: 80 % across backend + CLI (aligned with the user's global testing rules). Frontend coverage is measured but not gated at the same threshold — terminal-rendering UI is validated in E2E, not unit, tests.
 
 **Rationale**:
@@ -350,7 +350,7 @@ Tauri commands dispatch into a single `WorkbenchState` (wrapped in `Arc<tokio::s
 The following are explicitly deferred to post-v1 based on the spec's out-of-scope markers and this research:
 
 - **Remote sessions** (SSH, cloud workstations, WSL↔Windows cross-boundary) — FR-022.
-- **Non-wrapper-launched sessions** — §6 above. Sessions started with no `agentui run` wrapper and no cooperating IPC client will not appear in the workbench. Documented in the quickstart as a known limitation.
+- **Non-wrapper-launched sessions** — §6 above. Sessions started with no `tend run` wrapper and no cooperating IPC client will not appear in the workbench. Documented in the quickstart as a known limitation.
 - **VS Code / editor companion pairing** — terminal-only for v1 per spec assumption.
 - **Rich-media scratchpads** (images, attachments) — plain text + light markdown only.
 - **LLM-summarized session activity** — ring-buffer last-line only.
@@ -367,7 +367,7 @@ Each gap has a corresponding issue to open once the v1 code lands, not a blocker
 - **Storage**: SQLite via `sqlx`, at XDG data dir.
 - **Testing**: `cargo test` + `tokio::test` for Rust; Vitest + Playwright (`tauri-driver`) for frontend and E2E.
 - **Target Platform**: Linux (X11 + Wayland) primary for v1; macOS and Windows supported as a by-product of Tauri + `portable-pty` but not in v1 CI matrix.
-- **Project Type**: Desktop application (Tauri app) + standalone CLI wrapper (`agentui run`).
+- **Project Type**: Desktop application (Tauri app) + standalone CLI wrapper (`tend run`).
 - **Performance Goals**: 10 concurrent sessions across 5 repos with no perceptible lag; < 50 MB idle RAM; list updates < 100 ms; activation < 200 ms.
 - **Constraints**: Local-only (no network I/O for v1); offline-capable; single-user single-machine; SQLite single-writer is acceptable.
 - **Scale/Scope**: 10 sessions × 5 repos concurrent; hundreds of notes/reminders per project over time; archival retained indefinitely.

@@ -1,7 +1,7 @@
 //! T038: `update_status` daemon IPC contract tests.
 
-use agentui_protocol::{Request, Response, SessionStatusWire};
-use agentui_workbench::daemon::handlers::dispatch;
+use tend_protocol::{Request, Response, SessionStatusWire};
+use tend_workbench::daemon::handlers::dispatch;
 
 /// Status enum validation: working, idle, and needs_input are all accepted.
 #[tokio::test]
@@ -56,7 +56,7 @@ async fn update_status_not_found() {
         Response::Err { code, .. } => {
             assert_eq!(
                 code,
-                agentui_protocol::ErrorCode::NotFound,
+                tend_protocol::ErrorCode::NotFound,
                 "unknown session_id should return NOT_FOUND"
             );
         }

@@ -7,16 +7,16 @@
 
 Build a local, always-on desktop workbench that unifies agent sessions across multiple repositories into a single view with live status, needs-input alerts, one-action activation, paired companion terminals, a per-project scratchpad with a cross-project reminder overview, and automatic workspace persistence.
 
-**Technical approach** (full rationale in [`research.md`](./research.md)): a **Tauri 2** desktop app with a **Rust** backend and a **Svelte 5 + Vite** frontend. The backend owns all session lifecycles — it spawns agents under PTYs via `portable-pty`, runs per-session actor tasks on Tokio for reader/writer/status-monitor duties, and persists projects, sessions, scratchpads, layouts, and workspace state in SQLite via `sqlx`. Sessions started "outside" the workbench are brought in via an `agentui run` CLI wrapper that speaks a small length-prefixed-JSON **daemon IPC protocol** over a Unix-domain socket. The frontend renders one xterm.js pane per agent session and one per companion terminal, organized into a split view on activation. Notifications use Tauri's built-in plugin. Everything is offline and local-only for v1; WSL-to-Windows and remote sessions are explicit non-goals.
+**Technical approach** (full rationale in [`research.md`](./research.md)): a **Tauri 2** desktop app with a **Rust** backend and a **Svelte 5 + Vite** frontend. The backend owns all session lifecycles — it spawns agents under PTYs via `portable-pty`, runs per-session actor tasks on Tokio for reader/writer/status-monitor duties, and persists projects, sessions, scratchpads, layouts, and workspace state in SQLite via `sqlx`. Sessions started "outside" the workbench are brought in via an `tend run` CLI wrapper that speaks a small length-prefixed-JSON **daemon IPC protocol** over a Unix-domain socket. The frontend renders one xterm.js pane per agent session and one per companion terminal, organized into a split view on activation. Notifications use Tauri's built-in plugin. Everything is offline and local-only for v1; WSL-to-Windows and remote sessions are explicit non-goals.
 
 ## Technical Context
 
 **Language/Version**: Rust stable ≥ 1.80 (backend + CLI); TypeScript 5.x + Svelte 5 runes (frontend)
 **Primary Dependencies**: Tauri 2.x, `portable-pty`, `sqlx` (sqlite feature), `tokio`, `notify`, `sysinfo`, `tracing`, `serde` / `serde_json`; xterm.js 5 with `xterm-addon-fit` and `xterm-addon-web-links`, `marked`, `DOMPurify`, Vite
-**Storage**: SQLite via `sqlx` at the XDG data directory (`~/.local/share/agentui/workbench.db` on Linux); forward-only migrations under `src-tauri/migrations/`
+**Storage**: SQLite via `sqlx` at the XDG data directory (`~/.local/share/tend/workbench.db` on Linux); forward-only migrations under `src-tauri/migrations/`
 **Testing**: `cargo test` + `tokio::test` for Rust unit/integration/contract tests; Vitest for Svelte components and stores; Playwright via `tauri-driver` for a small E2E happy-path suite; 80 % backend + CLI coverage gate
 **Target Platform**: Linux (X11 + Wayland) primary for v1; macOS and Windows supported as a by-product of Tauri + `portable-pty` but not in v1 CI matrix
-**Project Type**: Desktop application (Tauri app) plus a standalone CLI wrapper crate (`agentui run`) and a shared wire-format crate (`agentui-protocol`) that both the Tauri backend and the CLI depend on as the single source of truth for daemon IPC types
+**Project Type**: Desktop application (Tauri app) plus a standalone CLI wrapper crate (`tend run`) and a shared wire-format crate (`tend-protocol`) that both the Tauri backend and the CLI depend on as the single source of truth for daemon IPC types
 **Performance Goals**: 10 concurrent sessions across 5 repos with no perceptible lag; < 50 MB idle RAM; session list / filter updates < 100 ms; session activation < 200 ms; xterm.js rendering at 60 fps
 **Constraints**: Local-only (no network I/O in v1); offline-capable; single-user, single-machine; SQLite single-writer; no remote-session support (FR-022)
 **Scale/Scope**: 10 sessions × 5 repos concurrent; hundreds of notes/reminders per project over time; archived rows retained indefinitely; < 64 KiB per daemon IPC message
@@ -67,8 +67,8 @@ specs/001-cross-repo-workbench/
 Tauri-shaped workspace with a dedicated crate for the backend, a Svelte frontend under a sibling directory, a standalone CLI crate, a tiny shared wire-format crate both Rust crates depend on, and shared integration tests at the root:
 
 ```text
-agentui/
-├── protocol/                      # agentui-protocol — shared daemon IPC types
+tend/
+├── protocol/                      # tend-protocol — shared daemon IPC types
 │   ├── Cargo.toml                 # Tiny: serde + serde_json + thiserror, no tokio/sqlx/tauri
 │   └── src/
 │       └── lib.rs                 # Request / Response / ErrorCode enums, the wire SOT
@@ -91,7 +91,7 @@ agentui/
 │       │   └── notifications.rs
 │       ├── daemon/                # Unix-domain-socket IPC server
 │       │   ├── mod.rs
-│       │   ├── server.rs          # Framing + accept-loop; wire types re-exported from `agentui-protocol`
+│       │   ├── server.rs          # Framing + accept-loop; wire types re-exported from `tend-protocol`
 │       │   └── handlers.rs        # No local protocol module — wire SOT lives in `protocol/`
 │       ├── session/               # Session lifecycle / actors
 │       │   ├── mod.rs
@@ -153,13 +153,13 @@ agentui/
 │   └── routes/
 │       └── +page.svelte
 │
-├── cli/                           # Standalone `agentui run` wrapper crate
-│   ├── Cargo.toml                 # Depends on `agentui-protocol` — not on `src-tauri` internals
+├── cli/                           # Standalone `tend run` wrapper crate
+│   ├── Cargo.toml                 # Depends on `tend-protocol` — not on `src-tauri` internals
 │   └── src/
 │       ├── main.rs
 │       ├── args.rs
 │       ├── pty.rs                 # Wrapper-side PTY (proxies to child)
-│       ├── ipc.rs                 # Daemon IPC client (uses agentui-protocol types)
+│       ├── ipc.rs                 # Daemon IPC client (uses tend-protocol types)
 │       └── heuristic.rs           # Shared status heuristic library
 │
 ├── tests/                         # Cross-cutting integration / E2E tests
@@ -181,8 +181,8 @@ agentui/
 **Structure Decision**: **Tauri desktop app with an adjacent CLI crate and a tiny shared protocol crate**, chosen because:
 
 1. The feature is fundamentally a GUI with a backend daemon role — Tauri gives us both with one process.
-2. The CLI wrapper (`agentui run`) is a separate concern with its own dependency graph (no GUI, no webview) and benefits from being its own crate; a Cargo workspace keeps them in one repo without coupling them.
-3. **The `agentui-protocol` crate is the single source of truth for the daemon IPC wire format.** Both `src-tauri` and `cli` depend on it via `{ path = "../protocol" }`. Neither crate is allowed to redefine `Request` / `Response` / `ErrorCode` locally. This is cheap to do on day 1 and expensive to retrofit later — editing the wire format means editing exactly one crate, and neither crate imports internals from the other. No path-dep from `cli/` into `src-tauri/src/daemon/` is permitted.
+2. The CLI wrapper (`tend run`) is a separate concern with its own dependency graph (no GUI, no webview) and benefits from being its own crate; a Cargo workspace keeps them in one repo without coupling them.
+3. **The `tend-protocol` crate is the single source of truth for the daemon IPC wire format.** Both `src-tauri` and `cli` depend on it via `{ path = "../protocol" }`. Neither crate is allowed to redefine `Request` / `Response` / `ErrorCode` locally. This is cheap to do on day 1 and expensive to retrofit later — editing the wire format means editing exactly one crate, and neither crate imports internals from the other. No path-dep from `cli/` into `src-tauri/src/daemon/` is permitted.
 4. The Svelte frontend lives at `src/` per Vite/SvelteKit convention and sits next to `src-tauri/` per Tauri convention — standard layout, no surprises.
 5. `tests/` at the workspace root contains only cross-crate tests (E2E and integration across `src-tauri` + `cli`); per-crate unit tests live inside each crate per Rust convention.
 6. Migrations live next to the backend crate (`src-tauri/migrations/`) so they ship with the binary that runs them.
@@ -198,7 +198,7 @@ Summary of decisions (full rationale in research.md):
 3. xterm.js 5 as the only mature browser terminal emulator (§3)
 4. `portable-pty` for cross-platform PTY spawning (§4)
 5. SQLite via async `sqlx` for persistence, XDG data dir, forward-only migrations (§5)
-6. Workbench-owned sessions via `agentui run` CLI wrapper + daemon IPC for session discovery (§6)
+6. Workbench-owned sessions via `tend run` CLI wrapper + daemon IPC for session discovery (§6)
 7. Two-tier session state detection: cooperative IPC primary, output-activity + prompt heuristic fallback (§7)
 8. Intra-app view switching for "bring to foreground" — no cross-process window focus (§8)
 9. Tauri notification plugin for OS-native alerts; in-app alert bar always visible (§9)

@@ -11,10 +11,10 @@
 
 mod common;
 
-use agentui_protocol::{Request, Response, PROTOCOL_VERSION};
-use agentui_workbench::daemon::spawn_daemon;
-use agentui_workbench::model::SessionOwnership;
-use agentui_workbench::session::SessionService;
+use tend_protocol::{Request, Response, PROTOCOL_VERSION};
+use tend_workbench::daemon::spawn_daemon;
+use tend_workbench::model::SessionOwnership;
+use tend_workbench::session::SessionService;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
@@ -73,7 +73,7 @@ async fn cli_register_session_appears_in_list() {
 
         // Send hello.
         let hello = Request::Hello {
-            client: "agentui-run".into(),
+            client: "tend-run".into(),
             client_version: "0.1.0-test".into(),
             protocol_version: PROTOCOL_VERSION,
         };
@@ -108,7 +108,7 @@ async fn cli_register_session_appears_in_list() {
         assert!(project_id > 0, "project_id must be positive");
 
         // 3. Query via SessionService::list and assert the session appears.
-        let project_id_typed = agentui_workbench::model::ProjectId::new(project_id);
+        let project_id_typed = tend_workbench::model::ProjectId::new(project_id);
         let sessions = SessionService::list(&state, Some(project_id_typed), false)
             .await
             .expect("session_list should succeed");

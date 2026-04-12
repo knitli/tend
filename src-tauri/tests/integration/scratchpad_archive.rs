@@ -3,9 +3,9 @@
 //! Archiving a project should NOT delete its notes or reminders. After
 //! unarchiving, the scratchpad must be fully intact.
 
-use agentui_workbench::project::ProjectService;
-use agentui_workbench::scratchpad::notes::NoteService;
-use agentui_workbench::scratchpad::reminders::ReminderService;
+use tend_workbench::project::ProjectService;
+use tend_workbench::scratchpad::notes::NoteService;
+use tend_workbench::scratchpad::reminders::ReminderService;
 
 /// Archive project -> notes/reminders still queryable; unarchive -> intact.
 #[tokio::test]

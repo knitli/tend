@@ -2,7 +2,7 @@
 //! overrides heuristic-derived summary until the next `update_status` or
 //! until output activity resumes past a timeout.
 
-use agentui_workbench::session::activity::ActivitySummary;
+use tend_workbench::session::activity::ActivitySummary;
 
 /// Agent-provided summary overrides the heuristic-derived summary.
 #[test]

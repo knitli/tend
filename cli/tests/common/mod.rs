@@ -20,5 +20,5 @@ static SEQ: AtomicU64 = AtomicU64::new(0);
 pub fn temp_socket_path() -> PathBuf {
     let seq = SEQ.fetch_add(1, Ordering::SeqCst);
     let pid = std::process::id();
-    std::env::temp_dir().join(format!("agentui-cli-test-{pid}-{seq}.sock"))
+    std::env::temp_dir().join(format!("tend-cli-test-{pid}-{seq}.sock"))
 }

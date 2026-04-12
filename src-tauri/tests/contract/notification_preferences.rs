@@ -4,8 +4,8 @@
 //! They are RED by design and will turn GREEN when Phase 4 wires the
 //! preference Tauri commands end-to-end.
 
-use agentui_workbench::model::{NotificationChannel, QuietHours};
-use agentui_workbench::notifications::PreferenceService;
+use tend_workbench::model::{NotificationChannel, QuietHours};
+use tend_workbench::notifications::PreferenceService;
 
 /// Getting the global default returns a preference (auto-created if absent).
 #[tokio::test]

@@ -5,9 +5,9 @@
 //! correctly detects an existing alive companion and returns it instead of
 //! inserting duplicate rows.
 
-use agentui_workbench::companion::CompanionService;
-use agentui_workbench::project::ProjectService;
-use agentui_workbench::session::SessionService;
+use tend_workbench::companion::CompanionService;
+use tend_workbench::project::ProjectService;
+use tend_workbench::session::SessionService;
 use std::collections::BTreeMap;
 
 /// Activating the same session 3 times creates exactly one companion_terminals row.

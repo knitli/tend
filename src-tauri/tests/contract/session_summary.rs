@@ -7,8 +7,8 @@ mod common;
 
 use common::{mock_state, seed_project};
 
-use agentui_workbench::model::SessionId;
-use agentui_workbench::session::SessionService;
+use tend_workbench::model::SessionId;
+use tend_workbench::session::SessionService;
 
 /// After inserting a session and feeding output into its live handle's activity
 /// summary, `session_list` should return the derived `activity_summary`.
@@ -44,7 +44,7 @@ async fn session_list_includes_activity_summary() {
     assert_eq!(summaries[0].activity_summary, None);
 
     // Install a live session handle with some activity.
-    let handle = agentui_workbench::session::live::LiveSessionHandle::attached_mirror(sid);
+    let handle = tend_workbench::session::live::LiveSessionHandle::attached_mirror(sid);
     handle
         .activity
         .lock()
@@ -165,7 +165,7 @@ async fn get_by_id_includes_activity_summary() {
     let sid = SessionId::new(row.0);
 
     // Install a live handle with activity.
-    let handle = agentui_workbench::session::live::LiveSessionHandle::attached_mirror(sid);
+    let handle = tend_workbench::session::live::LiveSessionHandle::attached_mirror(sid);
     handle
         .activity
         .lock()

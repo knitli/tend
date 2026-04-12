@@ -10,9 +10,9 @@
 
 mod common;
 
-use agentui_workbench::model::SessionOwnership;
-use agentui_workbench::session::reaper::spawn_reaper;
-use agentui_workbench::session::SessionService;
+use tend_workbench::model::SessionOwnership;
+use tend_workbench::session::reaper::spawn_reaper;
+use tend_workbench::session::SessionService;
 use std::collections::BTreeMap;
 use std::time::Duration;
 
@@ -64,7 +64,7 @@ async fn session_child_exit_marks_ended() {
                 loop {
                     let remaining = deadline - tokio::time::Instant::now();
                     match tokio::time::timeout(remaining, rx.recv()).await {
-                        Ok(Ok(agentui_workbench::state::SessionEventEnvelope::Ended {
+                        Ok(Ok(tend_workbench::state::SessionEventEnvelope::Ended {
                             session_id: sid,
                             ..
                         })) if sid == session_id => {
@@ -94,13 +94,13 @@ async fn session_child_exit_marks_ended() {
             }
             Err(e)
                 if e.message.contains("not yet implemented")
-                    || e.code == agentui_workbench::error::ErrorCode::Internal =>
+                    || e.code == tend_workbench::error::ErrorCode::Internal =>
             {
                 // Expected RED state — spawn_local stub not yet implemented.
                 // This test will pass once T049 lands.
                 eprintln!("T041: spawn_local not yet implemented (expected RED): {e}");
             }
-            Err(e) if e.code == agentui_workbench::error::ErrorCode::SpawnFailed => {
+            Err(e) if e.code == tend_workbench::error::ErrorCode::SpawnFailed => {
                 // Acceptable in CI without a tty — the spawn itself failed but
                 // the test structure is correct.
                 eprintln!("T041: spawn failed (CI without tty?): {e}");
@@ -149,7 +149,7 @@ async fn session_killed_child_marks_ended_with_signal() {
                 loop {
                     let remaining = deadline - tokio::time::Instant::now();
                     match tokio::time::timeout(remaining, rx.recv()).await {
-                        Ok(Ok(agentui_workbench::state::SessionEventEnvelope::Ended {
+                        Ok(Ok(tend_workbench::state::SessionEventEnvelope::Ended {
                             session_id: sid,
                             ..
                         })) if sid == session_id => {
@@ -177,11 +177,11 @@ async fn session_killed_child_marks_ended_with_signal() {
             }
             Err(e)
                 if e.message.contains("not yet implemented")
-                    || e.code == agentui_workbench::error::ErrorCode::Internal =>
+                    || e.code == tend_workbench::error::ErrorCode::Internal =>
             {
                 eprintln!("T041: spawn_local not yet implemented (expected RED): {e}");
             }
-            Err(e) if e.code == agentui_workbench::error::ErrorCode::SpawnFailed => {
+            Err(e) if e.code == tend_workbench::error::ErrorCode::SpawnFailed => {
                 eprintln!("T041: spawn failed (CI without tty?): {e}");
             }
             Err(e) => panic!("unexpected error from spawn_local: {e:?}"),

@@ -1,7 +1,7 @@
 //! T037: `register_session` daemon IPC contract tests.
 
-use agentui_protocol::{Request, Response};
-use agentui_workbench::daemon::handlers::dispatch;
+use tend_protocol::{Request, Response};
+use tend_workbench::daemon::handlers::dispatch;
 
 /// Happy path: register_session creates a project + session with
 /// ownership=wrapper. Returns SessionRegistered with valid ids.
@@ -55,7 +55,7 @@ async fn register_session_path_not_found() {
     let state = crate::common::mock_state().await;
 
     let req = Request::RegisterSession {
-        project_path: "/tmp/agentui-nonexistent-path-xyz-42".into(),
+        project_path: "/tmp/tend-nonexistent-path-xyz-42".into(),
         label: None,
         working_directory: None,
         command: None,
@@ -69,7 +69,7 @@ async fn register_session_path_not_found() {
         Response::Err { code, .. } => {
             assert_eq!(
                 code,
-                agentui_protocol::ErrorCode::PathNotFound,
+                tend_protocol::ErrorCode::PathNotFound,
                 "non-existent path should return PATH_NOT_FOUND"
             );
         }

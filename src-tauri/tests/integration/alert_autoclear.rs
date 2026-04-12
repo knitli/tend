@@ -6,8 +6,8 @@
 //!
 //! This exercises the H7 autoclear path in `SessionService::set_status`.
 
-use agentui_workbench::model::{SessionStatus, StatusSource};
-use agentui_workbench::session::SessionService;
+use tend_workbench::model::{SessionStatus, StatusSource};
+use tend_workbench::session::SessionService;
 
 #[tokio::test]
 async fn update_status_working_clears_needs_input_alert() {

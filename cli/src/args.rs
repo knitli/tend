@@ -1,16 +1,16 @@
-//! T054: Clap-derive argument parsing for the `agentui` CLI wrapper.
+//! T054: Clap-derive argument parsing for the `tend` CLI wrapper.
 
 use clap::Parser;
 
-/// Agent UI CLI wrapper — run commands with workbench session tracking.
+/// Tend CLI wrapper — run commands with workbench session tracking.
 #[derive(Parser, Debug)]
-#[command(name = "agentui", version, about)]
+#[command(name = "tend", version, about)]
 pub enum Cli {
-    /// Run a command with agent UI session tracking.
+    /// Run a command with tend session tracking.
     Run(RunArgs),
 }
 
-/// Arguments for `agentui run`.
+/// Arguments for `tend run`.
 #[derive(clap::Args, Debug)]
 pub struct RunArgs {
     /// Project name or path (defaults to $PWD).

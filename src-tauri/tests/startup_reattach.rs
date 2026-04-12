@@ -17,8 +17,8 @@
 
 mod common;
 
-use agentui_workbench::session::recovery::reconcile_and_reattach;
-use agentui_workbench::state::SessionEventEnvelope;
+use tend_workbench::session::recovery::reconcile_and_reattach;
+use tend_workbench::state::SessionEventEnvelope;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 

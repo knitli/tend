@@ -7,18 +7,18 @@
 //! Written RED-first (TDD gate) — they will turn GREEN as the service stubs
 //! become real implementations.
 
-use agentui_workbench::companion::CompanionService;
-use agentui_workbench::error::ErrorCode;
-use agentui_workbench::model::SessionId;
-use agentui_workbench::project::ProjectService;
-use agentui_workbench::session::SessionService;
+use tend_workbench::companion::CompanionService;
+use tend_workbench::error::ErrorCode;
+use tend_workbench::model::SessionId;
+use tend_workbench::project::ProjectService;
+use tend_workbench::session::SessionService;
 use std::collections::BTreeMap;
 
 /// Helper: spawn a workbench-owned session backed by a real PTY in a temp dir.
 /// Returns `(SessionId, tempfile::TempDir)` — caller must hold `TempDir` alive.
 async fn spawn_real_session(
-    state: &agentui_workbench::state::WorkbenchState,
-) -> (agentui_workbench::model::SessionId, tempfile::TempDir) {
+    state: &tend_workbench::state::WorkbenchState,
+) -> (tend_workbench::model::SessionId, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("create temp dir");
     let project = ProjectService::register(
         &state.db,
@@ -167,7 +167,7 @@ async fn ensure_fails_when_cwd_missing() {
 
     // Point the session at a nonexistent directory.
     sqlx::query(
-        "UPDATE sessions SET working_directory = '/nonexistent/agentui-test-dir' WHERE id = ?1",
+        "UPDATE sessions SET working_directory = '/nonexistent/tend-test-dir' WHERE id = ?1",
     )
     .bind(session_id.get())
     .execute(state.db.pool())

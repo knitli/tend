@@ -7,7 +7,7 @@ use crate::model::{SessionId, SessionStatus, StatusSource};
 use crate::project::ProjectService;
 use crate::session::SessionService;
 use crate::state::WorkbenchState;
-use agentui_protocol::{
+use tend_protocol::{
     error as protocol_error, ErrorCode, Request, Response, SessionStatusWire, PROTOCOL_VERSION,
 };
 use tracing::{debug, info, warn};

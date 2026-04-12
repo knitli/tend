@@ -21,7 +21,7 @@ pub struct Database {
 impl Database {
     /// Open the workbench database at the XDG data-local default path.
     ///
-    /// Resolves to `~/.local/share/agentui/workbench.db` on Linux. Creates
+    /// Resolves to `~/.local/share/tend/workbench.db` on Linux. Creates
     /// the parent directory if needed, opens a connection pool, and runs all
     /// forward-only migrations from `src-tauri/migrations/`.
     pub async fn open_default() -> WorkbenchResult<Self> {
@@ -101,7 +101,7 @@ impl Database {
     }
 }
 
-/// Resolve the default database path (`$XDG_DATA_HOME/agentui/workbench.db`).
+/// Resolve the default database path (`$XDG_DATA_HOME/tend/workbench.db`).
 pub fn default_db_path() -> WorkbenchResult<PathBuf> {
     let data_dir = dirs::data_local_dir().ok_or_else(|| {
         WorkbenchError::new(
@@ -109,5 +109,5 @@ pub fn default_db_path() -> WorkbenchResult<PathBuf> {
             "could not resolve XDG data local directory",
         )
     })?;
-    Ok(data_dir.join("agentui").join("workbench.db"))
+    Ok(data_dir.join("tend").join("workbench.db"))
 }

@@ -3,9 +3,9 @@
 //! Exercises layout_list, layout_save (+ NAME_TAKEN + overwrite), layout_restore
 //! (returns missing_sessions for dead refs), and layout_delete.
 
-use agentui_workbench::error::ErrorCode;
-use agentui_workbench::model::{LayoutId, ProjectId, SessionId, WorkspaceState};
-use agentui_workbench::workspace::layouts::LayoutService;
+use tend_workbench::error::ErrorCode;
+use tend_workbench::model::{LayoutId, ProjectId, SessionId, WorkspaceState};
+use tend_workbench::workspace::layouts::LayoutService;
 
 /// Empty list when no layouts exist.
 #[tokio::test]
@@ -126,7 +126,7 @@ async fn layout_restore_happy() {
     // Install a live session handle so the restore can find it.
     {
         let handle =
-            agentui_workbench::session::live::LiveSessionHandle::attached_mirror(session_id);
+            tend_workbench::session::live::LiveSessionHandle::attached_mirror(session_id);
         state.live_sessions.write().await.insert(session_id, handle);
     }
 

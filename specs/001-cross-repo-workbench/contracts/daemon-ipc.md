@@ -1,13 +1,13 @@
 # Daemon IPC Protocol
 
-The workbench runs a small IPC server on a Unix-domain socket so that external processes — primarily the `agentui run` CLI wrapper, optionally cooperating agent integrations — can register sessions and push status into the workbench without needing the user to do anything in the GUI. This satisfies FR-008 (sessions started outside the workbench) for the supported path.
+The workbench runs a small IPC server on a Unix-domain socket so that external processes — primarily the `tend run` CLI wrapper, optionally cooperating agent integrations — can register sessions and push status into the workbench without needing the user to do anything in the GUI. This satisfies FR-008 (sessions started outside the workbench) for the supported path.
 
 ---
 
 ## 1. Transport
 
-- **Linux / macOS**: Unix-domain stream socket at `$XDG_RUNTIME_DIR/agentui.sock` (fallback `/tmp/agentui-$UID.sock`).
-- **Windows (future)**: Named pipe `\\.\pipe\agentui-$USER`. Out of scope for v1 but the protocol is transport-agnostic.
+- **Linux / macOS**: Unix-domain stream socket at `$XDG_RUNTIME_DIR/tend.sock` (fallback `/tmp/tend-$UID.sock`).
+- **Windows (future)**: Named pipe `\\.\pipe\tend-$USER`. Out of scope for v1 but the protocol is transport-agnostic.
 - **Discovery**: The workbench sets the env var `AGENTUI_SOCKET=<path>` in the environment of any process it spawns. The CLI wrapper reads this. Agents launched outside the workbench can discover it via the same env var if the user has it in their shell config, or by probing the default path.
 - **Permissions**: Socket is created with `0600` and the directory must be owned by the same user. No cross-user access.
 
@@ -34,7 +34,7 @@ Sent first on connection. Advertises client identity and the version it speaks.
 ```json
 {
   "kind": "hello",
-  "client": "agentui-run",
+  "client": "tend-run",
   "client_version": "0.1.0",
   "protocol_version": 1
 }
@@ -174,9 +174,9 @@ Clients that don't want push events can disconnect after each request/response r
 
 ---
 
-## 5. CLI wrapper flow (`agentui run`)
+## 5. CLI wrapper flow (`tend run`)
 
-End-to-end call sequence when a user runs `agentui run -p marque -- claude`:
+End-to-end call sequence when a user runs `tend run -p marque -- claude`:
 
 1. CLI parses args, resolves `marque` against registered projects (or uses `$PWD` if unqualified).
 2. CLI opens `$AGENTUI_SOCKET`, sends `hello`, receives `welcome`.

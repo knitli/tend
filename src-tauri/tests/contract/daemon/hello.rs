@@ -1,7 +1,7 @@
 //! T036: `hello` daemon IPC contract tests.
 
-use agentui_protocol::{Request, Response, PROTOCOL_VERSION};
-use agentui_workbench::daemon::handlers::dispatch;
+use tend_protocol::{Request, Response, PROTOCOL_VERSION};
+use tend_workbench::daemon::handlers::dispatch;
 
 /// Happy path: Hello with correct protocol_version returns Welcome with
 /// server_version and protocol_version.
@@ -56,7 +56,7 @@ async fn hello_protocol_version_mismatch() {
         Response::Err { code, .. } => {
             assert_eq!(
                 code,
-                agentui_protocol::ErrorCode::ProtocolError,
+                tend_protocol::ErrorCode::ProtocolError,
                 "mismatched version should return PROTOCOL_ERROR"
             );
         }

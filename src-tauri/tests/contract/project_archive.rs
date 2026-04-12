@@ -1,7 +1,7 @@
 //! T034: `project_archive` / `project_unarchive` contract tests.
 
-use agentui_workbench::error::ErrorCode;
-use agentui_workbench::project::ProjectService;
+use tend_workbench::error::ErrorCode;
+use tend_workbench::project::ProjectService;
 
 /// Archive and unarchive happy path.
 #[tokio::test]

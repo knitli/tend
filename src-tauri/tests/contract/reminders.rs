@@ -3,9 +3,9 @@
 //! Exercises reminder CRUD: list (with state filter), create, set_state, delete —
 //! including error paths for CONTENT_EMPTY and NOT_FOUND.
 
-use agentui_workbench::error::ErrorCode;
-use agentui_workbench::model::{ReminderId, ReminderState};
-use agentui_workbench::scratchpad::reminders::ReminderService;
+use tend_workbench::error::ErrorCode;
+use tend_workbench::model::{ReminderId, ReminderState};
+use tend_workbench::scratchpad::reminders::ReminderService;
 
 // ── reminder_list ────────────────────────────────────────────────────────
 
@@ -28,7 +28,7 @@ async fn reminder_list_empty() {
 async fn reminder_list_state_filter_open() {
     let state = crate::common::mock_state().await;
     let tmp = tempfile::tempdir().expect("tempdir");
-    let project = agentui_workbench::project::ProjectService::register(
+    let project = tend_workbench::project::ProjectService::register(
         &state.db,
         tmp.path().to_str().unwrap(),
         Some("rem-filter"),
@@ -68,7 +68,7 @@ async fn reminder_list_state_filter_open() {
 async fn reminder_list_state_filter_done() {
     let state = crate::common::mock_state().await;
     let tmp = tempfile::tempdir().expect("tempdir");
-    let project = agentui_workbench::project::ProjectService::register(
+    let project = tend_workbench::project::ProjectService::register(
         &state.db,
         tmp.path().to_str().unwrap(),
         Some("rem-filter-done"),
@@ -108,7 +108,7 @@ async fn reminder_list_state_filter_done() {
 async fn reminder_create_happy() {
     let state = crate::common::mock_state().await;
     let tmp = tempfile::tempdir().expect("tempdir");
-    let project = agentui_workbench::project::ProjectService::register(
+    let project = tend_workbench::project::ProjectService::register(
         &state.db,
         tmp.path().to_str().unwrap(),
         Some("rem-create"),
@@ -130,7 +130,7 @@ async fn reminder_create_happy() {
 async fn reminder_create_content_empty() {
     let state = crate::common::mock_state().await;
     let tmp = tempfile::tempdir().expect("tempdir");
-    let project = agentui_workbench::project::ProjectService::register(
+    let project = tend_workbench::project::ProjectService::register(
         &state.db,
         tmp.path().to_str().unwrap(),
         Some("rem-empty-content"),
@@ -152,7 +152,7 @@ async fn reminder_create_content_empty() {
 async fn reminder_set_state_open_to_done() {
     let state = crate::common::mock_state().await;
     let tmp = tempfile::tempdir().expect("tempdir");
-    let project = agentui_workbench::project::ProjectService::register(
+    let project = tend_workbench::project::ProjectService::register(
         &state.db,
         tmp.path().to_str().unwrap(),
         Some("rem-state-done"),
@@ -181,7 +181,7 @@ async fn reminder_set_state_open_to_done() {
 async fn reminder_set_state_done_to_open() {
     let state = crate::common::mock_state().await;
     let tmp = tempfile::tempdir().expect("tempdir");
-    let project = agentui_workbench::project::ProjectService::register(
+    let project = tend_workbench::project::ProjectService::register(
         &state.db,
         tmp.path().to_str().unwrap(),
         Some("rem-state-reopen"),
@@ -216,7 +216,7 @@ async fn reminder_set_state_done_to_open() {
 async fn reminder_delete_happy() {
     let state = crate::common::mock_state().await;
     let tmp = tempfile::tempdir().expect("tempdir");
-    let project = agentui_workbench::project::ProjectService::register(
+    let project = tend_workbench::project::ProjectService::register(
         &state.db,
         tmp.path().to_str().unwrap(),
         Some("rem-delete"),
@@ -271,7 +271,7 @@ async fn reminder_set_state_not_found() {
 #[tokio::test]
 async fn reminder_create_project_not_found() {
     let state = crate::common::mock_state().await;
-    let bogus = agentui_workbench::model::ProjectId::new(999_999);
+    let bogus = tend_workbench::model::ProjectId::new(999_999);
 
     let err = ReminderService::create(&state.db, bogus, "test reminder")
         .await

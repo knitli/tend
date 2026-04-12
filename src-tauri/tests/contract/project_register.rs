@@ -1,7 +1,7 @@
 //! T031: `project_register` contract tests.
 
-use agentui_workbench::error::ErrorCode;
-use agentui_workbench::project::ProjectService;
+use tend_workbench::error::ErrorCode;
+use tend_workbench::project::ProjectService;
 
 /// Happy path: register a real temp directory, assert the returned project
 /// has the correct canonical path and display name.
@@ -26,7 +26,7 @@ async fn register_happy_path() {
 #[tokio::test]
 async fn register_path_not_found() {
     let state = crate::common::mock_state().await;
-    let err = ProjectService::register(&state.db, "/tmp/agentui-does-not-exist-xyz123", None)
+    let err = ProjectService::register(&state.db, "/tmp/tend-does-not-exist-xyz123", None)
         .await
         .expect_err("should fail for non-existent path");
 

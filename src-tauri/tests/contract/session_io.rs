@@ -7,15 +7,15 @@
 //! Written RED-first (TDD gate) — they will turn GREEN once the service
 //! methods and Tauri commands are wired.
 
-use agentui_workbench::error::ErrorCode;
-use agentui_workbench::project::ProjectService;
-use agentui_workbench::session::SessionService;
+use tend_workbench::error::ErrorCode;
+use tend_workbench::project::ProjectService;
+use tend_workbench::session::SessionService;
 use std::collections::BTreeMap;
 
 /// Helper: spawn a workbench-owned session backed by a real PTY.
 async fn spawn_real_workbench_session(
-    state: &agentui_workbench::state::WorkbenchState,
-) -> (agentui_workbench::model::SessionId, tempfile::TempDir) {
+    state: &tend_workbench::state::WorkbenchState,
+) -> (tend_workbench::model::SessionId, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("create temp dir");
     let project =
         ProjectService::register(&state.db, tmp.path().to_str().unwrap(), Some("io-test"))
@@ -95,7 +95,7 @@ async fn end_happy_path_workbench_owned() {
 
     let sessions = state.live_sessions.read().await;
     let handle = sessions.get(&session_id).expect("live handle must exist");
-    let result = handle.end(agentui_workbench::session::live::KillSignal::Term);
+    let result = handle.end(tend_workbench::session::live::KillSignal::Term);
     assert!(
         result.is_ok(),
         "end on workbench-owned session must succeed"
@@ -148,8 +148,8 @@ async fn end_wrapper_owned_returns_read_only() {
 /// returns SESSION_READ_ONLY on write/resize/end even at the handle level.
 #[tokio::test]
 async fn mirror_handle_rejects_io() {
-    use agentui_workbench::model::SessionId;
-    use agentui_workbench::session::live::LiveSessionHandle;
+    use tend_workbench::model::SessionId;
+    use tend_workbench::session::live::LiveSessionHandle;
 
     let handle = LiveSessionHandle::attached_mirror(SessionId::new(1));
 
@@ -160,7 +160,7 @@ async fn mirror_handle_rejects_io() {
     assert_eq!(resize_err.code, ErrorCode::SessionReadOnly);
 
     let end_err = handle
-        .end(agentui_workbench::session::live::KillSignal::Term)
+        .end(tend_workbench::session::live::KillSignal::Term)
         .unwrap_err();
     assert_eq!(end_err.code, ErrorCode::SessionReadOnly);
 }

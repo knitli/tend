@@ -3,8 +3,8 @@
 //! Exercises workspace_get returning a hydrateable state that is roundtrippable
 //! with workspace_save.
 
-use agentui_workbench::model::WorkspaceState;
-use agentui_workbench::workspace::WorkspaceService;
+use tend_workbench::model::WorkspaceState;
+use tend_workbench::workspace::WorkspaceService;
 
 /// Default workspace state when no row exists yet.
 #[tokio::test]
@@ -27,10 +27,10 @@ async fn workspace_save_then_get_roundtrips() {
 
     let mut ws = WorkspaceState::default();
     ws.active_project_ids = vec![
-        agentui_workbench::model::ProjectId::new(1),
-        agentui_workbench::model::ProjectId::new(4),
+        tend_workbench::model::ProjectId::new(1),
+        tend_workbench::model::ProjectId::new(4),
     ];
-    ws.focused_session_id = Some(agentui_workbench::model::SessionId::new(12));
+    ws.focused_session_id = Some(tend_workbench::model::SessionId::new(12));
     ws.pane_layout = "agent_only".to_string();
     ws.ui
         .insert("sidebar_width".to_string(), serde_json::json!(280));

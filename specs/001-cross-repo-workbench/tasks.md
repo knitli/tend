@@ -12,7 +12,7 @@
 
 - **[P]**: Parallelizable (different files, no dependency on an incomplete task)
 - **[Story]**: `US1`..`US6` — only on user-story phases
-- Paths are absolute under `/home/knitli/agentui/`
+- Paths are absolute under `/home/knitli/tend/`
 
 ## Path Conventions
 
@@ -28,13 +28,13 @@
 
 **Purpose**: Cargo workspace, Tauri bootstrap, frontend scaffold, toolchain baselines.
 
-- [X] T001 Create Cargo workspace root `Cargo.toml` at `/home/knitli/agentui/Cargo.toml` with members `["protocol", "src-tauri", "cli"]` and shared `[workspace.dependencies]` for `tokio`, `sqlx`, `serde`, `serde_json`, `tracing`, `thiserror`, `anyhow`
-- [X] T002 Create `src-tauri/Cargo.toml` with Tauri 2.x, `portable-pty`, `sqlx` (sqlite, runtime-tokio-rustls, macros), `tokio` (full), `notify`, `sysinfo`, `tracing`, `tracing-subscriber`, `serde`, `serde_json`, `thiserror`, `anyhow`, `dirs` (for XDG), `tauri-plugin-notification`, **`agentui-protocol = { path = "../protocol" }` — no path-dep into `cli/`, no local redefinition of wire types**
-- [X] T003 Create `cli/Cargo.toml` with `clap` (derive), `portable-pty`, `tokio` (rt, io-util, net, macros), `serde`, `serde_json`, `anyhow`, `dirs`, **`agentui-protocol = { path = "../protocol" }` — no path-dep into `src-tauri/`, no local redefinition of wire types**
-- [X] T003b [P] Create `protocol/Cargo.toml` as a library crate named `agentui-protocol` with minimal deps (`serde` with `derive`, `serde_json`, `thiserror`) — **no tokio, no sqlx, no tauri**, this crate must stay build-cheap and reuse-safe. Set `publish = false` for v1.
-- [X] T004 [P] Create `src-tauri/tauri.conf.json` with window defaults (1400×900, resizable, title "agentui"), allowlist restricted to `invoke` only, productName `agentui`, identifier `io.knitli.agentui`
+- [X] T001 Create Cargo workspace root `Cargo.toml` at `/home/knitli/tend/Cargo.toml` with members `["protocol", "src-tauri", "cli"]` and shared `[workspace.dependencies]` for `tokio`, `sqlx`, `serde`, `serde_json`, `tracing`, `thiserror`, `anyhow`
+- [X] T002 Create `src-tauri/Cargo.toml` with Tauri 2.x, `portable-pty`, `sqlx` (sqlite, runtime-tokio-rustls, macros), `tokio` (full), `notify`, `sysinfo`, `tracing`, `tracing-subscriber`, `serde`, `serde_json`, `thiserror`, `anyhow`, `dirs` (for XDG), `tauri-plugin-notification`, **`tend-protocol = { path = "../protocol" }` — no path-dep into `cli/`, no local redefinition of wire types**
+- [X] T003 Create `cli/Cargo.toml` with `clap` (derive), `portable-pty`, `tokio` (rt, io-util, net, macros), `serde`, `serde_json`, `anyhow`, `dirs`, **`tend-protocol = { path = "../protocol" }` — no path-dep into `src-tauri/`, no local redefinition of wire types**
+- [X] T003b [P] Create `protocol/Cargo.toml` as a library crate named `tend-protocol` with minimal deps (`serde` with `derive`, `serde_json`, `thiserror`) — **no tokio, no sqlx, no tauri**, this crate must stay build-cheap and reuse-safe. Set `publish = false` for v1.
+- [X] T004 [P] Create `src-tauri/tauri.conf.json` with window defaults (1400×900, resizable, title "tend"), allowlist restricted to `invoke` only, productName `tend`, identifier `io.knitli.tend`
 - [X] T005 [P] Create `src-tauri/build.rs` invoking `tauri_build::build()`
-- [X] T006 [P] Create `package.json` at `/home/knitli/agentui/package.json` with Vite, Svelte 5, TypeScript, xterm.js 5, xterm-addon-fit, xterm-addon-web-links, marked, DOMPurify, @tauri-apps/api, @tauri-apps/cli; scripts `dev`, `build`, `tauri`, `test`, `e2e`
+- [X] T006 [P] Create `package.json` at `/home/knitli/tend/package.json` with Vite, Svelte 5, TypeScript, xterm.js 5, xterm-addon-fit, xterm-addon-web-links, marked, DOMPurify, @tauri-apps/api, @tauri-apps/cli; scripts `dev`, `build`, `tauri`, `test`, `e2e`
 - [X] T007 [P] Create `pnpm-workspace.yaml`, `vite.config.ts` (Svelte plugin, Tauri-aware clearScreen/server.port/envPrefix), `svelte.config.js`, `tsconfig.json` (strict, bundler module resolution)
 - [X] T008 [P] Create `src/app.html`, `src/app.css` (reset + theme tokens), `src/main.ts` (mount Svelte app), `src/routes/+page.svelte` (empty shell)
 - [X] T009 [P] Create `rustfmt.toml` (edition 2021, max_width 100), `.clippy.toml`, workspace `.editorconfig`
@@ -58,14 +58,14 @@
 
 ### Database layer
 
-- [X] T015 Create `src-tauri/src/db/mod.rs` with async `Database` type wrapping `sqlx::SqlitePool`, `Database::open(path)` that resolves XDG data dir via `dirs::data_local_dir().join("agentui/workbench.db")`, creates parent dir, opens pool with `SqlitePoolOptions`, and runs `sqlx::migrate!("./migrations")`
+- [X] T015 Create `src-tauri/src/db/mod.rs` with async `Database` type wrapping `sqlx::SqlitePool`, `Database::open(path)` that resolves XDG data dir via `dirs::data_local_dir().join("tend/workbench.db")`, creates parent dir, opens pool with `SqlitePoolOptions`, and runs `sqlx::migrate!("./migrations")`
 - [X] T016 Create `src-tauri/src/db/queries.rs` with shared helpers `fetch_one_as`, `fetch_optional_as`, `fetch_all_as` converting `sqlx::Error` → `WorkbenchError`
 
 ### Workbench state & tauri bootstrap
 
 - [X] T017 Create `src-tauri/src/state.rs` with `WorkbenchState { db: Database, live_sessions: Arc<RwLock<HashMap<SessionId, LiveSessionHandle>>>, alert_bus: broadcast::Sender<Alert>, event_bus: broadcast::Sender<SessionEventEnvelope> }`, constructor `WorkbenchState::new(db) -> Self`, stub `LiveSessionHandle` type alias
 - [X] T018 Create `src-tauri/src/lib.rs` exposing `run()` that initializes `tracing_subscriber`, opens the DB, builds `WorkbenchState`, installs `.manage(state)`, registers an empty `tauri::generate_handler![]`, installs the notification plugin, and calls `tauri::Builder::run`
-- [X] T019 Create `src-tauri/src/main.rs` that calls `agentui_workbench::run()`
+- [X] T019 Create `src-tauri/src/main.rs` that calls `tend_workbench::run()`
 
 ### PTY abstraction
 
@@ -73,8 +73,8 @@
 
 ### Daemon IPC transport skeleton (handlers come in US1)
 
-- [X] T021 Create `protocol/src/lib.rs` as the **single source of truth for the daemon IPC wire format**. Define serde enums `Request` (`Hello`, `RegisterSession`, `UpdateStatus`, `Heartbeat`, `EndSession`) and `Response` (`Welcome`, `SessionRegistered`, `Ack`, `Err`) matching `contracts/daemon-ipc.md` §3 field-for-field; `#[serde(tag = "kind", rename_all = "snake_case")]`. Also export the wire-visible `ErrorCode` subset (`PROTOCOL_ERROR`, `MESSAGE_TOO_LARGE`, `PATH_NOT_FOUND`, `NOT_FOUND`, `UNAUTHORIZED`) as an enum with `Serialize`/`Deserialize` that round-trips through the `err { code, message, details }` wire shape. **`EmitAlert` is deliberately NOT in the Request enum** — v1 treats alerts as a side effect of `update_status { status: "needs_input" }`; re-adding `emit_alert` will require a `protocol_version` bump. **`Welcome` MUST NOT include a `session_id_format` field** — ids are JSON numbers on the wire and that field was dead weight (see `contracts/daemon-ipc.md` §3). `src-tauri/src/daemon/mod.rs` and `cli/src/ipc.rs` both import these types via `use agentui_protocol::{Request, Response, ErrorCode};` — neither crate is permitted to redefine them locally.
-- [X] T022 Create `src-tauri/src/daemon/server.rs` with `DaemonServer::bind(path)` that creates the Unix socket at `$XDG_RUNTIME_DIR/agentui.sock` (fallback `/tmp/agentui-$UID.sock`), chmod `0600`, accept-loop spawning per-connection tokio task; `read_frame(&mut reader) -> Result<Vec<u8>>` and `write_frame(&mut writer, bytes)` implementing little-endian u32 length-prefix, 64 KiB cap (return `MESSAGE_TOO_LARGE` on overflow); handler dispatch stub. Imports wire types via `use agentui_protocol::{Request, Response, ErrorCode};` — no local `protocol.rs`.
+- [X] T021 Create `protocol/src/lib.rs` as the **single source of truth for the daemon IPC wire format**. Define serde enums `Request` (`Hello`, `RegisterSession`, `UpdateStatus`, `Heartbeat`, `EndSession`) and `Response` (`Welcome`, `SessionRegistered`, `Ack`, `Err`) matching `contracts/daemon-ipc.md` §3 field-for-field; `#[serde(tag = "kind", rename_all = "snake_case")]`. Also export the wire-visible `ErrorCode` subset (`PROTOCOL_ERROR`, `MESSAGE_TOO_LARGE`, `PATH_NOT_FOUND`, `NOT_FOUND`, `UNAUTHORIZED`) as an enum with `Serialize`/`Deserialize` that round-trips through the `err { code, message, details }` wire shape. **`EmitAlert` is deliberately NOT in the Request enum** — v1 treats alerts as a side effect of `update_status { status: "needs_input" }`; re-adding `emit_alert` will require a `protocol_version` bump. **`Welcome` MUST NOT include a `session_id_format` field** — ids are JSON numbers on the wire and that field was dead weight (see `contracts/daemon-ipc.md` §3). `src-tauri/src/daemon/mod.rs` and `cli/src/ipc.rs` both import these types via `use tend_protocol::{Request, Response, ErrorCode};` — neither crate is permitted to redefine them locally.
+- [X] T022 Create `src-tauri/src/daemon/server.rs` with `DaemonServer::bind(path)` that creates the Unix socket at `$XDG_RUNTIME_DIR/tend.sock` (fallback `/tmp/tend-$UID.sock`), chmod `0600`, accept-loop spawning per-connection tokio task; `read_frame(&mut reader) -> Result<Vec<u8>>` and `write_frame(&mut writer, bytes)` implementing little-endian u32 length-prefix, 64 KiB cap (return `MESSAGE_TOO_LARGE` on overflow); handler dispatch stub. Imports wire types via `use tend_protocol::{Request, Response, ErrorCode};` — no local `protocol.rs`.
 - [X] T023 Create `src-tauri/src/daemon/mod.rs` spawning the daemon server from `run()` alongside Tauri, with graceful shutdown on `ctrl_c`
 - [X] T024 [P] Create `src-tauri/src/daemon/handlers.rs` stub with `async fn dispatch(req: Request, state: &WorkbenchState) -> Response` returning `protocol_error("not yet implemented")` for every variant — real implementations in US1
 
@@ -102,7 +102,7 @@
 
 **Goal**: Projects can be registered, the CLI wrapper can register a session, that session appears in the workbench sidebar with live status, and removing/ending the session updates the list automatically.
 
-**Independent Test**: Register two projects, run `agentui run -p <project> -- bash -c 'sleep 30'` in two different terminals against two different projects, open the workbench, confirm both sessions appear grouped under their projects with `working` status, wait for them to finish, confirm both transition to `ended` and are removed (or moved to an ended section).
+**Independent Test**: Register two projects, run `tend run -p <project> -- bash -c 'sleep 30'` in two different terminals against two different projects, open the workbench, confirm both sessions appear grouped under their projects with `working` status, wait for them to finish, confirm both transition to `ended` and are removed (or moved to an ended section).
 
 ### Contract tests for US1 (write FIRST, ensure RED)
 
@@ -143,13 +143,13 @@
 
 - [X] T053 [US1] Create `src-tauri/src/commands/events.rs` with a tokio task launched in `run()` that bridges `state.event_bus` → `AppHandle::emit("session:spawned", …)`, `emit("session:ended", …)`, `emit("session:event", …)`, `emit("project:path_missing", …)`, `emit("project:path_restored", …)` — one match over an enveloped `SessionEventEnvelope` type
 
-### CLI wrapper (agentui run)
+### CLI wrapper (tend run)
 
-- [X] T054 [P] [US1] Create `cli/src/args.rs` with clap derive: `agentui run [-p|--project <name|path>] [-l|--label <string>] [--] <command>...`
-- [X] T055 [P] [US1] Create `cli/src/ipc.rs` with `IpcClient::connect($AGENTUI_SOCKET or XDG default)`, `send<T: Serialize>(frame)`, `recv<R: DeserializeOwned>()`, `hello()`, `register_session(payload)`, `heartbeat(id)`, `update_status(id, status)`, `end_session(id, exit_code)`. All wire types come from `use agentui_protocol::{Request, Response, ErrorCode};` — zero local redefinition, zero path-dep into `src-tauri/`. Changing the wire format means editing `protocol/src/lib.rs` and rebuilding both crates; the CLI cannot drift from the server's definitions.
+- [X] T054 [P] [US1] Create `cli/src/args.rs` with clap derive: `tend run [-p|--project <name|path>] [-l|--label <string>] [--] <command>...`
+- [X] T055 [P] [US1] Create `cli/src/ipc.rs` with `IpcClient::connect($AGENTUI_SOCKET or XDG default)`, `send<T: Serialize>(frame)`, `recv<R: DeserializeOwned>()`, `hello()`, `register_session(payload)`, `heartbeat(id)`, `update_status(id, status)`, `end_session(id, exit_code)`. All wire types come from `use tend_protocol::{Request, Response, ErrorCode};` — zero local redefinition, zero path-dep into `src-tauri/`. Changing the wire format means editing `protocol/src/lib.rs` and rebuilding both crates; the CLI cannot drift from the server's definitions.
 - [X] T056 [P] [US1] Create `cli/src/pty.rs` wrapping `portable-pty` on the CLI side: `run_child(command: &[String], cwd: &Path) -> PtyChild`, with `spawn_proxy(child, stdin, stdout)` that forwards user→PTY and PTY→user so the terminal behaves identically to running the child directly
 - [X] T057 [US1] Create `cli/src/main.rs`: parse args → resolve project (argument takes precedence; otherwise `$PWD`) → connect to socket → `hello` → resolve working dir → spawn child via `pty::run_child` → `register_session` → spawn a proxy task (PTY ↔ tty) + a status-monitor task (same library as backend — for US1, just calls `update_status(Working)` on start and lets backend infer idle) → await child exit → `end_session` → exit with child's code
-- [X] T058 [P] [US1] Integration test in `cli/tests/happy_path.rs`: start mock workbench socket from `tests/common`, run `agentui run -p test -- /bin/echo hi`, assert `hello` + `register_session` + `end_session` frames received in order, child exited 0
+- [X] T058 [P] [US1] Integration test in `cli/tests/happy_path.rs`: start mock workbench socket from `tests/common`, run `tend run -p test -- /bin/echo hi`, assert `hello` + `register_session` + `end_session` frames received in order, child exited 0
 
 ### Frontend: sidebar & session list
 
@@ -161,7 +161,7 @@
 - [X] T064 [P] [US1] Create `src/lib/components/SessionList.svelte` grouped by project with filter-by-text input (`FR-006`), and `src/lib/components/SessionRow.svelte` showing project name, label, status badge (working/idle/needs_input/ended/error) — no activity summary yet (US4)
 - [X] T065 [US1] Wire `src/routes/+page.svelte` to render `Sidebar` + `SessionList`, call `projects.hydrate()` + `sessions.hydrate()` on mount, subscribe to session events
 
-**Checkpoint**: Run `pnpm tauri dev`. In another terminal, run `agentui run -p <registered-project> -- bash`. The workbench sidebar lists the project, a session appears under it with `working`, `Ctrl+D` in the wrapped bash exits → session transitions to `ended`. US1 is independently demoable.
+**Checkpoint**: Run `pnpm tauri dev`. In another terminal, run `tend run -p <registered-project> -- bash`. The workbench sidebar lists the project, a session appears under it with `working`, `Ctrl+D` in the wrapped bash exits → session transitions to `ended`. US1 is independently demoable.
 
 ---
 
@@ -169,7 +169,7 @@
 
 **Goal**: Sessions that block on input are detected, marked `needs_input`, raise an OS notification (respecting quiet hours), display an in-app alert bar, and clear automatically when they resume.
 
-**Independent Test**: Run `agentui run -p test -- bash -c 'read -p "y/n> " x; echo $x'` against the workbench. Within a few seconds, the session is flagged `needs_input`, an OS notification fires, the alert bar shows the session. Typing `y` in the real terminal clears the alert.
+**Independent Test**: Run `tend run -p test -- bash -c 'read -p "y/n> " x; echo $x'` against the workbench. Within a few seconds, the session is flagged `needs_input`, an OS notification fires, the alert bar shows the session. Typing `y` in the real terminal clears the alert.
 
 ### Contract + integration tests (write FIRST)
 
@@ -287,7 +287,7 @@
 
 **Goal**: Closing and reopening the workbench restores the exact workspace (registered projects, last active session, panel sizes, which companion was showing) automatically. Still-running sessions reattach; dead ones are marked `not running`. Users can additionally save named layouts and switch between them explicitly.
 
-**Independent Test**: Start the workbench, register three projects, run an `agentui run -- sleep 300` session in each, activate one with the scratchpad panel open, close the workbench. Reopen — same projects, same last-active session, same panel state, all three sessions still attached. Save that state as layout "triple-repo"; register a fourth project, activate its new session, save as layout "fourth-project-focus"; restore "triple-repo" — back to the previous state without manual re-entry.
+**Independent Test**: Start the workbench, register three projects, run an `tend run -- sleep 300` session in each, activate one with the scratchpad panel open, close the workbench. Reopen — same projects, same last-active session, same panel state, all three sessions still attached. Save that state as layout "triple-repo"; register a fourth project, activate its new session, save as layout "fourth-project-focus"; restore "triple-repo" — back to the previous state without manual re-entry.
 
 ### Contract + integration tests (write FIRST)
 
@@ -359,7 +359,7 @@
 - [X] T144 Performance sanity pass: spawn 10 long-running sessions across 5 mock projects (helper script), time `session_list` + filter + activation; assert < 100 ms list, < 200 ms activation (SC-004). Also seed 5 000 notes + 5 000 reminders into a single project and assert `note_list` (paginated) and `cross_project_overview` both return within the same 100 ms list budget (covers the long-scratchpad edge case from spec.md). Record all results in `specs/001-cross-repo-workbench/quickstart.md` under "Performance check"
 - [X] T145 [P] Accessibility pass: run `pnpm --filter frontend lint:a11y` (axe-core via Vitest component tests) on `Sidebar`, `SessionList`, `SessionRow`, `AlertBar`, `Scratchpad`, `CrossProjectOverview`, `SplitView`; fix any Serious/Critical issues
 - [X] T146 [P] Update `specs/001-cross-repo-workbench/quickstart.md` if any step required tweaks during implementation; add a "Dev troubleshooting" subsection for gotchas encountered
-- [X] T147 [P] Write project `README.md` at `/home/knitli/agentui/README.md` with: one-paragraph description, link to `specs/001-cross-repo-workbench/` for the full spec/plan, quickstart commands, known v1 limitations (copied from `research.md` §16)
+- [X] T147 [P] Write project `README.md` at `/home/knitli/tend/README.md` with: one-paragraph description, link to `specs/001-cross-repo-workbench/` for the full spec/plan, quickstart commands, known v1 limitations (copied from `research.md` §16)
 - [X] T148 Run the full quickstart exercise end-to-end (`quickstart.md` §3–§5) from a freshly-built binary; confirm every acceptance scenario from `spec.md` passes. Check off each on a fresh copy of `checklists/requirements.md` if desired
 - [X] T149 Final sweep: `cargo clippy --workspace -- -D warnings`, `cargo fmt --check`, `cargo deny check` (from T009b — the primary FR-022 gate), `pnpm --filter frontend lint`, `pnpm --filter frontend typecheck`. Additionally enforce the FR-022 local-only scope fence as a **belt-and-braces layer on top of `cargo deny`**: grep the `src-tauri/` and `cli/` source trees for `TcpStream`, `TcpListener`, `reqwest`, `hyper::client`, `ssh`, `\\wsl$`, and any `//` or `wss://`/`https://` URL literals; any hit must either be inside a test, behind a documented v2-future feature flag, or removed. Zero errors, zero warnings, zero unexplained network hits before calling this done
 
@@ -445,7 +445,7 @@ Task: "Session supervisor in src-tauri/src/session/supervisor.rs"
 
 1. Complete Phase 1 (Setup) and Phase 2 (Foundational).
 2. Complete Phase 3 (US1): the workbench can register projects, the CLI wrapper registers sessions over the daemon socket, the sidebar lists sessions with live status.
-3. **STOP and validate**: run `agentui run -- bash` and see the session appear. Confirm idle + ended transitions.
+3. **STOP and validate**: run `tend run -- bash` and see the session appear. Confirm idle + ended transitions.
 4. This is the smallest ship-able slice: "I can see all my agents across repos in one place."
 
 ### P1 full slice
@@ -520,7 +520,7 @@ Items resolved from `/sc:spec-panel` critique:
 Eight further items resolved from a second `/sc:spec-panel` pass. None of these re-litigate the round-1 fixes above.
 
 - **Round 2 #1 (High) FR language drift**: FR-014 rewritten to describe identity across workbench restart, reattach, and layout restore (replacing the legacy "window/pane moved/renamed" tmux-observer language); FR-020 amended to explicitly note that reattached workbench-owned sessions become read-only mirrors until respawned. Spec now matches the Tauri-owns-the-PTY architecture it actually implements.
-- **Round 2 #2 (High) shared protocol crate**: created a new `protocol/` workspace member (`agentui-protocol`) as the single source of truth for daemon IPC wire types. T001 adds `protocol` to `members`; T003b creates its Cargo.toml; T021 rewritten to create `protocol/src/lib.rs` instead of `src-tauri/src/daemon/protocol.rs`. T002/T003 add `agentui-protocol = { path = "../protocol" }` as a dep on both `src-tauri` and `cli`. T022 and T055 import wire types via `use agentui_protocol::…`. No path-dep from `cli/` into `src-tauri/` internals; changing the wire format means editing exactly one crate. Project structure in plan.md updated accordingly.
+- **Round 2 #2 (High) shared protocol crate**: created a new `protocol/` workspace member (`tend-protocol`) as the single source of truth for daemon IPC wire types. T001 adds `protocol` to `members`; T003b creates its Cargo.toml; T021 rewritten to create `protocol/src/lib.rs` instead of `src-tauri/src/daemon/protocol.rs`. T002/T003 add `tend-protocol = { path = "../protocol" }` as a dep on both `src-tauri` and `cli`. T022 and T055 import wire types via `use tend_protocol::…`. No path-dep from `cli/` into `src-tauri/` internals; changing the wire format means editing exactly one crate. Project structure in plan.md updated accordingly.
 - **Round 2 #3 (Medium) `emit_alert` YAGNI**: dropped `emit_alert` from the v1 daemon IPC surface. Removed from `contracts/daemon-ipc.md §3`, from the `Request` enum in T021, from research.md §6 verb list, and from plan.md's Phase 1 outputs summary. T068 marked **DROPPED** with a note that re-adding `emit_alert` later requires a `protocol_version` bump. Alert-raise coverage is retained by T038 (`update_status`) + T066/T070 (alert raise/clear integration tests).
 - **Round 2 #4 (Medium) `daemon-ipc.md §5` drift**: rewrote the CLI wrapper flow section to commit to the design already in T051 (wrapper owns the PTY end-to-end, workbench creates an attached-mirror with no PTY, no output-mirror stream in v1). Removed the "to be decided" paragraph. Spec and tasks now tell one story.
 - **Round 2 #5 (Medium) `welcome.session_id_format` dead weight**: removed the field from the wire format in `contracts/daemon-ipc.md §3`. T021 forbids adding it back; T050 updated to populate only `server_version` and `protocol_version`; T036 asserts the welcome response contains exactly those two fields. Forward-compat via a `capabilities: string[]` field is documented as a future v2 option that will require a `protocol_version` bump.

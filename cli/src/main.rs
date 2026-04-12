@@ -1,4 +1,4 @@
-//! T057: `agentui run` — CLI wrapper entry point.
+//! T057: `tend run` — CLI wrapper entry point.
 //!
 //! Wires together argument parsing (T054), IPC (T055), and PTY (T056):
 //!
@@ -41,7 +41,7 @@ async fn main() {
         Ok(code) => code,
         Err(e) => {
             error!("{e:#}");
-            eprintln!("agentui: {e:#}");
+            eprintln!("tend: {e:#}");
             1
         }
     };
@@ -59,15 +59,15 @@ async fn run() -> Result<i32> {
         .map(PathBuf::from)
         .unwrap_or_else(|| project_path.clone());
 
-    info!(project = %project_path.display(), "starting agentui run");
+    info!(project = %project_path.display(), "starting tend run");
 
     // ---- Connect to daemon ------------------------------------------------
     let mut client = match IpcClient::connect(None).await {
         Ok(c) => c,
         Err(e) => {
             eprintln!(
-                "agentui: could not connect to workbench daemon. \
-                 Is the agentui workbench running?\n  {e:#}"
+                "tend: could not connect to workbench daemon. \
+                 Is the tend workbench running?\n  {e:#}"
             );
             return Ok(2);
         }

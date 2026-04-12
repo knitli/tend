@@ -1,8 +1,8 @@
 //! T121: Integration test — layout_restore with a dead session reference
 //! reports it in missing_sessions.
 
-use agentui_workbench::model::WorkspaceState;
-use agentui_workbench::workspace::layouts::LayoutService;
+use tend_workbench::model::WorkspaceState;
+use tend_workbench::workspace::layouts::LayoutService;
 
 /// Restoring a layout that references an ended session includes that id in
 /// missing_sessions so the UI can show a "not running" badge.
@@ -48,7 +48,7 @@ async fn layout_restore_live_session_not_missing() {
 
     // Install a live handle.
     {
-        let handle = agentui_workbench::session::live::LiveSessionHandle::attached_mirror(live_sid);
+        let handle = tend_workbench::session::live::LiveSessionHandle::attached_mirror(live_sid);
         state.live_sessions.write().await.insert(live_sid, handle);
     }
 
