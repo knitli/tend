@@ -21,7 +21,14 @@ pub struct SessionTaskHandles {
 }
 
 /// Spawn the reader, writer, and monitor tasks for a live session.
-pub fn spawn_session_tasks(actor: LiveSessionActor, state: &WorkbenchState) -> SessionTaskHandles {
+///
+/// `activity` is the shared `ActivitySummary` from the `LiveSessionHandle`
+/// for this session. The reader task feeds output chunks into it (T135).
+pub fn spawn_session_tasks(
+    actor: LiveSessionActor,
+    state: &WorkbenchState,
+    activity: std::sync::Arc<tokio::sync::Mutex<crate::session::activity::ActivitySummary>>,
+) -> SessionTaskHandles {
     let LiveSessionActor {
         session_id,
         pty,
@@ -47,6 +54,7 @@ pub fn spawn_session_tasks(actor: LiveSessionActor, state: &WorkbenchState) -> S
     // ---- Reader task (async — output_rx is already bridged from blocking thread) ----
     let reader_output_tx = output_tx;
     let reader_event_bus = event_bus.clone();
+    let reader_activity = activity;
     tokio::spawn(async move {
         while let Some(chunk) = output_rx.recv().await {
             let _ = reader_output_tx.send(chunk.clone());
@@ -55,6 +63,8 @@ pub fn spawn_session_tasks(actor: LiveSessionActor, state: &WorkbenchState) -> S
                 bytes: chunk.clone(),
             });
             let _ = activity_tx.send(());
+            // T135: Feed output into the per-session activity summary ring buffer.
+            reader_activity.lock().await.record_chunk(&chunk);
             // Feed raw bytes to the heuristic detector.
             let _ = heuristic_tx.send(chunk);
         }

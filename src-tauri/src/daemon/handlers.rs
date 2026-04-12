@@ -160,10 +160,8 @@ async fn handle_update_status(
     session_id: i64,
     status: SessionStatusWire,
     reason: Option<String>,
-    summary: Option<String>, // US4 — unused in v1, reserved for activity-summary feature.
+    summary: Option<String>,
 ) -> Response {
-    let _ = &summary; // Suppress unused warning without discarding the value.
-
     let sid = SessionId::new(session_id);
 
     let new_status = match status {
@@ -205,6 +203,12 @@ async fn handle_update_status(
                         reason: reason.clone(),
                     })
                     .await;
+
+                // T135/US4: If the cooperative update includes a summary string,
+                // override the heuristic-derived activity summary.
+                if let Some(ref s) = summary {
+                    handle.activity.lock().await.override_with(s);
+                }
             }
 
             Response::Ack

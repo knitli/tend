@@ -16,7 +16,8 @@
   let { session, projectName = '', missing = false, onActivate }: Props = $props();
 
   let tick = $state(Date.now());
-  const tickInterval = setInterval(() => { tick = Date.now(); }, 30_000);
+  // T137: 5s tick for responsive idle-time display.
+  const tickInterval = setInterval(() => { tick = Date.now(); }, 5_000);
   onDestroy(() => clearInterval(tickInterval));
 
   const isInteractive = $derived(
@@ -58,6 +59,31 @@
     return `${diffDays}d ago`;
   });
 
+  /** T137: Idle time display for idle sessions. */
+  const idleTime = $derived.by(() => {
+    if (session.status !== 'idle') return null;
+    const now = tick;
+    const then = new Date(session.last_activity_at).getTime();
+    if (Number.isNaN(then)) return null;
+    const diffSec = Math.floor((now - then) / 1000);
+    if (diffSec < 60) return `idle ${diffSec}s`;
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `idle ${diffMin}m`;
+    const diffHr = Math.floor(diffMin / 60);
+    return `idle ${diffHr}h`;
+  });
+
+  /** T137: Activity summary truncated to ~60 chars for the row display. */
+  const displaySummary = $derived.by(() => {
+    const raw = session.activity_summary;
+    if (!raw) return null;
+    if (raw.length <= 60) return raw;
+    return raw.slice(0, 59) + '…';
+  });
+
+  /** T137: Task title from agent metadata, shown as a pill. */
+  const taskTitle = $derived(session.metadata?.task_title ?? null);
+
   function handleClick(): void {
     onActivate?.(session);
   }
@@ -88,8 +114,16 @@
         <span class="badge badge-readonly" title="Read-only session">RO</span>
       {/if}
     </div>
+    {#if taskTitle}
+      <span class="task-pill" title={taskTitle}>{taskTitle}</span>
+    {/if}
     {#if projectName}
       <span class="session-project">{projectName}</span>
+    {/if}
+    {#if displaySummary}
+      <span class="activity-summary" title={session.activity_summary ?? ''}>{displaySummary}</span>
+    {:else if idleTime}
+      <span class="activity-summary idle-time">{idleTime}</span>
     {/if}
   </div>
 
@@ -211,6 +245,37 @@
     font-size: 0.625rem;
     text-transform: uppercase;
     letter-spacing: 0.03em;
+  }
+
+  .activity-summary {
+    font-size: 0.6875rem;
+    color: var(--color-text-muted, #8b8fa3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    opacity: 0.85;
+  }
+
+  .idle-time {
+    font-style: italic;
+    opacity: 0.65;
+  }
+
+  .task-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 5px;
+    border-radius: var(--radius-full, 9999px);
+    font-size: 0.625rem;
+    font-weight: 500;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
+    background: var(--color-accent-bg, rgba(96, 165, 250, 0.12));
+    color: var(--color-accent, #60a5fa);
   }
 
   .badge-missing {

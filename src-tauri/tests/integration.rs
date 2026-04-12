@@ -30,4 +30,8 @@ mod integration {
     // Phase 7 (US6 Workspace + Layouts)
     pub mod layout_missing;
     pub mod workspace_restore;
+
+    // Phase 8 (US4 Activity Summary)
+    pub mod activity_override;
+    pub mod activity_ring_buffer;
 }

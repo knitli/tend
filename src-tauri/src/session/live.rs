@@ -5,6 +5,7 @@
 
 use crate::error::{ErrorCode, WorkbenchError, WorkbenchResult};
 use crate::model::{SessionId, SessionStatus};
+use crate::session::activity::ActivitySummary;
 use crate::session::pty::{OutputRx, Pty};
 use crate::session::status::StatusUpdate;
 use portable_pty::PtySize;
@@ -38,6 +39,8 @@ pub struct LiveSessionHandle {
     ipc_status_tx: Arc<Mutex<Option<mpsc::UnboundedSender<StatusUpdate>>>>,
     /// Whether this handle has a real PTY backing it (false for mirrors).
     pub is_mirror: bool,
+    /// Per-session activity summary (T135). Shared with the reader task.
+    pub activity: Arc<Mutex<ActivitySummary>>,
 }
 
 impl LiveSessionHandle {
@@ -55,6 +58,7 @@ impl LiveSessionHandle {
             kill_tx: Some(kill_tx),
             ipc_status_tx: Arc::new(Mutex::new(None)),
             is_mirror: false,
+            activity: Arc::new(Mutex::new(ActivitySummary::new())),
         }
     }
 
@@ -67,6 +71,7 @@ impl LiveSessionHandle {
             kill_tx: None,
             ipc_status_tx: Arc::new(Mutex::new(None)),
             is_mirror: true,
+            activity: Arc::new(Mutex::new(ActivitySummary::new())),
         }
     }
 

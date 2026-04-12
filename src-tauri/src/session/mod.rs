@@ -1,6 +1,7 @@
 //! Session lifecycle — PTY wrapper, live-session actor, status monitor,
 //! supervisor tasks, service layer, and crash-recovery reconciliation.
 
+pub mod activity;
 pub mod heuristic;
 pub mod live;
 pub mod pty;

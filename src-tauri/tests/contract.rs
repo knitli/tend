@@ -32,4 +32,7 @@ mod contract {
     // Phase 7 (US6 Workspace + Layouts)
     pub mod layouts;
     pub mod workspace;
+
+    // Phase 8 (US4 Activity Summary)
+    pub mod session_summary;
 }

@@ -99,14 +99,17 @@ impl SessionService {
 
             let alert = parse_alert_from_join(&row, session_id)?;
 
-            let reattached_mirror = live_sessions
-                .get(&session_id)
-                .map(|h| h.is_mirror)
-                .unwrap_or(false);
+            let (reattached_mirror, activity_summary) =
+                if let Some(handle) = live_sessions.get(&session_id) {
+                    let summary = handle.activity.lock().await.current();
+                    (handle.is_mirror, summary)
+                } else {
+                    (false, None)
+                };
 
             summaries.push(SessionSummary {
                 session,
-                activity_summary: None, // US4
+                activity_summary,
                 alert,
                 reattached_mirror,
             });
@@ -234,8 +237,9 @@ impl SessionService {
             error_reason: None,
         };
 
-        // Start supervisor tasks.
-        let _task_handles = supervisor::spawn_session_tasks(actor, state);
+        // Start supervisor tasks. Pass the activity handle so the reader
+        // task feeds output into the ring buffer (T135).
+        let _task_handles = supervisor::spawn_session_tasks(actor, state, handle.activity.clone());
 
         // Emit session:spawned with the full session record.
         let _ = state.event_bus.send(SessionEventEnvelope::Spawned {
@@ -521,17 +525,19 @@ impl SessionService {
         let session = parse_session_row(&row)?;
         let alert = parse_alert_from_join(&row, session_id)?;
 
-        let reattached_mirror = state
-            .live_sessions
-            .read()
-            .await
-            .get(&session_id)
-            .map(|h| h.is_mirror)
-            .unwrap_or(false);
+        let (reattached_mirror, activity_summary) = {
+            let live = state.live_sessions.read().await;
+            if let Some(handle) = live.get(&session_id) {
+                let summary = handle.activity.lock().await.current();
+                (handle.is_mirror, summary)
+            } else {
+                (false, None)
+            }
+        };
 
         Ok(SessionSummary {
             session,
-            activity_summary: None,
+            activity_summary,
             alert,
             reattached_mirror,
         })

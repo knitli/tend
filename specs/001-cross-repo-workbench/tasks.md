@@ -326,19 +326,19 @@
 
 ### Contract + integration tests (write FIRST)
 
-- [ ] T131 [P] [US4] Contract test: `SessionSummary` returned by `session_list` includes `activity_summary: string | null` and, when the session has an open alert, `alert: Alert | null` in `src-tauri/tests/contract/session_summary.rs`
-- [ ] T132 [P] [US4] Integration test: after 300 output chunks, the ring buffer contains only the last N lines and the summary is the most-recent non-empty line in `src-tauri/tests/integration/activity_ring_buffer.rs`
-- [ ] T133 [P] [US4] Integration test: `update_status { summary: "Refactoring lexer" }` overrides heuristic-derived summary until the next `update_status` or until output activity resumes past a timeout in `src-tauri/tests/integration/activity_override.rs`
+- [X] T131 [P] [US4] Contract test: `SessionSummary` returned by `session_list` includes `activity_summary: string | null` and, when the session has an open alert, `alert: Alert | null` in `src-tauri/tests/contract/session_summary.rs`
+- [X] T132 [P] [US4] Integration test: after 300 output chunks, the ring buffer contains only the last N lines and the summary is the most-recent non-empty line in `src-tauri/tests/integration/activity_ring_buffer.rs`
+- [X] T133 [P] [US4] Integration test: `update_status { summary: "Refactoring lexer" }` overrides heuristic-derived summary until the next `update_status` or until output activity resumes past a timeout in `src-tauri/tests/integration/activity_override.rs`
 
 ### Backend
 
-- [ ] T134 [P] [US4] Create `src-tauri/src/session/activity.rs` with `ActivitySummary` holding a bounded (8 KiB) ring buffer of recent output + last-line extraction; `record_chunk(bytes)`, `override_with(summary)` (expires after 10 s of continued output or 60 s absolute), `current() -> Option<String>`
-- [ ] T135 [US4] Store one `ActivitySummary` per `LiveSession`; reader task in `session/supervisor.rs` calls `record_chunk` on each PTY chunk
-- [ ] T136 [US4] Extend `SessionService::list` to populate `SessionSummary { session, activity_summary: live_session.activity.current(), alert: alert_service.current(session.id) }` and update `session_list` contract accordingly
+- [X] T134 [P] [US4] Create `src-tauri/src/session/activity.rs` with `ActivitySummary` holding a bounded (8 KiB) ring buffer of recent output + last-line extraction; `record_chunk(bytes)`, `override_with(summary)` (expires after 10 s of continued output or 60 s absolute), `current() -> Option<String>`
+- [X] T135 [US4] Store one `ActivitySummary` per `LiveSession`; reader task in `session/supervisor.rs` calls `record_chunk` on each PTY chunk
+- [X] T136 [US4] Extend `SessionService::list` to populate `SessionSummary { session, activity_summary: live_session.activity.current(), alert: alert_service.current(session.id) }` and update `session_list` contract accordingly
 
 ### Frontend
 
-- [ ] T137 [US4] Extend `SessionRow.svelte` to render activity summary below the label (truncated to ~60 chars with an ellipsis + tooltip), an idle-time counter for `idle` sessions, and an optional task-title pill when the session metadata includes one
+- [X] T137 [US4] Extend `SessionRow.svelte` to render activity summary below the label (truncated to ~60 chars with an ellipsis + tooltip), an idle-time counter for `idle` sessions, and an optional task-title pill when the session metadata includes one
 
 **Checkpoint**: Session list rows are visibly distinct per session's activity. P2 delivered after all P1 stories.
 
