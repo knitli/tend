@@ -16,7 +16,7 @@ Build a local, always-on desktop workbench that unifies agent sessions across mu
 **Storage**: SQLite via `sqlx` at the XDG data directory (`~/.local/share/agentui/workbench.db` on Linux); forward-only migrations under `src-tauri/migrations/`
 **Testing**: `cargo test` + `tokio::test` for Rust unit/integration/contract tests; Vitest for Svelte components and stores; Playwright via `tauri-driver` for a small E2E happy-path suite; 80 % backend + CLI coverage gate
 **Target Platform**: Linux (X11 + Wayland) primary for v1; macOS and Windows supported as a by-product of Tauri + `portable-pty` but not in v1 CI matrix
-**Project Type**: Desktop application (Tauri app) plus a standalone CLI wrapper crate (`agentui run`)
+**Project Type**: Desktop application (Tauri app) plus a standalone CLI wrapper crate (`agentui run`) and a shared wire-format crate (`agentui-protocol`) that both the Tauri backend and the CLI depend on as the single source of truth for daemon IPC types
 **Performance Goals**: 10 concurrent sessions across 5 repos with no perceptible lag; < 50 MB idle RAM; session list / filter updates < 100 ms; session activation < 200 ms; xterm.js rendering at 60 fps
 **Constraints**: Local-only (no network I/O in v1); offline-capable; single-user, single-machine; SQLite single-writer; no remote-session support (FR-022)
 **Scale/Scope**: 10 sessions × 5 repos concurrent; hundreds of notes/reminders per project over time; archived rows retained indefinitely; < 64 KiB per daemon IPC message
@@ -37,7 +37,7 @@ The repository's `.specify/memory/constitution.md` is the **unmodified template*
 | Immutable data flow by default | **PASS** | Rust newtypes + `Clone`-on-write state; Svelte 5 runes give compile-time-checked reactive state without shared-mutable-state footguns. Mutations happen only inside the backend's `WorkbenchState` behind an `RwLock`. |
 | Security: no hardcoded secrets, validate inputs at boundaries | **PASS** | No secrets involved. All inputs from the frontend and from the daemon IPC socket are validated in Rust with explicit error variants (contract tests enforce). Socket is `0600` and same-user only. |
 | Failure investigation: root-cause over workaround | **PASS** | Errors return structured `WorkbenchError { code, message, details }` values; nothing is silently swallowed. Fallback paths (heuristic status detection) are explicitly labeled as such in the data model (`status_source = heuristic`). |
-| Temporal awareness (ISO-8601 timestamps, UTC) | **PASS** | All persisted timestamps are ISO-8601 UTC strings; age is computed from `created_at` against a monotonic clock at read time. |
+| Temporal awareness (ISO-8601 timestamps, UTC) | **PASS** | All persisted timestamps are ISO-8601 UTC strings. Age is computed as `max(Duration::ZERO, now_utc - created_at)` at read time (wall-clock diff with a zero floor). Monotonic non-decrease for `last_activity_at` is enforced by a writer-side `max(current, candidate)` clamp, NOT by a paired `std::time::Instant` — see `data-model.md §4` invariant #8 for the full mechanism and its limitations. The earlier draft of this row said "against a monotonic clock at read time", which was imprecise; corrected in round 2. |
 | Professional honesty | **PASS** | Known v1 gaps are enumerated rather than hand-waved. Fallback session-state detection is called out as best-effort in the UI, not dressed up as reliable. |
 
 **Result**: **PASS** — no constitution violations; no `Complexity Tracking` entries required.
@@ -64,10 +64,15 @@ specs/001-cross-repo-workbench/
 
 ### Source Code (repository root)
 
-Tauri-shaped workspace with a dedicated crate for the backend, a Svelte frontend under a sibling directory, a standalone CLI crate, and shared integration tests at the root:
+Tauri-shaped workspace with a dedicated crate for the backend, a Svelte frontend under a sibling directory, a standalone CLI crate, a tiny shared wire-format crate both Rust crates depend on, and shared integration tests at the root:
 
 ```text
 agentui/
+├── protocol/                      # agentui-protocol — shared daemon IPC types
+│   ├── Cargo.toml                 # Tiny: serde + serde_json + thiserror, no tokio/sqlx/tauri
+│   └── src/
+│       └── lib.rs                 # Request / Response / ErrorCode enums, the wire SOT
+│
 ├── src-tauri/                     # Rust backend (Tauri app)
 │   ├── Cargo.toml
 │   ├── build.rs
@@ -86,9 +91,8 @@ agentui/
 │       │   └── notifications.rs
 │       ├── daemon/                # Unix-domain-socket IPC server
 │       │   ├── mod.rs
-│       │   ├── server.rs
-│       │   ├── protocol.rs        # Wire format (length-prefixed JSON)
-│       │   └── handlers.rs
+│       │   ├── server.rs          # Framing + accept-loop; wire types re-exported from `agentui-protocol`
+│       │   └── handlers.rs        # No local protocol module — wire SOT lives in `protocol/`
 │       ├── session/               # Session lifecycle / actors
 │       │   ├── mod.rs
 │       │   ├── live.rs            # LiveSession + per-session tasks
@@ -150,12 +154,12 @@ agentui/
 │       └── +page.svelte
 │
 ├── cli/                           # Standalone `agentui run` wrapper crate
-│   ├── Cargo.toml
+│   ├── Cargo.toml                 # Depends on `agentui-protocol` — not on `src-tauri` internals
 │   └── src/
 │       ├── main.rs
 │       ├── args.rs
 │       ├── pty.rs                 # Wrapper-side PTY (proxies to child)
-│       ├── ipc.rs                 # Daemon IPC client
+│       ├── ipc.rs                 # Daemon IPC client (uses agentui-protocol types)
 │       └── heuristic.rs           # Shared status heuristic library
 │
 ├── tests/                         # Cross-cutting integration / E2E tests
@@ -174,13 +178,14 @@ agentui/
 └── tsconfig.json
 ```
 
-**Structure Decision**: **Tauri desktop app with an adjacent CLI crate**, chosen because:
+**Structure Decision**: **Tauri desktop app with an adjacent CLI crate and a tiny shared protocol crate**, chosen because:
 
 1. The feature is fundamentally a GUI with a backend daemon role — Tauri gives us both with one process.
 2. The CLI wrapper (`agentui run`) is a separate concern with its own dependency graph (no GUI, no webview) and benefits from being its own crate; a Cargo workspace keeps them in one repo without coupling them.
-3. The Svelte frontend lives at `src/` per Vite/SvelteKit convention and sits next to `src-tauri/` per Tauri convention — standard layout, no surprises.
-4. `tests/` at the workspace root contains only cross-crate tests (E2E and integration across `src-tauri` + `cli`); per-crate unit tests live inside each crate per Rust convention.
-5. Migrations live next to the backend crate (`src-tauri/migrations/`) so they ship with the binary that runs them.
+3. **The `agentui-protocol` crate is the single source of truth for the daemon IPC wire format.** Both `src-tauri` and `cli` depend on it via `{ path = "../protocol" }`. Neither crate is allowed to redefine `Request` / `Response` / `ErrorCode` locally. This is cheap to do on day 1 and expensive to retrofit later — editing the wire format means editing exactly one crate, and neither crate imports internals from the other. No path-dep from `cli/` into `src-tauri/src/daemon/` is permitted.
+4. The Svelte frontend lives at `src/` per Vite/SvelteKit convention and sits next to `src-tauri/` per Tauri convention — standard layout, no surprises.
+5. `tests/` at the workspace root contains only cross-crate tests (E2E and integration across `src-tauri` + `cli`); per-crate unit tests live inside each crate per Rust convention.
+6. Migrations live next to the backend crate (`src-tauri/migrations/`) so they ship with the binary that runs them.
 
 ## Phase 0 outputs
 
@@ -209,7 +214,7 @@ Summary of decisions (full rationale in research.md):
 - [`data-model.md`](./data-model.md) — 9 SQLite tables (`projects`, `sessions`, `companion_terminals`, `notes`, `reminders`, `workspace_state`, `layouts`, `notification_preferences`, `alerts`), in-memory `LiveSession` actor handle, derived views, invariants, migration plan.
 - [`contracts/README.md`](./contracts/README.md) — surface overview.
 - [`contracts/tauri-commands.md`](./contracts/tauri-commands.md) — 32 Tauri commands across 7 domains (projects, sessions, companions, scratchpad, workspace/layouts, notifications, events), plus error code catalog and test layering.
-- [`contracts/daemon-ipc.md`](./contracts/daemon-ipc.md) — framing, message shapes (`hello`, `register_session`, `update_status`, `emit_alert`, `heartbeat`, `end_session`), responses, error codes, CLI wrapper flow, compatibility rules.
+- [`contracts/daemon-ipc.md`](./contracts/daemon-ipc.md) — framing, message shapes (`hello`, `register_session`, `update_status`, `heartbeat`, `end_session` — `emit_alert` was dropped from v1 per the round-2 spec-panel review), responses, error codes, CLI wrapper flow, compatibility rules.
 - [`quickstart.md`](./quickstart.md) — dev bootstrap, first build, first project, first session, test commands, troubleshooting, known v1 limitations.
 - **Agent context file** — updated via `.specify/scripts/bash/update-agent-context.sh claude` (see Phase 1 closing step).
 

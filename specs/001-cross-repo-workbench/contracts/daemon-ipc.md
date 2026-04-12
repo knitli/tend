@@ -89,23 +89,6 @@ Pushes a status update for a registered session. The preferred path for cooperat
 
 **Response**: `ack` or `err`.
 
-#### `emit_alert`
-
-Legacy / explicit path: raise an alert independently of a status change. Primarily useful for agents that want to raise a non-`needs_input` future alert kind without changing session status.
-
-```json
-{
-  "kind": "emit_alert",
-  "session_id": 42,
-  "alert_kind": "needs_input",
-  "reason": "Permission required"
-}
-```
-
-v1 treats this identically to an `update_status` with `status = needs_input`. Kept separate for future alert kinds.
-
-**Response**: `ack { alert_id }` or `err`.
-
 #### `heartbeat`
 
 Optional keep-alive. If the workbench hasn't heard from a registered session's client for > 30 s, it falls back to heuristic detection for that session and marks its `status_source` as `heuristic`. Heartbeats reset the clock.
@@ -134,10 +117,11 @@ Voluntary end notification from the client (e.g., the wrapper observed the child
 {
   "kind": "welcome",
   "server_version": "0.1.0",
-  "protocol_version": 1,
-  "session_id_format": "i64"
+  "protocol_version": 1
 }
 ```
+
+Note: v1 deliberately does **not** include a `session_id_format` field. Session ids are JSON numbers (i64 on the server, `number` on the wire); clients do not need structural switching. A future `capabilities: string[]` field for forward-compatible feature negotiation will require a `protocol_version` bump.
 
 #### `session_registered`
 
@@ -196,14 +180,20 @@ End-to-end call sequence when a user runs `agentui run -p marque -- claude`:
 
 1. CLI parses args, resolves `marque` against registered projects (or uses `$PWD` if unqualified).
 2. CLI opens `$AGENTUI_SOCKET`, sends `hello`, receives `welcome`.
-3. CLI allocates a PTY locally, `fork+exec`s `claude` inside it.
+3. CLI allocates a PTY **locally** and `fork+exec`s `claude` inside it. **The CLI is the sole owner of the PTY master fd for the session's entire lifetime.** The workbench never takes ownership of this fd.
 4. CLI sends `register_session { project_path, pid, command, working_directory }`, receives `session_registered { session_id }`.
-5. CLI proxies bytes: stdin → PTY, PTY → stdout. The user sees `claude` as if they ran it directly.
-6. CLI monitors PTY output and emits `update_status` when it sees prompt patterns or when it detects `working` / `idle` transitions from byte-level activity. (Same heuristic library the workbench itself uses.)
-7. On child exit, CLI sends `end_session { session_id, exit_code }` and exits with the same code.
-8. Workbench receives the registration, spawns a `LiveSession` actor that **reattaches** to the running PTY via the registered pid. (Or: in the simpler v1 path, the CLI continues to own the PTY and proxies output to the workbench via a second channel. To be decided in implementation — this is one of the open design choices tracked in `research.md` §6.)
+5. The workbench creates a `Session` row with `ownership = "wrapper"` and installs an **attached-mirror** `LiveSessionHandle` in its in-memory state. The mirror holds **no PTY** — it exists to receive cooperative IPC signals (`update_status`, `heartbeat`), broadcast session events for the UI, and track lifecycle. `session_send_input` / `session_resize` / `session_end` on a `wrapper`-owned session are rejected by the backend with `SESSION_READ_ONLY`; users interact via the launching terminal, which is the canonical input path for wrapper-owned sessions.
+6. CLI proxies bytes: user stdin → PTY, PTY → user stdout. The user sees `claude` as if they ran it directly.
+7. CLI monitors PTY output and emits `update_status` when it sees high-confidence prompt patterns or detects `working` / `idle` transitions from byte-level activity. This is the same heuristic library the workbench itself runs (see `research.md §7`). Once the CLI has emitted any `update_status` in a session's lifetime, the workbench's fallback Tier 2 heuristic is muted for that session (cooperative-IPC monotonicity).
+8. On child exit, CLI sends `end_session { session_id, exit_code }` and exits with the same code. The workbench transitions the session row to `ended` and emits `session:ended`.
 
-The two paths above differ in who owns the PTY handle after registration. The cleaner answer is "the CLI owns it; the workbench displays output via a secondary stream from the CLI" — keeps the CLI fully independent of the workbench process lifecycle.
+**Design decisions (frozen for v1):**
+
+- **PTY ownership is non-transferable.** The CLI wrapper owns its PTY end-to-end; the workbench never gets a handle to it. This keeps the CLI fully independent of the workbench process lifecycle — the workbench can be restarted while a wrapper keeps running, and the wrapper reconnects on the next `hello` (same session row, rehydrated into attached-mirror mode).
+- **There is no output-mirror stream over the socket in v1.** The workbench displays `ownership = wrapper` sessions in the sidebar with status + activity summary + alerts only; it does NOT render their PTY output in the agent pane. The `AgentPane` for a wrapper-owned session shows a read-only banner explaining that output lives in the launching terminal (see `tasks.md T096`). A future v2 may add an opt-in output-mirror stream (new `output_chunk` push event, gated behind a `protocol_version` bump).
+- **The CLI does not subscribe to server → client push events in v1.** The push-event surface in §4 is reserved for the workbench's own internal use and for v2 clients.
+
+This matches the data-model's `SessionOwnership` enum (`data-model.md §2.2`) and the `require_workbench_owned` guard (`tasks.md T048`, `T093`). Any implementer who reads this section and the tasks should see one story, not two.
 
 ---
 

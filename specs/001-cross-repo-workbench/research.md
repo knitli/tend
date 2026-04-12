@@ -135,7 +135,7 @@ This resolves FR-008 ("sessions started outside the workbench"): from the user's
 - Socket path: `$XDG_RUNTIME_DIR/agentui.sock` (fallback `/tmp/agentui-$UID.sock`)
 - Advertised via env var `AGENTUI_SOCKET` for child processes
 - Message framing: length-prefixed JSON (line-delimited JSON as fallback)
-- Request verbs: `register_session`, `update_status`, `emit_alert`, `heartbeat`, `end_session`
+- Request verbs: `hello`, `register_session`, `update_status`, `heartbeat`, `end_session` (v1 — `emit_alert` dropped; re-adding it later requires a `protocol_version` bump)
 - Server responses: `ack { session_id }` / `err { code, message }`
 
 **Rationale**:
