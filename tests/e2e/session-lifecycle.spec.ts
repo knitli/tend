@@ -1,9 +1,8 @@
 /**
  * T139: E2E — Session lifecycle.
  *
- * Registers a project, simulates a daemon-IPC register_session,
- * asserts the session appears, activates it, asserts split view mounts,
- * ends the session, asserts it transitions to "ended".
+ * Registers a project, spawns a session, asserts it appears, activates
+ * it, asserts split view mounts, ends the session, asserts "ended".
  *
  * Requires: tauri-driver + built Tauri app.
  */
@@ -12,9 +11,10 @@ import { test, expect } from '@playwright/test';
 import {
   waitForAppReady,
   registerProject,
-  simulateSessionRegister,
+  spawnSession,
+  endSession,
   waitForSessionRow,
-  activateSession,
+  clickSessionRow,
 } from './helpers';
 
 test.describe('Session Lifecycle', () => {
@@ -26,8 +26,8 @@ test.describe('Session Lifecycle', () => {
     const projectId = await registerProject(page, '/tmp/e2e-session-test', 'Session Test');
     expect(projectId).toBeGreaterThan(0);
 
-    // Step 2: Spawn a session via Tauri invoke
-    const sessionId = await simulateSessionRegister(page, projectId, 'test-agent');
+    // Step 2: Spawn a session
+    const sessionId = await spawnSession(page, projectId, 'test-agent');
     expect(sessionId).toBeGreaterThan(0);
 
     // Step 3: Assert session appears in sidebar
@@ -37,8 +37,8 @@ test.describe('Session Lifecycle', () => {
     const statusBadge = page.locator('.session-row:has-text("test-agent") .badge');
     await expect(statusBadge.first()).toBeVisible();
 
-    // Step 4: Activate the session by clicking
-    await activateSession(page, 'test-agent');
+    // Step 4: Activate the session by clicking the row
+    await clickSessionRow(page, 'test-agent');
 
     // Step 5: Assert split view mounts (both panes visible)
     const splitView = page.locator('.split-view');
@@ -50,11 +50,8 @@ test.describe('Session Lifecycle', () => {
     const companionPane = page.locator('.companion-pane');
     await expect(companionPane).toBeVisible();
 
-    // Step 6: End the session via invoke
-    await page.evaluate(async (sid) => {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('session_end', { sessionId: sid });
-    }, sessionId);
+    // Step 6: End the session
+    await endSession(page, sessionId);
 
     // Step 7: Assert session transitions to "ended"
     const endedBadge = page.locator(

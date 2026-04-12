@@ -1,21 +1,17 @@
 /**
  * Shared E2E test helpers for Tauri app testing via tauri-driver.
  *
- * These helpers abstract the Tauri WebDriver connection and provide
- * utilities for common operations like project registration and
- * session simulation.
+ * All invoke calls use the { args: { snake_case } } pattern matching
+ * the Rust #[tauri::command] arg struct convention.
  */
 
 import { type Page } from '@playwright/test';
 
 /**
  * Wait for the Tauri app to be fully loaded.
- * Checks for the root Svelte mount point and initial hydration.
  */
 export async function waitForAppReady(page: Page): Promise<void> {
-  // Wait for the Svelte app to mount
   await page.waitForSelector('#app', { state: 'attached', timeout: 10_000 });
-  // Wait for initial store hydration (loading state clears)
   await page.waitForFunction(
     () => !document.querySelector('[data-loading="true"]'),
     { timeout: 5_000 },
@@ -36,47 +32,73 @@ export async function registerProject(
   return page.evaluate(
     async ([p, n]) => {
       const { invoke } = await import('@tauri-apps/api/core');
-      const result = await invoke<{ id: number }>('project_register', {
-        path: p,
-        displayName: n,
+      const result = await invoke<{ project: { id: number } }>('project_register', {
+        args: { path: p, display_name: n },
       });
-      return result.id;
+      return result.project.id;
     },
     [path, name] as const,
   );
 }
 
 /**
- * Simulate a daemon IPC register_session by invoking the Tauri command directly.
- * This bypasses the actual CLI wrapper for test purposes.
+ * Spawn a session via the Tauri invoke bridge.
+ * Returns the session id.
  */
-export async function simulateSessionRegister(
+export async function spawnSession(
   page: Page,
   projectId: number,
   label: string,
+  opts?: { command?: string[]; workingDirectory?: string },
 ): Promise<number> {
   return page.evaluate(
-    async ([pid, lbl]) => {
+    async ([pid, lbl, cmd, cwd]) => {
       const { invoke } = await import('@tauri-apps/api/core');
-      const result = await invoke<{ id: number }>('session_spawn', {
-        projectId: pid,
-        label: lbl,
-        command: ['/bin/sh', '-c', 'sleep 3600'],
-        workingDirectory: '/tmp',
-        env: {},
+      const result = await invoke<{ session: { id: number } }>('session_spawn', {
+        args: {
+          project_id: pid,
+          label: lbl,
+          command: cmd ?? ['/bin/sh', '-c', 'sleep 3600'],
+          working_directory: cwd ?? '/tmp',
+        },
       });
-      return result.id;
+      return result.session.id;
     },
-    [projectId, label] as const,
+    [projectId, label, opts?.command ?? null, opts?.workingDirectory ?? null] as const,
   );
 }
 
 /**
- * Get the text content of an element matching the selector.
+ * End a session by sending TERM signal.
  */
-export async function getText(page: Page, selector: string): Promise<string> {
-  const el = page.locator(selector);
-  return el.textContent() ?? '';
+export async function endSession(page: Page, sessionId: number): Promise<void> {
+  await page.evaluate(async (sid) => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('session_end', { args: { session_id: sid } });
+  }, sessionId);
+}
+
+/**
+ * Activate a session (brings it to foreground, ensures companion).
+ */
+export async function activateSession(
+  page: Page,
+  sessionId: number,
+): Promise<void> {
+  await page.evaluate(async (sid) => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('session_activate', { args: { session_id: sid } });
+  }, sessionId);
+}
+
+/**
+ * Click a session row by label to activate it via UI.
+ */
+export async function clickSessionRow(
+  page: Page,
+  label: string,
+): Promise<void> {
+  await page.click(`.session-row:has(.session-label:has-text("${label}"))`);
 }
 
 /**
@@ -94,11 +116,35 @@ export async function waitForSessionRow(
 }
 
 /**
- * Click a session row by label to activate it.
+ * Acknowledge an alert on a session via the Tauri command.
  */
-export async function activateSession(
+export async function acknowledgeAlert(
   page: Page,
-  label: string,
+  alertId: number,
 ): Promise<void> {
-  await page.click(`.session-row:has(.session-label:has-text("${label}"))`);
+  await page.evaluate(async (aid) => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('session_acknowledge_alert', { args: { alert_id: aid } });
+  }, alertId);
+}
+
+/**
+ * Get the list of sessions from the backend.
+ */
+export async function getSessionList(
+  page: Page,
+  opts?: { projectId?: number; includeEnded?: boolean },
+): Promise<Array<{ id: number; status: string; alert: unknown }>> {
+  return page.evaluate(
+    async ([pid, incEnded]) => {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const result = await invoke<{
+        sessions: Array<{ id: number; status: string; alert: unknown }>;
+      }>('session_list', {
+        args: { project_id: pid ?? null, include_ended: incEnded ?? false },
+      });
+      return result.sessions;
+    },
+    [opts?.projectId ?? null, opts?.includeEnded ?? false] as const,
+  );
 }

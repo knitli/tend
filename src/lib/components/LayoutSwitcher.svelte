@@ -197,9 +197,9 @@
       </div>
 
       {#if layouts.length > 0}
-        <ul class="layout-list" role="list">
+        <div class="layout-list" role="group" aria-label="Saved layouts">
           {#each layouts as layout, i (layout.id)}
-            <li class="layout-item">
+            <div class="layout-item">
               <button
                 class="layout-name"
                 onclick={() => handleRestore(layout.id)}
@@ -218,9 +218,9 @@
               >
                 &times;
               </button>
-            </li>
+            </div>
           {/each}
-        </ul>
+        </div>
       {:else}
         <p class="layout-empty">No saved layouts</p>
       {/if}

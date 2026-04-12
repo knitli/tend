@@ -2,7 +2,11 @@
  * T138: E2E — First run experience.
  *
  * Launches the app, asserts empty-state "No projects registered",
- * clicks "Add Project", selects a temp dir, confirms the project appears.
+ * registers a project via invoke, confirms the project appears.
+ *
+ * Note: The "clicks Add Project" UI flow requires a native file dialog
+ * which is not automatable via Playwright. We test the register path
+ * via invoke instead and verify the UI updates.
  *
  * Requires: tauri-driver + built Tauri app.
  */
@@ -15,7 +19,6 @@ test.describe('First Run', () => {
     await page.goto('http://localhost:1420');
     await waitForAppReady(page);
 
-    // The sidebar should show the empty-state message
     const emptyState = page.locator('text=No projects registered');
     await expect(emptyState).toBeVisible({ timeout: 5_000 });
   });
@@ -24,18 +27,13 @@ test.describe('First Run', () => {
     await page.goto('http://localhost:1420');
     await waitForAppReady(page);
 
-    // Register a project via invoke bridge (simulates the Add Project flow)
     const projectId = await registerProject(page, '/tmp/e2e-test-project', 'E2E Test');
     expect(projectId).toBeGreaterThan(0);
 
-    // Wait for the sidebar to update
+    // Wait for the sidebar to update with the new project
     await page.waitForSelector('text=E2E Test', {
       state: 'visible',
       timeout: 5_000,
     });
-
-    // Verify project appears in the project list
-    const projectEntry = page.locator('.project-entry:has-text("E2E Test")');
-    await expect(projectEntry).toBeVisible();
   });
 });

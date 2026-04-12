@@ -1,8 +1,8 @@
 /**
  * T141: E2E — Workspace state restore.
  *
- * Saves a layout, restarts the app (simulated via reload), asserts workspace
- * state restored automatically and layout dropdown shows the saved one.
+ * Saves workspace state, reloads, asserts state restored.
+ * Saves a named layout, lists it, restores it.
  *
  * Requires: tauri-driver + built Tauri app.
  */
@@ -15,20 +15,20 @@ test.describe('Workspace Restore', () => {
     await page.goto('http://localhost:1420');
     await waitForAppReady(page);
 
-    // Register a project to have state worth saving
     await registerProject(page, '/tmp/e2e-workspace', 'Workspace Test');
 
-    // Save workspace state via invoke (simulates the auto-save on interaction)
+    // Save workspace state via invoke
     await page.evaluate(async () => {
       const { invoke } = await import('@tauri-apps/api/core');
       await invoke('workspace_save', {
-        state: {
-          version: 1,
-          active_session_ids: [],
-          active_project_ids: [],
-          sidebar_collapsed: false,
-          scratchpad_open: true,
-          ui_state: { zoom: 1.0 },
+        args: {
+          state: {
+            version: 1,
+            active_project_ids: [],
+            focused_session_id: null,
+            pane_layout: 'split',
+            ui: { zoom: 1.0 },
+          },
         },
       });
     });
@@ -37,17 +37,16 @@ test.describe('Workspace Restore', () => {
     await page.reload();
     await waitForAppReady(page);
 
-    // Verify workspace state was restored via invoke
+    // Verify workspace state was restored
     const restored = await page.evaluate(async () => {
       const { invoke } = await import('@tauri-apps/api/core');
       return invoke<{
-        version: number;
-        scratchpad_open: boolean;
+        state: { version: number; pane_layout: string };
       }>('workspace_get');
     });
 
-    expect(restored.version).toBe(1);
-    expect(restored.scratchpad_open).toBe(true);
+    expect(restored.state.version).toBe(1);
+    expect(restored.state.pane_layout).toBe('split');
   });
 
   test('named layout save and restore', async ({ page }) => {
@@ -55,45 +54,43 @@ test.describe('Workspace Restore', () => {
     await waitForAppReady(page);
 
     // Save a named layout
-    await page.evaluate(async () => {
+    const saveResult = await page.evaluate(async () => {
       const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('layout_save', {
-        name: 'E2E Layout',
-        state: {
-          version: 1,
-          active_session_ids: [1, 2],
-          active_project_ids: [1],
-          sidebar_collapsed: false,
-          scratchpad_open: false,
-          ui_state: {},
+      return invoke<{ layout: { id: number; name: string } }>('layout_save', {
+        args: {
+          name: 'E2E Layout',
+          state: {
+            version: 1,
+            active_project_ids: [],
+            focused_session_id: null,
+            pane_layout: 'split',
+            ui: {},
+          },
+          overwrite: false,
         },
-        overwrite: false,
       });
     });
+    expect(saveResult.layout.name).toBe('E2E Layout');
 
     // List layouts and verify ours exists
     const layouts = await page.evaluate(async () => {
       const { invoke } = await import('@tauri-apps/api/core');
-      return invoke<{ layouts: Array<{ name: string }> }>('layout_list');
+      return invoke<{ layouts: Array<{ id: number; name: string }> }>('layout_list');
     });
-
     expect(layouts.layouts.some((l) => l.name === 'E2E Layout')).toBe(true);
 
     // Restore the layout
-    const restored = await page.evaluate(async () => {
+    const layout = layouts.layouts.find((l) => l.name === 'E2E Layout')!;
+    const restored = await page.evaluate(async (lid) => {
       const { invoke } = await import('@tauri-apps/api/core');
-      // Find our layout id first
-      const list = await invoke<{ layouts: Array<{ id: number; name: string }> }>('layout_list');
-      const layout = list.layouts.find((l) => l.name === 'E2E Layout');
-      if (!layout) throw new Error('Layout not found');
-      return invoke<{ state: { active_session_ids: number[] }; missing_sessions: number[] }>(
-        'layout_restore',
-        { layoutId: layout.id },
-      );
-    });
+      return invoke<{
+        state: { pane_layout: string };
+        missing_sessions: number[];
+      }>('layout_restore', { args: { id: lid } });
+    }, layout.id);
 
-    // Sessions 1 and 2 likely don't exist, so they should be in missing_sessions
-    expect(restored.state.active_session_ids).toEqual([1, 2]);
-    expect(restored.missing_sessions.length).toBeGreaterThanOrEqual(0);
+    expect(restored.state.pane_layout).toBe('split');
+    // missing_sessions should be empty since no sessions were referenced
+    expect(restored.missing_sessions).toEqual([]);
   });
 });

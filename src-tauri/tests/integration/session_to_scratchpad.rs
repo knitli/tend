@@ -32,11 +32,14 @@ async fn session_end_preserves_scratchpad() {
         .await
         .expect("create reminder");
 
-    // Snapshot the exact data before session lifecycle.
+    // Snapshot the exact data before session lifecycle (L5: includes timestamps).
     let note_count_before = count_table(&state, "notes").await;
     let reminder_count_before = count_table(&state, "reminders").await;
     let note_content_before = get_note_content(&state, note.id.get()).await;
     let reminder_content_before = get_reminder_content(&state, reminder.id.get()).await;
+    let note_updated_at_before = get_field(&state, "notes", "updated_at", note.id.get()).await;
+    let reminder_created_at_before =
+        get_field(&state, "reminders", "created_at", reminder.id.get()).await;
 
     // Spawn a real session, let it run briefly, then end it.
     let env = BTreeMap::new();
@@ -56,16 +59,29 @@ async fn session_end_preserves_scratchpad() {
 
     match result {
         Ok((session, _handle)) => {
-            // Wait for the child to finish and the exit watcher to fire.
-            tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
-
-            // Also try ending via the service to exercise the end-session path.
-            let _ = agentui_workbench::session::SessionService::mark_ended(
-                &state.db,
-                session.id,
-                Some(0),
-            )
-            .await;
+            // M6 fix: Poll for session end instead of unconditional sleep.
+            let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(3);
+            loop {
+                let row: (String,) = sqlx::query_as("SELECT status FROM sessions WHERE id = ?1")
+                    .bind(session.id.get())
+                    .fetch_one(state.db.pool())
+                    .await
+                    .expect("fetch status");
+                if row.0 == "ended" {
+                    break;
+                }
+                if tokio::time::Instant::now() > deadline {
+                    // Child didn't exit in time; force-end via service.
+                    let _ = agentui_workbench::session::SessionService::mark_ended(
+                        &state.db,
+                        session.id,
+                        Some(0),
+                    )
+                    .await;
+                    break;
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+            }
         }
         Err(e)
             if e.code == agentui_workbench::error::ErrorCode::SpawnFailed
@@ -107,6 +123,19 @@ async fn session_end_preserves_scratchpad() {
     assert_eq!(
         reminder_content_before, reminder_content_after,
         "session end must not modify reminder content"
+    );
+
+    // L5: Verify timestamps are also untouched.
+    let note_updated_at_after = get_field(&state, "notes", "updated_at", note.id.get()).await;
+    let reminder_created_at_after =
+        get_field(&state, "reminders", "created_at", reminder.id.get()).await;
+    assert_eq!(
+        note_updated_at_before, note_updated_at_after,
+        "session end must not modify note updated_at"
+    );
+    assert_eq!(
+        reminder_created_at_before, reminder_created_at_after,
+        "session end must not modify reminder created_at"
     );
 }
 
@@ -154,6 +183,11 @@ async fn rapid_session_ends_preserve_scratchpad() {
 }
 
 async fn count_table(state: &agentui_workbench::state::WorkbenchState, table: &str) -> i64 {
+    debug_assert!(
+        matches!(table, "notes" | "reminders"),
+        "count_table only supports known table names"
+    );
+    // Table name is a compile-time constant from the callers above; not user input.
     let sql = format!("SELECT COUNT(*) AS cnt FROM {table}");
     let row = sqlx::query(&sql)
         .fetch_one(state.db.pool())
@@ -178,4 +212,29 @@ async fn get_reminder_content(state: &agentui_workbench::state::WorkbenchState, 
         .await
         .expect("fetch reminder");
     row.try_get::<String, _>("content").expect("content")
+}
+
+/// L5: Generic field getter for timestamp snapshot assertions.
+async fn get_field(
+    state: &agentui_workbench::state::WorkbenchState,
+    table: &str,
+    column: &str,
+    id: i64,
+) -> String {
+    debug_assert!(
+        matches!(table, "notes" | "reminders"),
+        "get_field only supports known table names"
+    );
+    debug_assert!(
+        matches!(column, "updated_at" | "created_at"),
+        "get_field only supports known column names"
+    );
+    // Table and column are compile-time constants from callers; not user input.
+    let sql = format!("SELECT {column} FROM {table} WHERE id = ?1");
+    let row = sqlx::query(&sql)
+        .bind(id)
+        .fetch_one(state.db.pool())
+        .await
+        .expect("fetch field");
+    row.try_get::<String, _>(column).expect("field value")
 }
