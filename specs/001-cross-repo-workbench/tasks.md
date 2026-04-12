@@ -255,29 +255,29 @@
 
 ### Contract + integration tests (write FIRST)
 
-- [ ] T101 [P] [US5] Contract tests for `note_list`, `note_create` (including `CONTENT_EMPTY`, `PROJECT_NOT_FOUND`), `note_update`, `note_delete` in `src-tauri/tests/contract/notes.rs`
-- [ ] T102 [P] [US5] Contract tests for `reminder_list` (state filter), `reminder_create`, `reminder_set_state`, `reminder_delete` in `src-tauri/tests/contract/reminders.rs`
-- [ ] T103 [P] [US5] Contract test `cross_project_overview` returning groups ordered by project with per-group reminders ordered `created_at DESC` in `src-tauri/tests/contract/overview.rs`
-- [ ] T104 [P] [US5] Integration test: archive project → all its notes + reminders still queryable; unarchive → scratchpad intact, session rows still ended in `src-tauri/tests/integration/scratchpad_archive.rs`
-- [ ] T105 [P] [US5] Integration test: ending a session leaves its project's scratchpad untouched, AND the FR-027 negative invariant holds — running a session that produces several KB of PTY output (including text that looks like a note or a reminder) MUST NOT create, mutate, or delete any row in `notes` or `reminders` for that session's project. Verified by snapshotting both tables before and after the session's lifecycle. In `src-tauri/tests/integration/scratchpad_session_lifecycle.rs`.
-- [ ] T106 [P] [US5] Integration test: done reminder excluded from `cross_project_overview` but retrievable via `reminder_list({ state: "done" })` in `src-tauri/tests/integration/reminder_done.rs`
+- [X] T101 [P] [US5] Contract tests for `note_list`, `note_create` (including `CONTENT_EMPTY`, `PROJECT_NOT_FOUND`), `note_update`, `note_delete` in `src-tauri/tests/contract/notes.rs`
+- [X] T102 [P] [US5] Contract tests for `reminder_list` (state filter), `reminder_create`, `reminder_set_state`, `reminder_delete` in `src-tauri/tests/contract/reminders.rs`
+- [X] T103 [P] [US5] Contract test `cross_project_overview` returning groups ordered by project with per-group reminders ordered `created_at DESC` in `src-tauri/tests/contract/overview.rs`
+- [X] T104 [P] [US5] Integration test: archive project → all its notes + reminders still queryable; unarchive → scratchpad intact, session rows still ended in `src-tauri/tests/integration/scratchpad_archive.rs`
+- [X] T105 [P] [US5] Integration test: ending a session leaves its project's scratchpad untouched, AND the FR-027 negative invariant holds — running a session that produces several KB of PTY output (including text that looks like a note or a reminder) MUST NOT create, mutate, or delete any row in `notes` or `reminders` for that session's project. Verified by snapshotting both tables before and after the session's lifecycle. In `src-tauri/tests/integration/scratchpad_session_lifecycle.rs`.
+- [X] T106 [P] [US5] Integration test: done reminder excluded from `cross_project_overview` but retrievable via `reminder_list({ state: "done" })` in `src-tauri/tests/integration/reminder_done.rs`
 
 ### Backend: scratchpad service + commands
 
-- [ ] T107 [P] [US5] Create `src-tauri/src/scratchpad/notes.rs` with `NoteService::list(project_id, limit, cursor)`, `create(project_id, content)` (rejects empty/whitespace-only with `CONTENT_EMPTY`), `update(id, content)`, `delete(id)`
-- [ ] T108 [P] [US5] Create `src-tauri/src/scratchpad/reminders.rs` with `ReminderService::list(project_id?, state?, limit, cursor)`, `create(project_id, content)`, `set_state(id, state)`, `delete(id)`
-- [ ] T109 [P] [US5] Create `src-tauri/src/scratchpad/overview.rs` with `overview() -> Vec<OverviewGroup>` joining `projects` × open `reminders`, grouped by project, ordered by project display_name then reminder `created_at DESC`; excludes archived projects
-- [ ] T110 [US5] Create `src-tauri/src/commands/scratchpad.rs` implementing `note_list`, `note_create`, `note_update`, `note_delete`, `reminder_list`, `reminder_create`, `reminder_set_state`, `reminder_delete`, `cross_project_overview`; register in `lib.rs`
+- [X] T107 [P] [US5] Create `src-tauri/src/scratchpad/notes.rs` with `NoteService::list(project_id, limit, cursor)`, `create(project_id, content)` (rejects empty/whitespace-only with `CONTENT_EMPTY`), `update(id, content)`, `delete(id)`
+- [X] T108 [P] [US5] Create `src-tauri/src/scratchpad/reminders.rs` with `ReminderService::list(project_id?, state?, limit, cursor)`, `create(project_id, content)`, `set_state(id, state)`, `delete(id)`
+- [X] T109 [P] [US5] Create `src-tauri/src/scratchpad/overview.rs` with `overview() -> Vec<OverviewGroup>` joining `projects` × open `reminders`, grouped by project, ordered by project display_name then reminder `created_at DESC`; excludes archived projects
+- [X] T110 [US5] Create `src-tauri/src/commands/scratchpad.rs` implementing `note_list`, `note_create`, `note_update`, `note_delete`, `reminder_list`, `reminder_create`, `reminder_set_state`, `reminder_delete`, `cross_project_overview`; register in `lib.rs`
 
 ### Frontend: scratchpad UI
 
-- [ ] T111 [P] [US5] Create `src/lib/api/scratchpad.ts` with typed wrappers for all 9 scratchpad commands
-- [ ] T112 [P] [US5] Create `src/lib/util/age.ts` returning human-readable age ("3 minutes ago", "2 days ago", "3 weeks ago") from an ISO-8601 timestamp
-- [ ] T113 [P] [US5] Create `src/lib/util/markdown.ts` wrapping `marked` + `DOMPurify` for light inline-markdown rendering (bold, italic, code, links — block elements disabled)
-- [ ] T114 [P] [US5] Create `src/lib/stores/scratchpad.svelte.ts` (per-project notes + reminders, lazy-loaded on project open) and `src/lib/stores/overview.svelte.ts` (cross-project, re-queried on reminder state changes)
-- [ ] T115 [P] [US5] Create `src/lib/components/Scratchpad.svelte` with two tabs (Notes / Reminders), textarea + "Add note" button, reminder list with checkboxes (click → `reminderSetState`), age display next to each reminder, inline markdown render on notes
-- [ ] T116 [P] [US5] Create `src/lib/components/CrossProjectOverview.svelte` rendering groups with project header and reminder list, each reminder showing its age and project
-- [ ] T117 [US5] Integrate `Scratchpad` as a toggleable right-side panel in `SplitView.svelte` (keyboard shortcut to toggle), and add an "Overview" top-nav button that opens `CrossProjectOverview` as a full-width view
+- [X] T111 [P] [US5] Create `src/lib/api/scratchpad.ts` with typed wrappers for all 9 scratchpad commands
+- [X] T112 [P] [US5] Create `src/lib/util/age.ts` returning human-readable age ("3 minutes ago", "2 days ago", "3 weeks ago") from an ISO-8601 timestamp
+- [X] T113 [P] [US5] Create `src/lib/util/markdown.ts` wrapping `marked` + `DOMPurify` for light inline-markdown rendering (bold, italic, code, links — block elements disabled)
+- [X] T114 [P] [US5] Create `src/lib/stores/scratchpad.svelte.ts` (per-project notes + reminders, lazy-loaded on project open) and `src/lib/stores/overview.svelte.ts` (cross-project, re-queried on reminder state changes)
+- [X] T115 [P] [US5] Create `src/lib/components/Scratchpad.svelte` with two tabs (Notes / Reminders), textarea + "Add note" button, reminder list with checkboxes (click → `reminderSetState`), age display next to each reminder, inline markdown render on notes
+- [X] T116 [P] [US5] Create `src/lib/components/CrossProjectOverview.svelte` rendering groups with project header and reminder list, each reminder showing its age and project
+- [X] T117 [US5] Integrate `Scratchpad` as a toggleable right-side panel in `SplitView.svelte` (keyboard shortcut to toggle), and add an "Overview" top-nav button that opens `CrossProjectOverview` as a full-width view
 
 **Checkpoint**: Notes + reminders persist across workbench restarts; the overview rolls up across projects; archived projects still return their scratchpad on unarchive.
 

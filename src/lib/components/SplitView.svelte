@@ -8,6 +8,7 @@
   import { onMount, onDestroy } from 'svelte';
   import AgentPane from '$lib/components/AgentPane.svelte';
   import CompanionPane from '$lib/components/CompanionPane.svelte';
+  import Scratchpad from '$lib/components/Scratchpad.svelte';
   import { sessionActivate, type Session, type SessionSummary } from '$lib/api/sessions';
   import type { CompanionTerminal } from '$lib/api/companions';
 
@@ -40,6 +41,17 @@
       activating = false;
     }
   });
+
+  // T117: Scratchpad toggle.
+  let scratchpadVisible = $state(false);
+
+  function handleGlobalKeydown(e: KeyboardEvent) {
+    // Ctrl+Shift+S toggles the scratchpad.
+    if (e.key === 'S' && e.ctrlKey && e.shiftKey) {
+      e.preventDefault();
+      scratchpadVisible = !scratchpadVisible;
+    }
+  }
 
   // H7 fix: track active drag listeners for cleanup on unmount.
   let dragCleanup: (() => void) | null = null;
@@ -135,8 +147,22 @@
         </div>
       {/if}
     </div>
+
+    {#if scratchpadVisible}
+      <div class="scratchpad-panel">
+        <div class="scratchpad-toolbar">
+          <span class="scratchpad-title">Scratchpad</span>
+          <button class="close-btn" onclick={() => scratchpadVisible = false} title="Close scratchpad (Ctrl+Shift+S)">
+            Close
+          </button>
+        </div>
+        <Scratchpad projectId={session.project_id} />
+      </div>
+    {/if}
   {/if}
 </div>
+
+<svelte:window onkeydown={handleGlobalKeydown} />
 
 <style>
   .split-view {
@@ -182,6 +208,48 @@
     align-items: center;
     justify-content: center;
     padding: 1.5rem;
+  }
+
+  .scratchpad-panel {
+    width: 300px;
+    min-width: 200px;
+    border-left: 1px solid var(--color-border, #2a2d35);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  .scratchpad-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.375rem 0.5rem;
+    border-bottom: 1px solid var(--color-border, #2a2d35);
+    flex-shrink: 0;
+  }
+
+  .scratchpad-title {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted, #8b8fa3);
+  }
+
+  .close-btn {
+    padding: 2px 8px;
+    border: 1px solid var(--color-border, #2a2d35);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-text-muted, #8b8fa3);
+    cursor: pointer;
+    font-size: 0.6875rem;
+  }
+
+  .close-btn:hover {
+    background: var(--color-surface-hover, #1a1d25);
+    color: var(--color-text, #e6e8ef);
   }
 
   .muted {

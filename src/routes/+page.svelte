@@ -6,6 +6,7 @@
   import SessionList from '$lib/components/SessionList.svelte';
   import AlertBar from '$lib/components/AlertBar.svelte';
   import SplitView from '$lib/components/SplitView.svelte';
+  import CrossProjectOverview from '$lib/components/CrossProjectOverview.svelte';
   import SettingsDialog from '$lib/components/SettingsDialog.svelte';
   import { projectsStore } from '$lib/stores/projects.svelte';
   import { sessionsStore } from '$lib/stores/sessions.svelte';
@@ -15,6 +16,7 @@
   let selectedProjectId = $state<number | null>(null);
   let activeSessionId = $state<number | null>(null);
   let settingsOpen = $state(false);
+  let overviewOpen = $state(false);
   const activeSession = $derived(activeSessionId !== null ? sessionsStore.byId(activeSessionId) ?? null : null);
 
   function handleSelectProject(project: Project): void {
@@ -23,6 +25,7 @@
 
   function handleActivateSession(session: SessionSummary): void {
     activeSessionId = session.id;
+    overviewOpen = false;
   }
 
   onMount(() => {
@@ -61,6 +64,15 @@
     <div class="session-panel">
       <div class="session-panel-header">
         <button
+          class="overview-btn"
+          onclick={() => { overviewOpen = !overviewOpen; activeSessionId = null; }}
+          title="Cross-project reminder overview"
+          aria-label="Open reminder overview"
+          class:active={overviewOpen}
+        >
+          Overview
+        </button>
+        <button
           class="settings-btn"
           onclick={() => settingsOpen = true}
           title="Notification settings"
@@ -77,7 +89,9 @@
     </div>
 
     <div class="content-panel">
-      {#if activeSession && activeSessionId !== null}
+      {#if overviewOpen}
+        <CrossProjectOverview />
+      {:else if activeSession && activeSessionId !== null}
         <div class="active-session-header">
           <h2>{activeSession.label}</h2>
           <span class="session-status">{activeSession.status}</span>
@@ -135,8 +149,31 @@
   .session-panel-header {
     display: flex;
     justify-content: flex-end;
+    gap: 0.375rem;
     padding: 0.375rem 0.5rem;
     border-bottom: 1px solid var(--color-border, #2a2d35);
+  }
+
+  .overview-btn {
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--color-border, #2a2d35);
+    border-radius: 0.25rem;
+    background: transparent;
+    color: var(--color-text-muted, #8b8fa3);
+    cursor: pointer;
+    font-size: 0.75rem;
+    margin-right: auto;
+  }
+
+  .overview-btn:hover {
+    background: var(--color-surface-hover, #1a1d25);
+    color: var(--color-text, #e6e8ef);
+  }
+
+  .overview-btn.active {
+    background: var(--color-accent, #60a5fa);
+    color: var(--color-surface, #0f1115);
+    border-color: var(--color-accent, #60a5fa);
   }
 
   .settings-btn {

@@ -21,4 +21,9 @@ mod integration {
     pub mod companion_idempotency;
     pub mod companion_worktree;
     pub mod session_end_lifecycle;
+
+    // Phase 6 (US5 Scratchpad)
+    pub mod reminder_done;
+    pub mod scratchpad_archive;
+    pub mod scratchpad_session_lifecycle;
 }

@@ -7,4 +7,5 @@ pub mod companions;
 pub mod events;
 pub mod notifications;
 pub mod projects;
+pub mod scratchpad;
 pub mod sessions;

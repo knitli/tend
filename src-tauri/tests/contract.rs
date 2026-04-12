@@ -23,4 +23,9 @@ mod contract {
     pub mod companion;
     pub mod session_activate;
     pub mod session_io;
+
+    // Phase 6 (US5 Scratchpad)
+    pub mod notes;
+    pub mod overview;
+    pub mod reminders;
 }

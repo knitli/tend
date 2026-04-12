@@ -14,6 +14,7 @@ pub mod error;
 pub mod model;
 pub mod notifications;
 pub mod project;
+pub mod scratchpad;
 pub mod session;
 pub mod state;
 
@@ -110,6 +111,15 @@ pub fn run() {
             commands::companions::companion_send_input,
             commands::companions::companion_resize,
             commands::companions::companion_respawn,
+            commands::scratchpad::note_list,
+            commands::scratchpad::note_create,
+            commands::scratchpad::note_update,
+            commands::scratchpad::note_delete,
+            commands::scratchpad::reminder_list,
+            commands::scratchpad::reminder_create,
+            commands::scratchpad::reminder_set_state,
+            commands::scratchpad::reminder_delete,
+            commands::scratchpad::cross_project_overview,
             commands::notifications::notification_preference_get,
             commands::notifications::notification_preference_set,
             commands::notifications::session_acknowledge_alert,
