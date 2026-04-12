@@ -28,7 +28,7 @@ multiple-versions = "warn"
 wildcards = "deny"
 # Internal workspace path deps use `{ workspace = true }` and have no version
 # field — cargo-deny 0.14+ treats that as a wildcard by default. This flag
-# exempts path-based workspace deps (our `agentui-protocol` path dep) while
+# exempts path-based workspace deps (our `tend-protocol` path dep) while
 # keeping real `"*"` wildcards banned in our external crates.
 allow-wildcard-paths = true
 

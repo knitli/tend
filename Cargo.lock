@@ -9,10 +9,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
-name = "agentui-cli"
+name = "tend-cli"
 version = "0.1.0"
 dependencies = [
- "agentui-protocol",
+ "tend-protocol",
  "anyhow",
  "clap",
  "crossterm",
@@ -29,7 +29,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "agentui-protocol"
+name = "tend-protocol"
 version = "0.1.0"
 dependencies = [
  "serde",
@@ -38,10 +38,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "agentui-workbench"
+name = "tend-workbench"
 version = "0.1.0"
 dependencies = [
- "agentui-protocol",
+ "tend-protocol",
  "anyhow",
  "base64 0.22.1",
  "chrono",

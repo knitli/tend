@@ -1,37 +1,34 @@
 [package]
-name = "agentui-workbench"
-version = "0.1.0"
+name = "tend-workbench"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
+description = "tend cross-repo workbench: Tauri 2 desktop app + backend daemon"
+homepage.workspace = true
 repository.workspace = true
-authors.workspace = true
-description = "agentui cross-repo workbench: Tauri 2 desktop app + backend daemon"
-# Internal workspace member; never published to crates.io.
+license.workspace = true
+# Internal workspace member; never published to crates.io. We have to distribute as an OS binary, not a library or set of crates.
 publish = false
 
 [lib]
-name = "agentui_workbench"
+name = "tend_workbench"
 path = "src/lib.rs"
 
 [[bin]]
-name = "agentui-workbench"
+name = "tend-workbench"
 path = "src/main.rs"
-
-[build-dependencies]
-tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # Shared wire format — single source of truth. No local redefinition of Request/Response/ErrorCode.
-agentui-protocol = { workspace = true }
+tend-protocol = { workspace = true }
 
 # Tauri
 tauri = { version = "2", features = [] }
 tauri-plugin-notification = "2"
 
+sqlx = { workspace = true }
 # Async runtime + DB
 tokio = { workspace = true }
-sqlx = { workspace = true }
 
 # PTY + process observation
 portable-pty = "0.8"
@@ -44,9 +41,9 @@ notify = "6"
 serde = { workspace = true }
 serde_json = { workspace = true }
 
+anyhow = { workspace = true }
 # Errors + diagnostics
 thiserror = { workspace = true }
-anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
@@ -59,5 +56,8 @@ dirs = { workspace = true }
 libc = "0.2.184"
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["test-util"] }
 tempfile = "3"
+tokio = { workspace = true, features = ["test-util"] }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

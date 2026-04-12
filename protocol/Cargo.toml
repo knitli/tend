@@ -1,12 +1,11 @@
 [package]
-name = "agentui-protocol"
-version = "0.1.0"
+name = "tend-protocol"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
+description = "Wire format for the tend daemon IPC protocol. Shared by src-tauri and cli."
 repository.workspace = true
-authors.workspace = true
-description = "Wire format for the agentui daemon IPC protocol. Shared by src-tauri and cli."
+license.workspace = true
 publish = false
 
 # T003b: minimal deps only. No tokio, no sqlx, no tauri. This crate must stay
