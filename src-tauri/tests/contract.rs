@@ -28,4 +28,8 @@ mod contract {
     pub mod notes;
     pub mod overview;
     pub mod reminders;
+
+    // Phase 7 (US6 Workspace + Layouts)
+    pub mod layouts;
+    pub mod workspace;
 }

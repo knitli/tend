@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 /// Serialized in `workspace_state.payload_json` and in named `layouts`.
 ///
 /// Layout rows share this exact schema plus a `name` column at the row level.
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct WorkspaceState {
     /// Version tag on the payload shape (currently 1).
     #[serde(default = "default_version")]
@@ -27,6 +27,18 @@ pub struct WorkspaceState {
     /// Arbitrary UI state (sidebar widths, panel toggles, etc.).
     #[serde(default)]
     pub ui: serde_json::Map<String, serde_json::Value>,
+}
+
+impl Default for WorkspaceState {
+    fn default() -> Self {
+        Self {
+            version: 1,
+            active_project_ids: Vec::new(),
+            focused_session_id: None,
+            pane_layout: "split".into(),
+            ui: serde_json::Map::new(),
+        }
+    }
 }
 
 const fn default_version() -> u32 {

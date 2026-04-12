@@ -8,9 +8,11 @@
   import SplitView from '$lib/components/SplitView.svelte';
   import CrossProjectOverview from '$lib/components/CrossProjectOverview.svelte';
   import SettingsDialog from '$lib/components/SettingsDialog.svelte';
+  import LayoutSwitcher from '$lib/components/LayoutSwitcher.svelte';
   import { projectsStore } from '$lib/stores/projects.svelte';
   import { sessionsStore } from '$lib/stores/sessions.svelte';
   import { scratchpadStore } from '$lib/stores/scratchpad.svelte';
+  import { workspaceStore } from '$lib/stores/workspace.svelte';
   import type { Project } from '$lib/api/projects';
   import type { SessionSummary } from '$lib/api/sessions';
 
@@ -18,6 +20,8 @@
   let activeSessionId = $state<number | null>(null);
   let settingsOpen = $state(false);
   let overviewOpen = $state(false);
+  /** Session ids that were missing after workspace/layout restore. */
+  let missingSessions = $state<Set<number>>(new Set());
   const activeSession = $derived(activeSessionId !== null ? sessionsStore.byId(activeSessionId) ?? null : null);
 
   function handleSelectProject(project: Project): void {
@@ -27,14 +31,26 @@
   function handleActivateSession(session: SessionSummary): void {
     activeSessionId = session.id;
     overviewOpen = false;
+    // T130: persist active session change.
+    workspaceStore.update({ focused_session_id: session.id });
   }
 
   onMount(() => {
-    // Hydrate both stores in parallel on mount
-    const hydrate = Promise.all([
-      projectsStore.hydrate({ includeArchived: true }),
-      sessionsStore.hydrate(),
-    ]);
+    // T130: hydrate workspace first, then apply restored state, then other stores.
+    const boot = (async () => {
+      // 1. Workspace state first.
+      await workspaceStore.hydrate();
+      const ws = workspaceStore.current;
+      if (ws.focused_session_id !== null) {
+        activeSessionId = ws.focused_session_id;
+      }
+
+      // 2. Projects + sessions in parallel.
+      await Promise.all([
+        projectsStore.hydrate({ includeArchived: true }),
+        sessionsStore.hydrate(),
+      ]);
+    })();
 
     // Subscribe to real-time session events
     let cleanup: (() => void) | undefined;
@@ -43,14 +59,14 @@
     });
 
     // Log hydration errors for debugging (non-blocking)
-    Promise.all([hydrate, subscribe]).catch((err) => {
-      // Tauri invoke will fail in dev mode without a running backend;
-      // stores surface the error through their .error fields.
+    Promise.all([boot, subscribe]).catch((err) => {
       console.warn('Store hydration/subscription failed:', err);
     });
 
     return () => {
       cleanup?.();
+      // Flush workspace state on unmount / close.
+      workspaceStore.flush();
     };
   });
 </script>
@@ -66,13 +82,14 @@
       <div class="session-panel-header">
         <button
           class="overview-btn"
-          onclick={() => { overviewOpen = !overviewOpen; activeSessionId = null; scratchpadStore.clear(); }}
+          onclick={() => { overviewOpen = !overviewOpen; activeSessionId = null; scratchpadStore.clear(); workspaceStore.update({ focused_session_id: null }); }}
           title="Cross-project reminder overview"
           aria-label="Open reminder overview"
           class:active={overviewOpen}
         >
           Overview
         </button>
+        <LayoutSwitcher />
         <button
           class="settings-btn"
           onclick={() => settingsOpen = true}

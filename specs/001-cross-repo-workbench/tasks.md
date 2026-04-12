@@ -291,28 +291,28 @@
 
 ### Contract + integration tests (write FIRST)
 
-- [ ] T118 [P] [US6] Contract test `workspace_get` returns a hydrateable state (roundtrippable with `workspace_save`) in `src-tauri/tests/contract/workspace.rs`
-- [ ] T119 [P] [US6] Contract tests `layout_list`, `layout_save` (+ `NAME_TAKEN`), `layout_restore` (returns `missing_sessions` for dead refs), `layout_delete` in `src-tauri/tests/contract/layouts.rs`
-- [ ] T120 [P] [US6] Integration test: close-and-reopen simulation — save workspace state row, restart `WorkbenchState`, run crash recovery, verify still-alive sessions (mocked via pid of a long-running helper) reattach and dead pids are marked `ended` in `src-tauri/tests/integration/workspace_restore.rs`
-- [ ] T121 [P] [US6] Integration test: `layout_restore` with a layout referencing an `ended` session reports it in `missing_sessions` and the UI-level hydration marks it `not running` in `src-tauri/tests/integration/layout_missing.rs`
+- [X] T118 [P] [US6] Contract test `workspace_get` returns a hydrateable state (roundtrippable with `workspace_save`) in `src-tauri/tests/contract/workspace.rs`
+- [X] T119 [P] [US6] Contract tests `layout_list`, `layout_save` (+ `NAME_TAKEN`), `layout_restore` (returns `missing_sessions` for dead refs), `layout_delete` in `src-tauri/tests/contract/layouts.rs`
+- [X] T120 [P] [US6] Integration test: close-and-reopen simulation — save workspace state row, restart `WorkbenchState`, run crash recovery, verify still-alive sessions (mocked via pid of a long-running helper) reattach and dead pids are marked `ended` in `src-tauri/tests/integration/workspace_restore.rs`
+- [X] T121 [P] [US6] Integration test: `layout_restore` with a layout referencing an `ended` session reports it in `missing_sessions` and the UI-level hydration marks it `not running` in `src-tauri/tests/integration/layout_missing.rs`
 
 ### Backend: workspace + layout services
 
-- [ ] T122 [P] [US6] Create `src-tauri/src/workspace/mod.rs` with `WorkspaceService::get()` (reads the single `workspace_state` row; if absent returns `WorkspaceState::default()`), `save(state)` with debounced write (100 ms) coalescing rapid consecutive saves, `flush()` called on graceful shutdown
-- [ ] T123 [P] [US6] Create `src-tauri/src/workspace/layouts.rs` with `LayoutService::list()`, `save(name, state)` (`NAME_TAKEN` on duplicate), `restore(id) -> (WorkspaceState, Vec<SessionId>)` that returns missing session ids after checking which referenced sessions are still alive in the live-sessions map, `delete(id)`
-- [ ] T124 [US6] Extend `src-tauri/src/session/recovery.rs::reconcile_and_reattach` (already delivered in T025 as the merged single-pass function) to also emit `session:spawned` events via `state.event_bus` for each reattached session id so the US6 frontend hydration path sees them as "running, reattached" rather than having to hit `session_list` separately. Also extend the integration test T025b with an additional assertion: after reattach, a `session:spawned` event has been broadcast for every reattached id within 500 ms. No new `reattach_live_sessions` function — that logic lives in T025's single pass per the ordering invariant.
+- [X] T122 [P] [US6] Create `src-tauri/src/workspace/mod.rs` with `WorkspaceService::get()` (reads the single `workspace_state` row; if absent returns `WorkspaceState::default()`), `save(state)` with debounced write (100 ms) coalescing rapid consecutive saves, `flush()` called on graceful shutdown
+- [X] T123 [P] [US6] Create `src-tauri/src/workspace/layouts.rs` with `LayoutService::list()`, `save(name, state)` (`NAME_TAKEN` on duplicate), `restore(id) -> (WorkspaceState, Vec<SessionId>)` that returns missing session ids after checking which referenced sessions are still alive in the live-sessions map, `delete(id)`
+- [X] T124 [US6] Extend `src-tauri/src/session/recovery.rs::reconcile_and_reattach` (already delivered in T025 as the merged single-pass function) to also emit `session:spawned` events via `state.event_bus` for each reattached session id so the US6 frontend hydration path sees them as "running, reattached" rather than having to hit `session_list` separately. Also extend the integration test T025b with an additional assertion: after reattach, a `session:spawned` event has been broadcast for every reattached id within 500 ms. No new `reattach_live_sessions` function — that logic lives in T025's single pass per the ordering invariant.
 
 ### Backend: commands + events
 
-- [ ] T125 [US6] Create `src-tauri/src/commands/workspace.rs` with `workspace_get`, `workspace_save`, `layout_list`, `layout_save`, `layout_restore`, `layout_delete`; register in `lib.rs`
-- [ ] T126 [US6] Emit `workspace:restored` event from the event bridge on startup, containing the hydrated state
+- [X] T125 [US6] Create `src-tauri/src/commands/workspace.rs` with `workspace_get`, `workspace_save`, `layout_list`, `layout_save`, `layout_restore`, `layout_delete`; register in `lib.rs`
+- [X] T126 [US6] Emit `workspace:restored` event from the event bridge on startup, containing the hydrated state
 
 ### Frontend: workspace hydration + layouts
 
-- [ ] T127 [P] [US6] Create `src/lib/api/workspace.ts` with typed wrappers + `onWorkspaceRestored` event subscriber
-- [ ] T128 [P] [US6] Create `src/lib/stores/workspace.svelte.ts` with current workspace state ($state), debounced (250 ms) `save()` that pushes to backend, `hydrate()` called before any other store's hydrate
-- [ ] T129 [P] [US6] Create `src/lib/components/LayoutSwitcher.svelte` — top-nav dropdown listing layouts + "save current as…" + "delete" actions
-- [ ] T130 [US6] Wire stores and components to call `workspace.save()` on UI changes (active session, panel sizes, scratchpad toggle state); on mount, call `workspace.hydrate()` first, then `projects.hydrate()` + `sessions.hydrate()`; mark sessions returned as missing from restore in the UI with a muted "not running" badge
+- [X] T127 [P] [US6] Create `src/lib/api/workspace.ts` with typed wrappers + `onWorkspaceRestored` event subscriber
+- [X] T128 [P] [US6] Create `src/lib/stores/workspace.svelte.ts` with current workspace state ($state), debounced (250 ms) `save()` that pushes to backend, `hydrate()` called before any other store's hydrate
+- [X] T129 [P] [US6] Create `src/lib/components/LayoutSwitcher.svelte` — top-nav dropdown listing layouts + "save current as…" + "delete" actions
+- [X] T130 [US6] Wire stores and components to call `workspace.save()` on UI changes (active session, panel sizes, scratchpad toggle state); on mount, call `workspace.hydrate()` first, then `projects.hydrate()` + `sessions.hydrate()`; mark sessions returned as missing from restore in the UI with a muted "not running" badge
 
 **Checkpoint**: Closing and reopening restores the full workbench automatically. Named layouts switch explicitly.
 

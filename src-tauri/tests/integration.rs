@@ -26,4 +26,8 @@ mod integration {
     pub mod reminder_done;
     pub mod scratchpad_archive;
     pub mod scratchpad_session_lifecycle;
+
+    // Phase 7 (US6 Workspace + Layouts)
+    pub mod layout_missing;
+    pub mod workspace_restore;
 }

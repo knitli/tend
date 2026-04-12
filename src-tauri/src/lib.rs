@@ -17,6 +17,7 @@ pub mod project;
 pub mod scratchpad;
 pub mod session;
 pub mod state;
+pub mod workspace;
 
 use crate::db::Database;
 use crate::error::WorkbenchResult;
@@ -123,10 +124,33 @@ pub fn run() {
             commands::notifications::notification_preference_get,
             commands::notifications::notification_preference_set,
             commands::notifications::session_acknowledge_alert,
+            commands::workspace::workspace_get,
+            commands::workspace::workspace_save,
+            commands::workspace::layout_list,
+            commands::workspace::layout_save,
+            commands::workspace::layout_restore,
+            commands::workspace::layout_delete,
         ])
         .setup(move |app| {
             // T053: event bridge — forward state.event_bus → Tauri events.
             commands::events::spawn_event_bridge(app.handle().clone(), &state_clone);
+
+            // T126: emit workspace:restored with the hydrated state so the
+            // frontend can bootstrap without an explicit workspace_get call.
+            let app_handle = app.handle().clone();
+            let db = state_clone.db.clone();
+            tokio::spawn(async move {
+                match workspace::WorkspaceService::get(&db).await {
+                    Ok(ws) => {
+                        use tauri::Emitter;
+                        let _ = app_handle.emit("workspace:restored", &ws);
+                        info!("emitted workspace:restored on startup");
+                    }
+                    Err(e) => {
+                        tracing::error!("failed to load workspace state on startup: {e}");
+                    }
+                }
+            });
             Ok(())
         })
         .run(tauri::generate_context!())
