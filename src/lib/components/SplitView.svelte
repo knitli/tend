@@ -41,6 +41,9 @@
     }
   });
 
+  // H7 fix: track active drag listeners for cleanup on unmount.
+  let dragCleanup: (() => void) | null = null;
+
   function handleMouseDown(e: MouseEvent) {
     e.preventDefault();
     dragging = true;
@@ -57,10 +60,41 @@
       dragging = false;
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      dragCleanup = null;
     }
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
+
+    dragCleanup = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }
+
+  onDestroy(() => {
+    dragCleanup?.();
+  });
+
+  // M6: keyboard accessibility for the divider.
+  const SPLIT_MIN = 20;
+  const SPLIT_MAX = 80;
+  const SPLIT_STEP = 5;
+
+  function handleDividerKeydown(e: KeyboardEvent) {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      splitPercent = Math.max(SPLIT_MIN, splitPercent - SPLIT_STEP);
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      splitPercent = Math.min(SPLIT_MAX, splitPercent + SPLIT_STEP);
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      splitPercent = SPLIT_MIN;
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      splitPercent = SPLIT_MAX;
+    }
   }
 </script>
 
@@ -78,12 +112,18 @@
       <AgentPane {session} />
     </div>
 
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_no_noninteractive_tabindex -->
     <div
       class="divider"
       role="separator"
       aria-orientation="vertical"
+      aria-valuenow={Math.round(splitPercent)}
+      aria-valuemin={SPLIT_MIN}
+      aria-valuemax={SPLIT_MAX}
+      aria-label="Resize panes"
+      tabindex="0"
       onmousedown={handleMouseDown}
+      onkeydown={handleDividerKeydown}
     ></div>
 
     <div class="right-pane" style="flex: {100 - splitPercent} 0 0%">

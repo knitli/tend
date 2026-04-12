@@ -3,6 +3,7 @@
 <script lang="ts">
   import { sessionsStore } from '$lib/stores/sessions.svelte';
   import { projectsStore } from '$lib/stores/projects.svelte';
+  import { matchesSessionFilter } from '$lib/util/filterSession';
   import SessionRow from '$lib/components/SessionRow.svelte';
   import type { SessionSummary } from '$lib/api/sessions';
 
@@ -40,14 +41,11 @@
       );
     }
 
-    // Apply text filter against label and project display_name
-    const query = debouncedFilter.toLowerCase().trim();
-    if (query) {
+    // Apply text filter against label and project display_name (M7: shared predicate).
+    if (debouncedFilter) {
       result = result.filter((s) => {
-        const label = s.label.toLowerCase();
         const project = projectsStore.byId(s.project_id);
-        const projectName = project?.display_name.toLowerCase() ?? '';
-        return label.includes(query) || projectName.includes(query);
+        return matchesSessionFilter(debouncedFilter, s.label, project?.display_name ?? '');
       });
     }
 

@@ -85,7 +85,7 @@
             <span class="readonly-banner">Read-only</span>
           {/if}
         </div>
-        {#key activeSessionId}
+        {#key `${activeSessionId}-${activeSession.reattached_mirror}`}
           <SplitView sessionId={activeSessionId} session={activeSession} />
         {/key}
       {:else}

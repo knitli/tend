@@ -13,6 +13,15 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch, Mutex};
 
+/// Signal to send to the child process.
+#[derive(Clone, Copy, Debug)]
+pub enum KillSignal {
+    /// SIGTERM — allow graceful shutdown.
+    Term,
+    /// SIGKILL — forceful termination.
+    Kill,
+}
+
 /// Clone-able handle to a live session. Stored in `WorkbenchState::live_sessions`.
 #[derive(Clone, Debug)]
 pub struct LiveSessionHandle {
@@ -22,8 +31,8 @@ pub struct LiveSessionHandle {
     writer_tx: Option<mpsc::UnboundedSender<Vec<u8>>>,
     /// Resize channel — None for mirror sessions.
     resize_tx: Option<mpsc::UnboundedSender<(u16, u16)>>,
-    /// Kill signal — None for mirror sessions.
-    kill_tx: Option<mpsc::UnboundedSender<()>>,
+    /// Kill signal — None for mirror sessions. Carries the signal kind.
+    kill_tx: Option<mpsc::UnboundedSender<KillSignal>>,
     /// IPC status update sender — set after supervisor tasks start.
     /// Used by daemon `update_status` to push cooperative status to the monitor.
     ipc_status_tx: Arc<Mutex<Option<mpsc::UnboundedSender<StatusUpdate>>>>,
@@ -37,7 +46,7 @@ impl LiveSessionHandle {
         session_id: SessionId,
         writer_tx: mpsc::UnboundedSender<Vec<u8>>,
         resize_tx: mpsc::UnboundedSender<(u16, u16)>,
-        kill_tx: mpsc::UnboundedSender<()>,
+        kill_tx: mpsc::UnboundedSender<KillSignal>,
     ) -> Self {
         Self {
             session_id,
@@ -97,10 +106,10 @@ impl LiveSessionHandle {
         }
     }
 
-    /// Signal the session to end.
-    pub fn end(&self) -> WorkbenchResult<()> {
+    /// Signal the session to end with the specified signal (default: TERM).
+    pub fn end(&self, signal: KillSignal) -> WorkbenchResult<()> {
         match &self.kill_tx {
-            Some(tx) => tx.send(()).map_err(|_| {
+            Some(tx) => tx.send(signal).map_err(|_| {
                 WorkbenchError::new(ErrorCode::SessionEnded, "session kill channel closed")
             }),
             None => Err(WorkbenchError::session_read_only(self.session_id.get())),
@@ -121,8 +130,8 @@ pub struct LiveSessionActor {
     pub writer_rx: mpsc::UnboundedReceiver<Vec<u8>>,
     /// Receives resize requests.
     pub resize_rx: mpsc::UnboundedReceiver<(u16, u16)>,
-    /// Receives kill signals.
-    pub kill_rx: mpsc::UnboundedReceiver<()>,
+    /// Receives kill signals with signal kind.
+    pub kill_rx: mpsc::UnboundedReceiver<KillSignal>,
     /// Watch sender for status updates.
     pub status_tx: watch::Sender<SessionStatus>,
     /// Broadcast sender for output bytes (shared with subscribers).

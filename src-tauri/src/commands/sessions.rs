@@ -7,6 +7,7 @@
 use crate::companion::CompanionService;
 use crate::error::{ErrorCode, WorkbenchError};
 use crate::model::{ProjectId, SessionId};
+use crate::session::live::KillSignal;
 use crate::session::SessionService;
 use crate::state::WorkbenchState;
 use serde::Deserialize;
@@ -113,15 +114,11 @@ pub async fn session_activate(
 ) -> Result<serde_json::Value, WorkbenchError> {
     let session_id = SessionId::new(args.session_id);
 
-    // Fetch the session.
-    let sessions = SessionService::list(&state, None, true).await?;
-    let session_summary = sessions
-        .into_iter()
-        .find(|s| s.session.id == session_id)
-        .ok_or_else(|| WorkbenchError::not_found(format!("session {session_id}")))?;
+    // H5 fix: direct lookup instead of O(n) list scan.
+    let summary = SessionService::get_by_id(&state, session_id).await?;
 
-    if session_summary.session.status == crate::model::SessionStatus::Ended
-        || session_summary.session.status == crate::model::SessionStatus::Error
+    if summary.session.status == crate::model::SessionStatus::Ended
+        || summary.session.status == crate::model::SessionStatus::Error
     {
         return Err(WorkbenchError::new(
             ErrorCode::SessionEnded,
@@ -133,7 +130,7 @@ pub async fn session_activate(
     let companion = CompanionService::ensure(&state, session_id).await?;
 
     Ok(serde_json::json!({
-        "session": session_summary.session,
+        "session": summary.session,
         "companion": companion,
     }))
 }
@@ -160,9 +157,15 @@ pub async fn session_send_input(
 
     let live = state.live_sessions.read().await;
     let handle = live.get(&session_id).ok_or_else(|| {
-        WorkbenchError::new(ErrorCode::SessionEnded, format!("session {session_id} not live"))
+        WorkbenchError::new(
+            ErrorCode::SessionEnded,
+            format!("session {session_id} not live"),
+        )
     })?;
 
+    // H6: The contract says "base64 or plain UTF-8". The frontend always sends
+    // plain UTF-8 from xterm.js onData(). We treat the field as plain UTF-8;
+    // base64 encoding is reserved for a future binary-input extension.
     handle.write(args.bytes.as_bytes())?;
     Ok(serde_json::json!({}))
 }
@@ -190,7 +193,10 @@ pub async fn session_resize(
 
     let live = state.live_sessions.read().await;
     let handle = live.get(&session_id).ok_or_else(|| {
-        WorkbenchError::new(ErrorCode::SessionEnded, format!("session {session_id} not live"))
+        WorkbenchError::new(
+            ErrorCode::SessionEnded,
+            format!("session {session_id} not live"),
+        )
     })?;
 
     handle.resize(args.cols, args.rows)?;
@@ -219,20 +225,23 @@ pub async fn session_end(
 
     let live = state.live_sessions.read().await;
     let handle = live.get(&session_id).ok_or_else(|| {
-        WorkbenchError::new(ErrorCode::SessionEnded, format!("session {session_id} not live"))
+        WorkbenchError::new(
+            ErrorCode::SessionEnded,
+            format!("session {session_id} not live"),
+        )
     })?;
 
-    handle.end()?;
+    // H1 fix: map signal string to KillSignal enum.
+    let signal = match args.signal.as_deref() {
+        Some("KILL") => KillSignal::Kill,
+        _ => KillSignal::Term, // default
+    };
+    handle.end(signal)?;
 
-    // Fetch updated session for the response (the reaper will mark it ended
-    // asynchronously, so we return the current state).
+    // H5 fix: direct lookup. Note: the reaper marks the session ended
+    // asynchronously, so the returned status reflects state at signal time.
     drop(live);
-    let sessions = SessionService::list(&state, None, true).await?;
-    let session = sessions
-        .into_iter()
-        .find(|s| s.session.id == session_id)
-        .map(|s| s.session)
-        .ok_or_else(|| WorkbenchError::not_found(format!("session {session_id}")))?;
+    let summary = SessionService::get_by_id(&state, session_id).await?;
 
-    Ok(serde_json::json!({ "session": session }))
+    Ok(serde_json::json!({ "session": summary.session }))
 }

@@ -109,9 +109,30 @@ pub fn spawn_session_tasks(actor: LiveSessionActor, state: &WorkbenchState) -> S
                     }
                 }
                 WAction::Resize(None) => {} // non-fatal
-                WAction::Kill(Some(())) => {
-                    info!(%session_id, "writer: kill signal");
-                    let _ = pty_writer.kill();
+                WAction::Kill(Some(signal)) => {
+                    info!(%session_id, ?signal, "writer: kill signal");
+                    // Use libc::kill for both TERM and KILL to avoid deadlocking
+                    // with the exit watcher thread which holds the child mutex
+                    // while blocking on wait().
+                    if let Some(pid) = pty_writer.pid() {
+                        #[cfg(unix)]
+                        {
+                            let sig = match signal {
+                                crate::session::live::KillSignal::Term => libc::SIGTERM,
+                                crate::session::live::KillSignal::Kill => libc::SIGKILL,
+                            };
+                            // SAFETY: pid is a valid process id from our child.
+                            unsafe {
+                                libc::kill(pid as i32, sig);
+                            }
+                        }
+                        #[cfg(not(unix))]
+                        {
+                            let _ = pty_writer.kill();
+                        }
+                    } else {
+                        let _ = pty_writer.kill();
+                    }
                     break;
                 }
                 WAction::Kill(None) => break,
@@ -136,6 +157,6 @@ pub fn spawn_session_tasks(actor: LiveSessionActor, state: &WorkbenchState) -> S
 enum WAction {
     Input(Option<Vec<u8>>),
     Resize(Option<(u16, u16)>),
-    Kill(Option<()>),
+    Kill(Option<crate::session::live::KillSignal>),
     ChildExited,
 }

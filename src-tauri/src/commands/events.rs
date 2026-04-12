@@ -91,14 +91,12 @@ async fn emit_envelope(app: &AppHandle, db: &Database, envelope: SessionEventEnv
             session_id,
             companion,
         } => {
+            // H2 fix: emit full CompanionTerminal record, not just id+pid.
             let _ = app.emit(
                 "companion:spawned",
                 CompanionSpawnedPayload {
                     session_id: session_id.get(),
-                    companion: CompanionInfo {
-                        id: companion.id.get(),
-                        pid: companion.pid.map(|p| p.0 as i64),
-                    },
+                    companion,
                 },
             );
         }
@@ -148,13 +146,8 @@ struct ProjectPathPayload {
 #[derive(Clone, Serialize)]
 struct CompanionSpawnedPayload {
     session_id: i64,
-    companion: CompanionInfo,
-}
-
-#[derive(Clone, Serialize)]
-struct CompanionInfo {
-    id: i64,
-    pid: Option<i64>,
+    /// Full CompanionTerminal record (H2 fix).
+    companion: crate::model::CompanionTerminal,
 }
 
 #[derive(Clone, Serialize)]

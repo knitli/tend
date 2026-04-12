@@ -487,6 +487,56 @@ impl SessionService {
         Ok(())
     }
 
+    /// Fetch a single session by id with its alert snapshot (H5 fix).
+    ///
+    /// Returns `NOT_FOUND` if the session does not exist.
+    pub async fn get_by_id(
+        state: &WorkbenchState,
+        session_id: SessionId,
+    ) -> WorkbenchResult<SessionSummary> {
+        let sql = r#"
+            SELECT
+                s.id, s.project_id, s.label, s.pid, s.status, s.status_source,
+                s.ownership, s.started_at, s.ended_at, s.last_activity_at,
+                s.last_heartbeat_at, s.metadata_json, s.working_directory,
+                s.exit_code, s.error_reason,
+                a.id AS alert_id, a.kind AS alert_kind, a.reason AS alert_reason,
+                a.raised_at AS alert_raised_at, a.acknowledged_at AS alert_ack_at,
+                a.cleared_by AS alert_cleared_by
+            FROM sessions s
+            LEFT JOIN alerts a ON a.id = (
+                SELECT a2.id FROM alerts a2
+                WHERE a2.session_id = s.id AND a2.acknowledged_at IS NULL
+                ORDER BY a2.raised_at DESC LIMIT 1
+            )
+            WHERE s.id = ?1
+        "#;
+
+        let row = sqlx::query(sql)
+            .bind(session_id.get())
+            .fetch_optional(state.db.pool())
+            .await?;
+
+        let row = require_found(row, format!("session {session_id}"))?;
+        let session = parse_session_row(&row)?;
+        let alert = parse_alert_from_join(&row, session_id)?;
+
+        let reattached_mirror = state
+            .live_sessions
+            .read()
+            .await
+            .get(&session_id)
+            .map(|h| h.is_mirror)
+            .unwrap_or(false);
+
+        Ok(SessionSummary {
+            session,
+            activity_summary: None,
+            alert,
+            reattached_mirror,
+        })
+    }
+
     /// Verify a session is workbench-owned. Returns `SESSION_READ_ONLY` for
     /// wrapper-owned sessions. Used by `session_send_input`,
     /// `session_resize`, and `session_end` Tauri commands.

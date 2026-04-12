@@ -6,7 +6,7 @@ use crate::model::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, Mutex, RwLock};
 
 // Re-export so existing callers can use `crate::state::LiveSessionHandle`.
 pub use crate::session::live::LiveSessionHandle;
@@ -78,8 +78,8 @@ pub struct LiveCompanionHandle {
     pub companion_id: CompanionId,
     /// The owning session.
     pub session_id: SessionId,
-    /// Writer channel for companion PTY stdin.
-    pub writer_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+    /// Writer channel for companion PTY stdin (bounded for backpressure — M5).
+    pub writer_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
     /// Resize channel for companion PTY.
     pub resize_tx: tokio::sync::mpsc::UnboundedSender<(u16, u16)>,
     /// Kill signal.
@@ -89,10 +89,10 @@ pub struct LiveCompanionHandle {
 impl LiveCompanionHandle {
     /// Write bytes to the companion PTY stdin.
     pub fn write(&self, bytes: &[u8]) -> crate::error::WorkbenchResult<()> {
-        self.writer_tx.send(bytes.to_vec()).map_err(|_| {
+        self.writer_tx.try_send(bytes.to_vec()).map_err(|_| {
             crate::error::WorkbenchError::new(
-                crate::error::ErrorCode::SessionEnded,
-                "companion writer channel closed",
+                crate::error::ErrorCode::WriteFailed,
+                "companion writer channel closed or full",
             )
         })
     }
@@ -127,6 +127,9 @@ pub struct WorkbenchState {
     pub live_sessions: Arc<RwLock<HashMap<SessionId, LiveSessionHandle>>>,
     /// Map of live-companion handles keyed by session id (1:1 with session).
     pub live_companions: Arc<RwLock<HashMap<SessionId, LiveCompanionHandle>>>,
+    /// Per-session companion locks to serialize ensure/respawn and prevent
+    /// TOCTOU races (C1 review fix).
+    pub companion_locks: Arc<RwLock<HashMap<SessionId, Arc<Mutex<()>>>>>,
     /// Broadcast bus for session events forwarded to the frontend.
     pub event_bus: broadcast::Sender<SessionEventEnvelope>,
 }
@@ -139,8 +142,25 @@ impl WorkbenchState {
             db,
             live_sessions: Arc::new(RwLock::new(HashMap::new())),
             live_companions: Arc::new(RwLock::new(HashMap::new())),
+            companion_locks: Arc::new(RwLock::new(HashMap::new())),
             event_bus,
         }
+    }
+
+    /// Get or create a per-session mutex for companion operations.
+    pub async fn companion_lock(&self, session_id: SessionId) -> Arc<Mutex<()>> {
+        let locks = self.companion_locks.read().await;
+        if let Some(lock) = locks.get(&session_id) {
+            return Arc::clone(lock);
+        }
+        drop(locks);
+
+        let mut locks = self.companion_locks.write().await;
+        Arc::clone(
+            locks
+                .entry(session_id)
+                .or_insert_with(|| Arc::new(Mutex::new(()))),
+        )
     }
 }
 

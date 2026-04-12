@@ -4,6 +4,7 @@
 //! This task subscribes to that bus and calls `SessionService::mark_ended` to
 //! persist the status transition and remove the live handle.
 
+use crate::companion::CompanionService;
 use crate::session::SessionService;
 use crate::state::{SessionEventEnvelope, WorkbenchState};
 use tracing::{debug, info, warn};
@@ -26,6 +27,9 @@ pub fn spawn_reaper(state: WorkbenchState) {
 
                     // Remove from live sessions.
                     state.live_sessions.write().await.remove(&session_id);
+
+                    // C2 fix: kill and clean up companion terminal for this session.
+                    CompanionService::cleanup_for_session(&state, session_id).await;
                 }
                 Ok(_) => {
                     // Ignore non-Ended events.

@@ -30,7 +30,11 @@ async fn triple_activation_creates_exactly_one_companion_row() {
         project.id,
         "idempotent-session",
         tmp.path(),
-        &["/bin/sh".to_string(), "-c".to_string(), "sleep 300".to_string()],
+        &[
+            "/bin/sh".to_string(),
+            "-c".to_string(),
+            "sleep 300".to_string(),
+        ],
         &env,
     )
     .await
@@ -48,17 +52,22 @@ async fn triple_activation_creates_exactly_one_companion_row() {
         .expect("activation 3");
 
     // All three should return the same companion id.
-    assert_eq!(first.id, second.id, "activation 2 must return the same companion");
-    assert_eq!(first.id, third.id, "activation 3 must return the same companion");
+    assert_eq!(
+        first.id, second.id,
+        "activation 2 must return the same companion"
+    );
+    assert_eq!(
+        first.id, third.id,
+        "activation 3 must return the same companion"
+    );
 
     // Verify exactly one row in the DB.
-    let count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM companion_terminals WHERE session_id = ?1",
-    )
-    .bind(session.id.get())
-    .fetch_one(state.db.pool())
-    .await
-    .expect("count companions");
+    let count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM companion_terminals WHERE session_id = ?1")
+            .bind(session.id.get())
+            .fetch_one(state.db.pool())
+            .await
+            .expect("count companions");
 
     assert_eq!(
         count.0, 1,
@@ -87,7 +96,11 @@ async fn concurrent_activations_create_one_companion_row() {
         project.id,
         "concurrent-session",
         tmp.path(),
-        &["/bin/sh".to_string(), "-c".to_string(), "sleep 300".to_string()],
+        &[
+            "/bin/sh".to_string(),
+            "-c".to_string(),
+            "sleep 300".to_string(),
+        ],
         &env,
     )
     .await
@@ -114,13 +127,12 @@ async fn concurrent_activations_create_one_companion_row() {
     }
 
     // Verify exactly one row.
-    let count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM companion_terminals WHERE session_id = ?1",
-    )
-    .bind(session_id.get())
-    .fetch_one(state.db.pool())
-    .await
-    .expect("count companions");
+    let count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM companion_terminals WHERE session_id = ?1")
+            .bind(session_id.get())
+            .fetch_one(state.db.pool())
+            .await
+            .expect("count companions");
 
     assert_eq!(
         count.0, 1,

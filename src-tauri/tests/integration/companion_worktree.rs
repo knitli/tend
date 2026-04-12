@@ -40,7 +40,11 @@ async fn companion_spawns_in_worktree_directory() {
         project.id,
         "worktree-session",
         &worktree,
-        &["/bin/sh".to_string(), "-c".to_string(), "sleep 300".to_string()],
+        &[
+            "/bin/sh".to_string(),
+            "-c".to_string(),
+            "sleep 300".to_string(),
+        ],
         &env,
     )
     .await
@@ -82,7 +86,11 @@ async fn cd_in_companion_survives_resize_and_reactivation() {
         project.id,
         "cd-survive-session",
         tmp.path(),
-        &["/bin/sh".to_string(), "-c".to_string(), "sleep 300".to_string()],
+        &[
+            "/bin/sh".to_string(),
+            "-c".to_string(),
+            "sleep 300".to_string(),
+        ],
         &env,
     )
     .await

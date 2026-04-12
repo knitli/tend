@@ -56,6 +56,7 @@ base64 = { workspace = true }
 # Time + paths
 chrono = { workspace = true }
 dirs = { workspace = true }
+libc = "0.2.184"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

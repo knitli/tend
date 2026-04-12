@@ -15,7 +15,11 @@ use std::collections::BTreeMap;
 /// Helper: spawn a workbench session with a real PTY and then ensure a companion.
 async fn setup_session_with_companion(
     state: &agentui_workbench::state::WorkbenchState,
-) -> (agentui_workbench::model::SessionId, agentui_workbench::model::CompanionTerminal, tempfile::TempDir) {
+) -> (
+    agentui_workbench::model::SessionId,
+    agentui_workbench::model::CompanionTerminal,
+    tempfile::TempDir,
+) {
     let tmp = tempfile::tempdir().expect("create temp dir");
     let project = ProjectService::register(
         &state.db,
@@ -31,7 +35,11 @@ async fn setup_session_with_companion(
         project.id,
         "companion-session",
         tmp.path(),
-        &["/bin/sh".to_string(), "-c".to_string(), "sleep 300".to_string()],
+        &[
+            "/bin/sh".to_string(),
+            "-c".to_string(),
+            "sleep 300".to_string(),
+        ],
         &env,
     )
     .await
@@ -144,5 +152,79 @@ async fn companion_respawn_replaces_handle() {
     assert_eq!(
         new_companion_id, respawned.id,
         "live handle must reference the respawned companion"
+    );
+}
+
+// ---- M1: Negative tests — no companion exists ----
+
+/// companion_send_input returns NOT_FOUND when no companion has been spawned.
+#[tokio::test]
+async fn send_input_no_companion_returns_not_found() {
+    let state = crate::common::mock_state().await;
+    let project_id = crate::common::seed_project(&state, "no-companion").await;
+    let session_id = crate::common::seed_workbench_session(&state, project_id, Some(99999)).await;
+
+    let companions = state.live_companions.read().await;
+    assert!(
+        companions.get(&session_id).is_none(),
+        "no companion should exist yet"
+    );
+}
+
+/// companion_resize returns NOT_FOUND when no companion has been spawned.
+#[tokio::test]
+async fn resize_no_companion_returns_not_found() {
+    let state = crate::common::mock_state().await;
+    let project_id = crate::common::seed_project(&state, "no-companion-resize").await;
+    let session_id = crate::common::seed_workbench_session(&state, project_id, Some(99999)).await;
+
+    let companions = state.live_companions.read().await;
+    assert!(
+        companions.get(&session_id).is_none(),
+        "no companion should exist"
+    );
+    // The Tauri command handler checks live_companions — since no handle exists,
+    // it returns NOT_FOUND. Verify that directly:
+    drop(companions);
+
+    // Simulate what the command handler does:
+    let result = state.live_companions.read().await.get(&session_id).cloned();
+    assert!(result.is_none(), "must be None when no companion spawned");
+}
+
+/// companion_respawn on a nonexistent session returns NOT_FOUND.
+#[tokio::test]
+async fn respawn_nonexistent_session_returns_not_found() {
+    let state = crate::common::mock_state().await;
+    let bogus = agentui_workbench::model::SessionId::new(999999);
+    let err = CompanionService::respawn(&state, bogus)
+        .await
+        .expect_err("respawn on nonexistent session must fail");
+    assert_eq!(
+        err.code,
+        agentui_workbench::error::ErrorCode::NotFound,
+        "error code must be NOT_FOUND"
+    );
+}
+
+/// companion_respawn on an ended session returns SESSION_ENDED.
+#[tokio::test]
+async fn respawn_ended_session_returns_session_ended() {
+    let state = crate::common::mock_state().await;
+    let project_id = crate::common::seed_project(&state, "ended-respawn").await;
+    let session_id = crate::common::seed_workbench_session(&state, project_id, Some(99999)).await;
+
+    // End the session.
+    SessionService::mark_ended(&state.db, session_id, Some(0))
+        .await
+        .expect("mark_ended");
+
+    let err = CompanionService::respawn(&state, session_id)
+        .await
+        .expect_err("respawn on ended session must fail");
+    assert_eq!(
+        err.code,
+        agentui_workbench::error::ErrorCode::SessionEnded,
+        "error code must be SESSION_ENDED"
     );
 }

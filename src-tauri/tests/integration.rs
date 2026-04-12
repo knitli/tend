@@ -20,4 +20,5 @@ mod integration {
     // Phase 5 (US3)
     pub mod companion_idempotency;
     pub mod companion_worktree;
+    pub mod session_end_lifecycle;
 }

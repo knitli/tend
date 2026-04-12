@@ -17,9 +17,10 @@ async fn spawn_real_workbench_session(
     state: &agentui_workbench::state::WorkbenchState,
 ) -> (agentui_workbench::model::SessionId, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("create temp dir");
-    let project = ProjectService::register(&state.db, tmp.path().to_str().unwrap(), Some("io-test"))
-        .await
-        .expect("register project");
+    let project =
+        ProjectService::register(&state.db, tmp.path().to_str().unwrap(), Some("io-test"))
+            .await
+            .expect("register project");
 
     let env = BTreeMap::new();
     let (session, _handle) = SessionService::spawn_local(
@@ -27,7 +28,11 @@ async fn spawn_real_workbench_session(
         project.id,
         "io-session",
         tmp.path(),
-        &["/bin/sh".to_string(), "-c".to_string(), "sleep 300".to_string()],
+        &[
+            "/bin/sh".to_string(),
+            "-c".to_string(),
+            "sleep 300".to_string(),
+        ],
         &env,
     )
     .await
@@ -53,7 +58,10 @@ async fn send_input_happy_path_workbench_owned() {
     let sessions = state.live_sessions.read().await;
     let handle = sessions.get(&session_id).expect("live handle must exist");
     let result = handle.write(b"echo hello\n");
-    assert!(result.is_ok(), "write to workbench-owned session must succeed");
+    assert!(
+        result.is_ok(),
+        "write to workbench-owned session must succeed"
+    );
 }
 
 /// session_resize happy path on workbench-owned session.
@@ -69,7 +77,10 @@ async fn resize_happy_path_workbench_owned() {
     let sessions = state.live_sessions.read().await;
     let handle = sessions.get(&session_id).expect("live handle must exist");
     let result = handle.resize(120, 40);
-    assert!(result.is_ok(), "resize on workbench-owned session must succeed");
+    assert!(
+        result.is_ok(),
+        "resize on workbench-owned session must succeed"
+    );
 }
 
 /// session_end happy path on workbench-owned session.
@@ -84,8 +95,11 @@ async fn end_happy_path_workbench_owned() {
 
     let sessions = state.live_sessions.read().await;
     let handle = sessions.get(&session_id).expect("live handle must exist");
-    let result = handle.end();
-    assert!(result.is_ok(), "end on workbench-owned session must succeed");
+    let result = handle.end(agentui_workbench::session::live::KillSignal::Term);
+    assert!(
+        result.is_ok(),
+        "end on workbench-owned session must succeed"
+    );
 }
 
 // ---- Rejection: wrapper-owned session returns SESSION_READ_ONLY ----
@@ -145,6 +159,8 @@ async fn mirror_handle_rejects_io() {
     let resize_err = handle.resize(80, 24).unwrap_err();
     assert_eq!(resize_err.code, ErrorCode::SessionReadOnly);
 
-    let end_err = handle.end().unwrap_err();
+    let end_err = handle
+        .end(agentui_workbench::session::live::KillSignal::Term)
+        .unwrap_err();
     assert_eq!(end_err.code, ErrorCode::SessionReadOnly);
 }

@@ -22,11 +22,16 @@ impl CompanionService {
     /// exists and its PTY is alive, return it. If it exists but the PTY is dead,
     /// respawn it. If none exists, create a new one.
     ///
-    /// Returns the `CompanionTerminal` DB record.
+    /// Serialized per session_id via a per-session mutex to prevent TOCTOU
+    /// races (C1 review fix).
     pub async fn ensure(
         state: &WorkbenchState,
         session_id: SessionId,
     ) -> WorkbenchResult<CompanionTerminal> {
+        // C1 fix: acquire per-session lock to serialize concurrent ensure calls.
+        let lock = state.companion_lock(session_id).await;
+        let _guard = lock.lock().await;
+
         // Look up the session's working directory.
         let session_row =
             sqlx::query("SELECT working_directory, status FROM sessions WHERE id = ?1")
@@ -34,9 +39,8 @@ impl CompanionService {
                 .fetch_optional(state.db.pool())
                 .await?;
 
-        let session_row = session_row.ok_or_else(|| {
-            WorkbenchError::not_found(format!("session {session_id}"))
-        })?;
+        let session_row = session_row
+            .ok_or_else(|| WorkbenchError::not_found(format!("session {session_id}")))?;
 
         let status: String = session_row.try_get("status")?;
         if status == "ended" || status == "error" {
@@ -51,7 +55,8 @@ impl CompanionService {
 
         // Check for an existing companion row.
         let existing = sqlx::query(
-            "SELECT id, pid, shell_path, initial_cwd, started_at, ended_at FROM companion_terminals WHERE session_id = ?1",
+            "SELECT id, pid, shell_path, initial_cwd, started_at, ended_at \
+             FROM companion_terminals WHERE session_id = ?1",
         )
         .bind(session_id.get())
         .fetch_optional(state.db.pool())
@@ -77,10 +82,7 @@ impl CompanionService {
                         shell_path: PathBuf::from(shell_path),
                         initial_cwd: PathBuf::from(initial_cwd),
                         started_at: parse_timestamp(&started_at)?,
-                        ended_at: ended_at
-                            .as_deref()
-                            .map(parse_timestamp)
-                            .transpose()?,
+                        ended_at: ended_at.as_deref().map(parse_timestamp).transpose()?,
                     });
                 }
             }
@@ -105,19 +107,26 @@ impl CompanionService {
     }
 
     /// Forcibly respawn a companion terminal, killing the existing one if alive.
+    ///
+    /// Also serialized per session_id.
     pub async fn respawn(
         state: &WorkbenchState,
         session_id: SessionId,
     ) -> WorkbenchResult<CompanionTerminal> {
+        let lock = state.companion_lock(session_id).await;
+        let _guard = lock.lock().await;
+
         // Kill existing companion if alive.
-        if let Some(handle) = state.live_companions.write().await.remove(&session_id) {
-            let _ = handle.kill();
+        let handle = { state.live_companions.write().await.remove(&session_id) };
+        if let Some(h) = handle {
+            let _ = h.kill();
         }
 
         // Mark existing row as ended.
         let now = Utc::now().to_rfc3339();
         sqlx::query(
-            "UPDATE companion_terminals SET ended_at = ?1, pid = NULL WHERE session_id = ?2 AND ended_at IS NULL",
+            "UPDATE companion_terminals SET ended_at = ?1, pid = NULL \
+             WHERE session_id = ?2 AND ended_at IS NULL",
         )
         .bind(&now)
         .bind(session_id.get())
@@ -131,9 +140,8 @@ impl CompanionService {
                 .fetch_optional(state.db.pool())
                 .await?;
 
-        let session_row = session_row.ok_or_else(|| {
-            WorkbenchError::not_found(format!("session {session_id}"))
-        })?;
+        let session_row = session_row
+            .ok_or_else(|| WorkbenchError::not_found(format!("session {session_id}")))?;
 
         let status: String = session_row.try_get("status")?;
         if status == "ended" || status == "error" {
@@ -147,20 +155,37 @@ impl CompanionService {
         let cwd = PathBuf::from(&working_dir);
 
         // Check if there's an existing row to reuse (the one we just ended).
-        let existing_id: Option<i64> = sqlx::query_scalar(
-            "SELECT id FROM companion_terminals WHERE session_id = ?1",
-        )
-        .bind(session_id.get())
-        .fetch_optional(state.db.pool())
-        .await?;
+        let existing_id: Option<i64> =
+            sqlx::query_scalar("SELECT id FROM companion_terminals WHERE session_id = ?1")
+                .bind(session_id.get())
+                .fetch_optional(state.db.pool())
+                .await?;
 
-        Self::spawn_companion(
-            state,
-            session_id,
-            &cwd,
-            existing_id.map(CompanionId::new),
+        Self::spawn_companion(state, session_id, &cwd, existing_id.map(CompanionId::new)).await
+    }
+
+    /// Kill and clean up the companion for a session (called by the reaper when
+    /// a session ends — C2 review fix).
+    pub async fn cleanup_for_session(state: &WorkbenchState, session_id: SessionId) {
+        // Kill the live handle if present.
+        let handle = { state.live_companions.write().await.remove(&session_id) };
+        if let Some(h) = handle {
+            let _ = h.kill();
+        }
+
+        // Mark DB row ended.
+        let now = Utc::now().to_rfc3339();
+        let _ = sqlx::query(
+            "UPDATE companion_terminals SET ended_at = ?1, pid = NULL \
+             WHERE session_id = ?2 AND ended_at IS NULL",
         )
-        .await
+        .bind(&now)
+        .bind(session_id.get())
+        .execute(state.db.pool())
+        .await;
+
+        // Clean up the per-session lock entry.
+        state.companion_locks.write().await.remove(&session_id);
     }
 
     /// Internal: spawn a companion shell, update/insert the DB row, install the
@@ -171,7 +196,7 @@ impl CompanionService {
         cwd: &Path,
         existing_id: Option<CompanionId>,
     ) -> WorkbenchResult<CompanionTerminal> {
-        let shell = resolve_shell();
+        let shell = resolve_shell()?;
         let now = Utc::now();
         let now_str = now.to_rfc3339();
         let cwd_str = cwd.to_string_lossy().to_string();
@@ -208,39 +233,23 @@ impl CompanionService {
         let pid = pty.pid().map(|p| Pid(p as i32));
 
         // Insert or update the DB row.
-        let companion_id = if let Some(id) = existing_id {
-            // Update existing row with new spawn.
-            sqlx::query(
-                r#"
-                UPDATE companion_terminals
-                SET pid = ?1, shell_path = ?2, initial_cwd = ?3, started_at = ?4, ended_at = NULL
-                WHERE id = ?5
-                "#,
-            )
-            .bind(pid.map(|p| p.0 as i64))
-            .bind(&shell)
-            .bind(&cwd_str)
-            .bind(&now_str)
-            .bind(id.get())
-            .execute(state.db.pool())
-            .await?;
-            id
-        } else {
-            // Insert new row.
-            let result = sqlx::query(
-                r#"
-                INSERT INTO companion_terminals (session_id, pid, shell_path, initial_cwd, started_at)
-                VALUES (?1, ?2, ?3, ?4, ?5)
-                "#,
-            )
-            .bind(session_id.get())
-            .bind(pid.map(|p| p.0 as i64))
-            .bind(&shell)
-            .bind(&cwd_str)
-            .bind(&now_str)
-            .execute(state.db.pool())
-            .await?;
-            CompanionId::new(result.last_insert_rowid())
+        // M4: if this fails after PTY spawn, kill the orphan process.
+        let companion_id = match Self::upsert_companion_row(
+            state,
+            session_id,
+            existing_id,
+            pid,
+            &shell,
+            &cwd_str,
+            &now_str,
+        )
+        .await
+        {
+            Ok(id) => id,
+            Err(e) => {
+                let _ = pty.kill();
+                return Err(e);
+            }
         };
 
         let companion = CompanionTerminal {
@@ -253,8 +262,8 @@ impl CompanionService {
             ended_at: None,
         };
 
-        // Create channels and handle.
-        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        // M5: bounded writer channel (256 messages) for backpressure.
+        let (writer_tx, writer_rx) = tokio::sync::mpsc::channel(256);
         let (resize_tx, resize_rx) = tokio::sync::mpsc::unbounded_channel();
         let (kill_tx, kill_rx) = tokio::sync::mpsc::unbounded_channel();
 
@@ -274,31 +283,91 @@ impl CompanionService {
             .insert(session_id, handle);
 
         // Start supervisor tasks for the companion.
-        spawn_companion_tasks(pty, output_rx, writer_rx, resize_rx, kill_rx, session_id, state);
+        spawn_companion_tasks(
+            pty, output_rx, writer_rx, resize_rx, kill_rx, session_id, state,
+        );
 
         // Emit companion:spawned event.
-        let _ = state.event_bus.send(SessionEventEnvelope::CompanionSpawned {
-            session_id,
-            companion: companion.clone(),
-        });
+        let _ = state
+            .event_bus
+            .send(SessionEventEnvelope::CompanionSpawned {
+                session_id,
+                companion: companion.clone(),
+            });
 
         info!(%session_id, %companion_id, ?pid, "companion terminal spawned");
         Ok(companion)
     }
+
+    /// Insert or update the companion_terminals DB row.
+    async fn upsert_companion_row(
+        state: &WorkbenchState,
+        session_id: SessionId,
+        existing_id: Option<CompanionId>,
+        pid: Option<Pid>,
+        shell: &str,
+        cwd_str: &str,
+        now_str: &str,
+    ) -> WorkbenchResult<CompanionId> {
+        if let Some(id) = existing_id {
+            sqlx::query(
+                "UPDATE companion_terminals \
+                 SET pid = ?1, shell_path = ?2, initial_cwd = ?3, started_at = ?4, ended_at = NULL \
+                 WHERE id = ?5",
+            )
+            .bind(pid.map(|p| p.0 as i64))
+            .bind(shell)
+            .bind(cwd_str)
+            .bind(now_str)
+            .bind(id.get())
+            .execute(state.db.pool())
+            .await?;
+            Ok(id)
+        } else {
+            let result = sqlx::query(
+                "INSERT INTO companion_terminals (session_id, pid, shell_path, initial_cwd, started_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )
+            .bind(session_id.get())
+            .bind(pid.map(|p| p.0 as i64))
+            .bind(shell)
+            .bind(cwd_str)
+            .bind(now_str)
+            .execute(state.db.pool())
+            .await?;
+            Ok(CompanionId::new(result.last_insert_rowid()))
+        }
+    }
 }
 
-/// Resolve the user's preferred shell.
-fn resolve_shell() -> String {
-    std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
+/// Resolve the user's preferred shell. Validates the path exists (L1 fix).
+fn resolve_shell() -> WorkbenchResult<String> {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+    let path = Path::new(&shell);
+    if !path.exists() {
+        return Err(WorkbenchError::new(
+            ErrorCode::CompanionSpawnFailed,
+            format!("shell does not exist: {shell}"),
+        ));
+    }
+    Ok(shell)
 }
 
-/// Check if a process is still alive via sysinfo.
+/// Check if a process is still alive using a lightweight /proc check on Linux,
+/// falling back to sysinfo on other platforms (H4 fix).
 fn is_process_alive(pid: u32) -> bool {
-    use sysinfo::{Pid, System};
-    let mut sys = System::new();
-    let spid = Pid::from_u32(pid);
-    sys.refresh_process(spid);
-    sys.process(spid).is_some()
+    #[cfg(target_os = "linux")]
+    {
+        Path::new(&format!("/proc/{pid}")).exists()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        use sysinfo::{Pid, System};
+        let mut sys = System::new();
+        let spid = Pid::from_u32(pid);
+        sys.refresh_process(spid);
+        sys.process(spid).is_some()
+    }
 }
 
 /// Parse an RFC-3339 timestamp string.
@@ -312,7 +381,7 @@ fn parse_timestamp(s: &str) -> WorkbenchResult<Timestamp> {
 fn spawn_companion_tasks(
     pty: Pty,
     mut output_rx: crate::session::pty::OutputRx,
-    mut writer_rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
+    mut writer_rx: tokio::sync::mpsc::Receiver<Vec<u8>>,
     mut resize_rx: tokio::sync::mpsc::UnboundedReceiver<(u16, u16)>,
     mut kill_rx: tokio::sync::mpsc::UnboundedReceiver<()>,
     session_id: SessionId,
@@ -321,6 +390,10 @@ fn spawn_companion_tasks(
     let event_bus = state.event_bus.clone();
     let live_companions = state.live_companions.clone();
     let db = state.db.clone();
+
+    // H3 fix: capture runtime handle from the calling async context BEFORE
+    // spawning std threads, so exit watcher cleanup is unconditional.
+    let rt_handle = tokio::runtime::Handle::current();
 
     // Reader task — forwards PTY output to event bus.
     tokio::spawn(async move {
@@ -337,34 +410,32 @@ fn spawn_companion_tasks(
     let pty_for_exit = pty.clone_for_wait();
     let (exit_tx, exit_rx) = tokio::sync::oneshot::channel::<Option<i32>>();
 
-    // Exit watcher thread.
-    let exit_companions = live_companions.clone();
-    let exit_db = db.clone();
+    // Exit watcher thread — uses captured rt_handle for unconditional cleanup (H3).
+    let exit_rt = rt_handle.clone();
+    let exit_companions = live_companions;
+    let exit_db = db;
     let exit_sid = session_id;
     std::thread::spawn(move || {
         let exit_code = pty_for_exit.wait().ok();
         trace!(%exit_sid, ?exit_code, "companion exit watcher: shell exited");
         let _ = exit_tx.send(exit_code);
 
-        // Clean up: mark DB row ended, remove handle.
-        let rt = tokio::runtime::Handle::try_current();
-        if let Ok(rt) = rt {
-            rt.spawn(async move {
-                let now = Utc::now().to_rfc3339();
-                let _ = sqlx::query(
-                    "UPDATE companion_terminals SET ended_at = ?1, pid = NULL WHERE session_id = ?2 AND ended_at IS NULL",
-                )
-                .bind(&now)
-                .bind(exit_sid.get())
-                .execute(exit_db.pool())
-                .await;
-                exit_companions.write().await.remove(&exit_sid);
-            });
-        }
+        // Unconditional cleanup using the captured handle.
+        exit_rt.spawn(async move {
+            let now = Utc::now().to_rfc3339();
+            let _ = sqlx::query(
+                "UPDATE companion_terminals SET ended_at = ?1, pid = NULL \
+                 WHERE session_id = ?2 AND ended_at IS NULL",
+            )
+            .bind(&now)
+            .bind(exit_sid.get())
+            .execute(exit_db.pool())
+            .await;
+            exit_companions.write().await.remove(&exit_sid);
+        });
     });
 
     // Writer thread.
-    let rt_handle = tokio::runtime::Handle::current();
     std::thread::spawn(move || {
         let rt = rt_handle;
         let mut exit_rx = exit_rx;

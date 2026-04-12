@@ -37,6 +37,8 @@
   });
 
   let unlisten: UnlistenFn | undefined;
+  // L4 fix: explicitly track xterm disposables.
+  let disposables: { dispose(): void }[] = [];
 
   onMount(async () => {
     if (!containerEl) return;
@@ -60,23 +62,26 @@
 
     // Wire keystrokes for interactive sessions.
     if (isInteractive) {
-      created.terminal.onData((data) => {
-        sessionSendInput({ sessionId: session.id, bytes: data }).catch(() => {
-          // Silently ignore — session may have ended.
-        });
-      });
+      disposables.push(
+        created.terminal.onData((data) => {
+          sessionSendInput({ sessionId: session.id, bytes: data }).catch(() => {});
+        }),
+      );
     }
 
     // Wire resize events.
-    created.terminal.onResize(({ cols, rows }) => {
-      if (isInteractive) {
-        sessionResize({ sessionId: session.id, cols, rows }).catch(() => {});
-      }
-    });
+    disposables.push(
+      created.terminal.onResize(({ cols, rows }) => {
+        if (isInteractive) {
+          sessionResize({ sessionId: session.id, cols, rows }).catch(() => {});
+        }
+      }),
+    );
   });
 
   onDestroy(() => {
     unlisten?.();
+    for (const d of disposables) d.dispose();
     created?.dispose();
   });
 </script>
@@ -87,7 +92,7 @@
       {readOnlyMessage}
     </div>
   {/if}
-  <div class="terminal-container" bind:this={containerEl}></div>
+  <div class="terminal-container" bind:this={containerEl} role="application" aria-label="Agent terminal output"></div>
 </div>
 
 <style>

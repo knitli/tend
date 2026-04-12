@@ -20,6 +20,7 @@
   let containerEl: HTMLDivElement | undefined = $state();
   let created: CreatedTerminal | undefined = $state();
   let unlisten: UnlistenFn | undefined;
+  let disposables: { dispose(): void }[] = [];
 
   onMount(async () => {
     if (!containerEl) return;
@@ -37,29 +38,36 @@
       created?.terminal.write(bytes);
     });
 
-    // Wire keystrokes.
-    created.terminal.onData((data) => {
-      companionSendInput({ sessionId, bytes: data }).catch(() => {});
-    });
+    // Wire keystrokes (L4: track disposable).
+    disposables.push(
+      created.terminal.onData((data) => {
+        companionSendInput({ sessionId, bytes: data }).catch(() => {});
+      }),
+    );
 
     // Wire resize events.
-    created.terminal.onResize(({ cols, rows }) => {
-      companionResize({ sessionId, cols, rows }).catch(() => {});
-    });
+    disposables.push(
+      created.terminal.onResize(({ cols, rows }) => {
+        companionResize({ sessionId, cols, rows }).catch(() => {});
+      }),
+    );
   });
 
   onDestroy(() => {
     unlisten?.();
+    for (const d of disposables) d.dispose();
     created?.dispose();
   });
 
   async function handleRespawn() {
     try {
       await companionRespawn({ sessionId });
-      // Clear the terminal on respawn.
-      created?.terminal.clear();
-    } catch {
-      // Silently ignore.
+      // H8 fix: full reset clears both scrollback and viewport for clean slate.
+      created?.terminal.reset();
+    } catch (err: unknown) {
+      // M8 fix: surface respawn errors in the terminal instead of silently ignoring.
+      const msg = err instanceof Error ? err.message : String(err);
+      created?.terminal.writeln(`\r\n\x1b[31m[Respawn failed: ${msg}]\x1b[0m`);
     }
   }
 </script>
@@ -75,7 +83,7 @@
       Restart
     </button>
   </div>
-  <div class="terminal-container" bind:this={containerEl}></div>
+  <div class="terminal-container" bind:this={containerEl} role="application" aria-label="Companion shell"></div>
 </div>
 
 <style>

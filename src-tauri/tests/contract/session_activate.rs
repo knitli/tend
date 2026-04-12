@@ -20,9 +20,13 @@ async fn spawn_real_session(
     state: &agentui_workbench::state::WorkbenchState,
 ) -> (agentui_workbench::model::SessionId, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("create temp dir");
-    let project = ProjectService::register(&state.db, tmp.path().to_str().unwrap(), Some("activate-test"))
-        .await
-        .expect("register project");
+    let project = ProjectService::register(
+        &state.db,
+        tmp.path().to_str().unwrap(),
+        Some("activate-test"),
+    )
+    .await
+    .expect("register project");
 
     let env = BTreeMap::new();
     let (session, _handle) = SessionService::spawn_local(
@@ -30,7 +34,11 @@ async fn spawn_real_session(
         project.id,
         "activate-session",
         tmp.path(),
-        &["/bin/sh".to_string(), "-c".to_string(), "sleep 300".to_string()],
+        &[
+            "/bin/sh".to_string(),
+            "-c".to_string(),
+            "sleep 300".to_string(),
+        ],
         &env,
     )
     .await
@@ -50,17 +58,22 @@ async fn first_activation_spawns_companion() {
         .expect("ensure should spawn a companion");
 
     assert_eq!(companion.session_id, session_id);
-    assert!(companion.pid.is_some(), "companion must have a pid after spawn");
-    assert!(companion.ended_at.is_none(), "companion must not be ended immediately");
+    assert!(
+        companion.pid.is_some(),
+        "companion must have a pid after spawn"
+    );
+    assert!(
+        companion.ended_at.is_none(),
+        "companion must not be ended immediately"
+    );
 
     // Verify a DB row exists.
-    let count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM companion_terminals WHERE session_id = ?1",
-    )
-    .bind(session_id.get())
-    .fetch_one(state.db.pool())
-    .await
-    .expect("count companions");
+    let count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM companion_terminals WHERE session_id = ?1")
+            .bind(session_id.get())
+            .fetch_one(state.db.pool())
+            .await
+            .expect("count companions");
     assert_eq!(count.0, 1, "exactly one companion_terminals row expected");
 }
 
@@ -153,11 +166,13 @@ async fn ensure_fails_when_cwd_missing() {
     let session_id = crate::common::seed_workbench_session(&state, project, Some(9100)).await;
 
     // Point the session at a nonexistent directory.
-    sqlx::query("UPDATE sessions SET working_directory = '/nonexistent/agentui-test-dir' WHERE id = ?1")
-        .bind(session_id.get())
-        .execute(state.db.pool())
-        .await
-        .expect("update cwd");
+    sqlx::query(
+        "UPDATE sessions SET working_directory = '/nonexistent/agentui-test-dir' WHERE id = ?1",
+    )
+    .bind(session_id.get())
+    .execute(state.db.pool())
+    .await
+    .expect("update cwd");
 
     let result = CompanionService::ensure(&state, session_id).await;
     assert!(result.is_err(), "ensure with missing cwd must fail");
@@ -177,4 +192,58 @@ async fn ensure_nonexistent_session_returns_not_found() {
     let result = CompanionService::ensure(&state, bogus).await;
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code, ErrorCode::NotFound);
+}
+
+// ---- M3: Validate session_activate response shape ----
+
+/// Verify that session_activate returns both `session` and `companion` fields
+/// with expected sub-fields, matching the contract.
+#[tokio::test]
+async fn activate_response_contains_session_and_companion_fields() {
+    let state = crate::common::mock_state().await;
+    let (session_id, _tmp) = spawn_real_session(&state).await;
+
+    // Simulate what the Tauri command does: get_by_id + ensure.
+    let summary = SessionService::get_by_id(&state, session_id)
+        .await
+        .expect("get_by_id");
+    let companion = CompanionService::ensure(&state, session_id)
+        .await
+        .expect("ensure");
+
+    // Build the response JSON just like the command handler does.
+    let response = serde_json::json!({
+        "session": summary.session,
+        "companion": companion,
+    });
+
+    // Validate shape: session must have core fields.
+    let session_val = response
+        .get("session")
+        .expect("response must have 'session'");
+    assert!(session_val.get("id").is_some(), "session.id");
+    assert!(
+        session_val.get("project_id").is_some(),
+        "session.project_id"
+    );
+    assert!(session_val.get("label").is_some(), "session.label");
+    assert!(session_val.get("status").is_some(), "session.status");
+    assert!(session_val.get("ownership").is_some(), "session.ownership");
+    assert!(
+        session_val.get("working_directory").is_some(),
+        "session.working_directory"
+    );
+
+    // Validate shape: companion must have core fields.
+    let comp_val = response
+        .get("companion")
+        .expect("response must have 'companion'");
+    assert!(comp_val.get("id").is_some(), "companion.id");
+    assert!(comp_val.get("session_id").is_some(), "companion.session_id");
+    assert!(comp_val.get("shell_path").is_some(), "companion.shell_path");
+    assert!(
+        comp_val.get("initial_cwd").is_some(),
+        "companion.initial_cwd"
+    );
+    assert!(comp_val.get("started_at").is_some(), "companion.started_at");
 }

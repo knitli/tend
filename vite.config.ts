@@ -5,6 +5,14 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 export default defineConfig({
   plugins: [svelte()],
 
+  resolve: {
+    alias: {
+      // SvelteKit auto-resolves $lib for .svelte files; this alias makes it
+      // available in plain .ts test files for Vitest as well.
+      $lib: new URL("./src/lib", import.meta.url).pathname,
+    },
+  },
+
   // Prevent Vite from obscuring Rust errors
   clearScreen: false,
 

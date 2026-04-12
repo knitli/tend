@@ -2,23 +2,10 @@
 //
 // Seeds three sessions across two projects with deliberately overlapping names
 // and asserts that query "alpha" matches the correct rows.
+// M7: Now imports the shared predicate from $lib/util/filterSession.ts.
 
 import { describe, it, expect } from 'vitest';
-
-// The filter predicate extracted for testability.
-// Mirrors the logic in SessionList.svelte's filteredSessions derived.
-function matchesFilter(
-  query: string,
-  sessionLabel: string,
-  projectDisplayName: string,
-): boolean {
-  const q = query.toLowerCase().trim();
-  if (!q) return true;
-  return (
-    sessionLabel.toLowerCase().includes(q) ||
-    projectDisplayName.toLowerCase().includes(q)
-  );
-}
+import { matchesSessionFilter } from '$lib/util/filterSession';
 
 describe('SessionList filter predicate', () => {
   // Seed data:
@@ -33,12 +20,16 @@ describe('SessionList filter predicate', () => {
   ];
 
   it('empty query matches everything', () => {
-    const results = sessions.filter((s) => matchesFilter('', s.label, s.projectName));
+    const results = sessions.filter((s) =>
+      matchesSessionFilter('', s.label, s.projectName),
+    );
     expect(results).toHaveLength(3);
   });
 
   it('"alpha" matches both sessions with alpha in label or project name', () => {
-    const results = sessions.filter((s) => matchesFilter('alpha', s.label, s.projectName));
+    const results = sessions.filter((s) =>
+      matchesSessionFilter('alpha', s.label, s.projectName),
+    );
     expect(results).toHaveLength(2);
     // "beta refactor" matched via project name "alpha project"
     expect(results[0].label).toBe('beta refactor');
@@ -47,30 +38,40 @@ describe('SessionList filter predicate', () => {
   });
 
   it('"beta" matches both sessions with beta in label or project name', () => {
-    const results = sessions.filter((s) => matchesFilter('beta', s.label, s.projectName));
+    const results = sessions.filter((s) =>
+      matchesSessionFilter('beta', s.label, s.projectName),
+    );
     expect(results).toHaveLength(2);
     expect(results[0].label).toBe('beta refactor');
     expect(results[1].label).toBe('alpha rewrite');
   });
 
   it('"gamma" matches only the gamma session', () => {
-    const results = sessions.filter((s) => matchesFilter('gamma', s.label, s.projectName));
+    const results = sessions.filter((s) =>
+      matchesSessionFilter('gamma', s.label, s.projectName),
+    );
     expect(results).toHaveLength(1);
     expect(results[0].label).toBe('gamma init');
   });
 
   it('"nonexistent" matches nothing', () => {
-    const results = sessions.filter((s) => matchesFilter('nonexistent', s.label, s.projectName));
+    const results = sessions.filter((s) =>
+      matchesSessionFilter('nonexistent', s.label, s.projectName),
+    );
     expect(results).toHaveLength(0);
   });
 
   it('filter is case-insensitive', () => {
-    const results = sessions.filter((s) => matchesFilter('ALPHA', s.label, s.projectName));
+    const results = sessions.filter((s) =>
+      matchesSessionFilter('ALPHA', s.label, s.projectName),
+    );
     expect(results).toHaveLength(2);
   });
 
   it('whitespace-only query matches everything', () => {
-    const results = sessions.filter((s) => matchesFilter('   ', s.label, s.projectName));
+    const results = sessions.filter((s) =>
+      matchesSessionFilter('   ', s.label, s.projectName),
+    );
     expect(results).toHaveLength(3);
   });
 });
