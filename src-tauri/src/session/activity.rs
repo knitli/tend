@@ -7,14 +7,15 @@
 //!
 //! Design: research.md §13 — ring-buffer last-line, agent-provided override.
 
+use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 /// Maximum number of lines retained in the ring buffer.
 const MAX_LINES: usize = 200;
 
-/// Maximum byte capacity of the ring buffer (~8 KiB).
-const MAX_BYTES: usize = 8 * 1024;
+/// Maximum byte capacity of the ring buffer (~16 KiB, matching research.md §13).
+const MAX_BYTES: usize = 16 * 1024;
 
 /// Maximum length of the returned summary string (characters).
 const MAX_SUMMARY_CHARS: usize = 80;
@@ -76,14 +77,23 @@ impl ActivitySummary {
         // like a real terminal: reset to start of current line.
         for ch in stripped.chars() {
             if ch == '\n' {
-                // Complete line — push to ring buffer.
+                // Complete line — push to ring buffer. M2/M4 fix: skip
+                // empty lines produced by CRLF to preserve ring capacity.
                 let line = std::mem::take(&mut self.partial);
-                self.push_line(line);
+                if !line.is_empty() {
+                    self.push_line(line);
+                }
             } else if ch == '\r' {
                 // Carriage return: reset partial (next chars overwrite).
                 self.partial.clear();
             } else {
                 self.partial.push(ch);
+                // C1: Cap partial buffer to prevent unbounded growth from
+                // PTY output that never contains a newline.
+                if self.partial.len() > MAX_BYTES {
+                    let keep_from = self.partial.len() - MAX_BYTES;
+                    self.partial.drain(0..keep_from);
+                }
             }
         }
 
@@ -107,6 +117,7 @@ impl ActivitySummary {
     }
 
     /// Get the current activity summary, preferring an unexpired override.
+    #[must_use]
     pub fn current(&self) -> Option<String> {
         // Check override first.
         if let Some(ref summary) = self.override_summary {
@@ -133,12 +144,11 @@ impl ActivitySummary {
             return true;
         }
 
-        // Activity timeout: if output has been produced for ≥10 s since the
-        // override was set, expire it.
+        // Activity timeout: if output has been produced continuously for ≥10 s
+        // since the override was set, expire it. H1 fix: removed the 500ms
+        // query-time guard which made this path practically unreachable.
         if let Some(last_activity) = self.last_activity_after_override {
-            if now.duration_since(last_activity) < Duration::from_millis(500)
-                && last_activity.duration_since(set_at) >= OVERRIDE_ACTIVITY_TIMEOUT
-            {
+            if last_activity.duration_since(set_at) >= OVERRIDE_ACTIVITY_TIMEOUT {
                 return true;
             }
         }
@@ -186,6 +196,16 @@ impl ActivitySummary {
         }
     }
 
+    /// Clear all state. Called on session end for explicit cleanup (QA L1).
+    pub fn clear(&mut self) {
+        self.lines.clear();
+        self.total_bytes = 0;
+        self.partial.clear();
+        self.override_summary = None;
+        self.override_set_at = None;
+        self.last_activity_after_override = None;
+    }
+
     /// Number of complete lines in the ring buffer (for testing / diagnostics).
     pub fn line_count(&self) -> usize {
         self.lines.len()
@@ -199,7 +219,12 @@ impl Default for ActivitySummary {
 }
 
 /// Strip ANSI escape sequences from a string.
-fn strip_ansi(s: &str) -> String {
+/// L4 fix: returns `Cow::Borrowed` when no escape sequences are present.
+fn strip_ansi(s: &str) -> Cow<'_, str> {
+    // Fast path: no escape sequences at all.
+    if !s.contains('\x1b') {
+        return Cow::Borrowed(s);
+    }
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
@@ -221,9 +246,14 @@ fn strip_ansi(s: &str) -> String {
                         None => break,
                     }
                 }
-            } else if chars.peek() == Some(&']') {
-                // OSC sequence: ESC ] ... ST (ESC \ or BEL)
-                chars.next(); // consume ']'
+            } else if matches!(
+                chars.peek(),
+                Some(&']') | Some(&'P') | Some(&'^') | Some(&'_')
+            ) {
+                // OSC (ESC ]), DCS (ESC P), PM (ESC ^), APC (ESC _):
+                // all ST-terminated sequences. Consume until ST (ESC \) or BEL.
+                // H3 fix: added DCS/PM/APC alongside OSC.
+                chars.next(); // consume introducer character
                 loop {
                     match chars.next() {
                         Some('\x07') => break, // BEL
@@ -244,30 +274,45 @@ fn strip_ansi(s: &str) -> String {
             result.push(c);
         }
     }
-    result
+    Cow::Owned(result)
 }
 
 /// Check if a line looks like a shell prompt.
+///
+/// M1 fix: Require a path-like or user@host prefix before `$` / `#` to
+/// reduce false positives on agent output. Bare `>` only matches if the
+/// entire line is `>` (zsh secondary prompt), not prose ending in `>`.
 fn is_prompt_line(line: &str) -> bool {
-    // Common prompt endings.
-    let trimmed = line.trim_end();
-    if trimmed.ends_with("$ ") || trimmed.ends_with("# ") || trimmed.ends_with("> ") {
+    // Bare `>` secondary prompt (exact match after trim).
+    if line == ">" {
         return true;
     }
-    if trimmed.ends_with('$') || trimmed.ends_with('#') {
+    // Lines ending with $ or # are prompts only if they contain a path
+    // separator or @ (e.g. user@host:~/dir$, /home/user#).
+    if (line.ends_with('$') || line.ends_with('#'))
+        && (line.contains('/') || line.contains('@') || line.contains(':'))
+    {
         return true;
     }
     false
 }
 
-/// Truncate a string to at most `max_chars` characters, appending "…" if truncated.
+/// Truncate a string to at most `max_chars` Unicode scalar values,
+/// appending "…" if truncated.
 fn truncate_chars(s: &str, max_chars: usize) -> String {
-    let char_count = s.chars().count();
-    if char_count <= max_chars {
-        s.to_string()
-    } else {
-        let truncated: String = s.chars().take(max_chars.saturating_sub(1)).collect();
-        format!("{truncated}…")
+    // Find the byte boundary of the (max_chars)th character.
+    // If the string is shorter, return it as-is.
+    match s.char_indices().nth(max_chars) {
+        None => s.to_string(),
+        Some(_) => {
+            // Keep (max_chars - 1) chars + "…" = max_chars total.
+            let keep = max_chars.saturating_sub(1);
+            let end = s
+                .char_indices()
+                .nth(keep)
+                .map_or(s.len(), |(i, _)| i);
+            format!("{}…", &s[..end])
+        }
     }
 }
 
@@ -384,5 +429,71 @@ mod tests {
         let mut summary = ActivitySummary::new();
         summary.record_chunk(b"progress: 50%\rprogress: 100%\n");
         assert_eq!(summary.current(), Some("progress: 100%".to_string()));
+    }
+
+    // C1: partial buffer is bounded even without newlines.
+    #[test]
+    fn partial_buffer_capped() {
+        let mut summary = ActivitySummary::new();
+        // Feed 20 KiB of data with no newlines.
+        let chunk = "x".repeat(20 * 1024);
+        summary.record_chunk(chunk.as_bytes());
+        assert!(
+            summary.partial.len() <= MAX_BYTES,
+            "partial should be capped at MAX_BYTES, got {}",
+            summary.partial.len()
+        );
+    }
+
+    // C1: empty input does not panic.
+    #[test]
+    fn empty_chunk_is_noop() {
+        let mut summary = ActivitySummary::new();
+        summary.record_chunk(b"");
+        assert_eq!(summary.line_count(), 0);
+        assert_eq!(summary.current(), None);
+    }
+
+    // H2: bare > is detected as a prompt.
+    #[test]
+    fn skips_bare_angle_bracket_prompt() {
+        let mut summary = ActivitySummary::new();
+        summary.record_chunk(b"real output\n>\n");
+        assert_eq!(summary.current(), Some("real output".to_string()));
+    }
+
+    // H3: DCS sequences are stripped.
+    #[test]
+    fn strips_dcs_sequences() {
+        let mut summary = ActivitySummary::new();
+        // DCS (ESC P) ... ST (ESC \)
+        summary.record_chunk(b"\x1bPsome dcs payload\x1b\\visible text\n");
+        assert_eq!(summary.current(), Some("visible text".to_string()));
+    }
+
+    // H3: APC sequences are stripped.
+    #[test]
+    fn strips_apc_sequences() {
+        let mut summary = ActivitySummary::new();
+        summary.record_chunk(b"\x1b_apc payload\x1b\\visible text\n");
+        assert_eq!(summary.current(), Some("visible text".to_string()));
+    }
+
+    // H2: prompt detection — line ending with $ still detected.
+    #[test]
+    fn skips_dollar_prompt() {
+        let mut summary = ActivitySummary::new();
+        summary.record_chunk(b"real output\nuser@host:~$\n");
+        assert_eq!(summary.current(), Some("real output".to_string()));
+    }
+
+    // Whitespace-only override clears.
+    #[test]
+    fn whitespace_only_override_clears() {
+        let mut summary = ActivitySummary::new();
+        summary.record_chunk(b"real output\n");
+        summary.override_with("task");
+        summary.override_with("   ");
+        assert_eq!(summary.current(), Some("real output".to_string()));
     }
 }

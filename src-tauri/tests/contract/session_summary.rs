@@ -140,3 +140,44 @@ async fn session_list_alert_none_when_no_alert() {
     assert!(summaries[0].alert.is_none());
     assert_eq!(summaries[0].activity_summary, None);
 }
+
+/// H5: `get_by_id` also populates `activity_summary` from the live handle.
+#[tokio::test]
+async fn get_by_id_includes_activity_summary() {
+    let state = mock_state().await;
+    let project_id = seed_project(&state, "getbyid-test").await;
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let row: (i64,) = sqlx::query_as(
+        r#"
+        INSERT INTO sessions (
+            project_id, label, status, status_source, ownership,
+            started_at, last_activity_at, metadata_json, working_directory
+        ) VALUES (?1, 'get-test', 'working', 'heuristic', 'workbench', ?2, ?2, '{}', '/tmp')
+        RETURNING id
+        "#,
+    )
+    .bind(project_id.get())
+    .bind(&now)
+    .fetch_one(state.db.pool())
+    .await
+    .expect("insert session");
+    let sid = SessionId::new(row.0);
+
+    // Install a live handle with activity.
+    let handle = agentui_workbench::session::live::LiveSessionHandle::attached_mirror(sid);
+    handle
+        .activity
+        .lock()
+        .await
+        .record_chunk(b"Building crate...\n");
+    state.live_sessions.write().await.insert(sid, handle);
+
+    let summary = SessionService::get_by_id(&state, sid)
+        .await
+        .expect("get_by_id");
+    assert_eq!(
+        summary.activity_summary,
+        Some("Building crate...".to_string())
+    );
+}

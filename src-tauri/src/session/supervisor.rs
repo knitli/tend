@@ -131,7 +131,14 @@ pub fn spawn_session_tasks(
                                 crate::session::live::KillSignal::Term => libc::SIGTERM,
                                 crate::session::live::KillSignal::Kill => libc::SIGKILL,
                             };
-                            // SAFETY: pid is a valid process id from our child.
+                            // SAFETY: `pid` originates from `pty.pid()` which
+                            // returns our direct child's PID. Linux caps PIDs at
+                            // 2^22 (< i32::MAX) so the u32→i32 cast is sound.
+                            // Inherent TOCTOU: if the child exits and the PID is
+                            // recycled between pid() and kill(), we may signal the
+                            // wrong process. This is benign: the exit watcher also
+                            // fires and stops the writer loop.
+                            debug_assert!(pid <= i32::MAX as u32, "pid {pid} exceeds i32::MAX");
                             unsafe {
                                 libc::kill(pid as i32, sig);
                             }

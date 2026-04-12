@@ -75,6 +75,30 @@ function createSessionsStore() {
   // Event unlisten handles for cleanup
   let unlisteners: UnlistenFn[] = [];
 
+  // C2 fix: Throttled re-hydration to refresh activity_summary.
+  // When output events arrive, schedule a re-poll at most every 5 seconds.
+  let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  const REFRESH_INTERVAL_MS = 5_000;
+
+  function scheduleActivityRefresh(store: { hydrate: (opts?: { includeEnded?: boolean }) => Promise<void> }): void {
+    if (refreshTimer !== null) return; // already scheduled
+    refreshTimer = setTimeout(async () => {
+      refreshTimer = null;
+      try {
+        await store.hydrate();
+      } catch {
+        // Best-effort refresh; errors already captured in store.error.
+      }
+    }, REFRESH_INTERVAL_MS);
+  }
+
+  function cancelActivityRefresh(): void {
+    if (refreshTimer !== null) {
+      clearTimeout(refreshTimer);
+      refreshTimer = null;
+    }
+  }
+
   return {
     get sessions() {
       return sessions;
@@ -168,9 +192,11 @@ function createSessionsStore() {
      * Returns a cleanup function that unsubscribes all listeners.
      */
     async subscribe(): Promise<() => void> {
+      const spawnStoreRef = this;
       const spawned = await onSessionSpawned((payload) => {
-        // The spawned event contains a SessionSummaryLite; we need to
-        // promote it to a full SessionSummary with default derived fields.
+        // L9 fix: Insert a lightweight placeholder immediately so the UI
+        // shows the session, then schedule a hydrate to get the full record
+        // from the backend (correct timestamps, working_directory, etc.).
         const lite = payload.session;
         const summary: SessionSummary = {
           id: lite.id,
@@ -192,7 +218,9 @@ function createSessionsStore() {
           alert: null,
           reattached_mirror: lite.reattached_mirror,
         };
-        this.add(summary);
+        spawnStoreRef.add(summary);
+        // Re-hydrate to reconcile with actual backend data.
+        spawnStoreRef.hydrate().catch(() => {});
       });
 
       const ended = await onSessionEnded((payload) => {
@@ -204,14 +232,17 @@ function createSessionsStore() {
         });
       });
 
+      const storeRef = this;
       const output = await onSessionOutput((payload) => {
         // Update last_activity_at and forward bytes to the output handler
-        this.update(payload.session_id, {
+        storeRef.update(payload.session_id, {
           last_activity_at: new Date().toISOString(),
         });
         if (outputHandler) {
           outputHandler(payload.session_id, payload.bytes);
         }
+        // C2 fix: Schedule a throttled re-hydration to refresh activity_summary.
+        scheduleActivityRefresh(storeRef);
       });
 
       const alertRaised = await listen('alert:raised', (payload: AlertRaisedEvent) => {
@@ -238,6 +269,7 @@ function createSessionsStore() {
           unlisten();
         }
         unlisteners = [];
+        cancelActivityRefresh();
       };
     },
   };

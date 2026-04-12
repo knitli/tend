@@ -90,22 +90,38 @@ impl SessionService {
             }
         };
 
-        let live_sessions = state.live_sessions.read().await;
+        // H4 fix: Collect activity handles while holding the read lock, then
+        // drop it before awaiting per-session activity mutexes to avoid holding
+        // live_sessions across N sequential lock acquisitions.
+        let activity_info: Vec<_> = {
+            let live_sessions = state.live_sessions.read().await;
+            rows.iter()
+                .map(|row| {
+                    let id: i64 = row.try_get("id").unwrap_or(0);
+                    let sid = SessionId::new(id);
+                    live_sessions
+                        .get(&sid)
+                        .map(|h| (h.is_mirror, h.activity.clone()))
+                })
+                .collect()
+            // read lock dropped here
+        };
+
         let mut summaries = Vec::with_capacity(rows.len());
 
-        for row in rows {
-            let session = parse_session_row(&row)?;
+        for (row, live_info) in rows.iter().zip(activity_info.iter()) {
+            let session = parse_session_row(row)?;
             let session_id = session.id;
 
-            let alert = parse_alert_from_join(&row, session_id)?;
+            let alert = parse_alert_from_join(row, session_id)?;
 
-            let (reattached_mirror, activity_summary) =
-                if let Some(handle) = live_sessions.get(&session_id) {
-                    let summary = handle.activity.lock().await.current();
-                    (handle.is_mirror, summary)
-                } else {
-                    (false, None)
-                };
+            let (reattached_mirror, activity_summary) = match live_info {
+                Some((is_mirror, activity)) => {
+                    let summary = activity.lock().await.current();
+                    (*is_mirror, summary)
+                }
+                None => (false, None),
+            };
 
             summaries.push(SessionSummary {
                 session,
@@ -289,7 +305,10 @@ impl SessionService {
         let session_id = SessionId::new(result.last_insert_rowid());
 
         let parsed_metadata: SessionMetadata =
-            serde_json::from_value(metadata.clone()).unwrap_or_default();
+            serde_json::from_value(metadata.clone()).unwrap_or_else(|e| {
+                tracing::warn!(%session_id, %e, "failed to parse IPC session metadata, using default");
+                SessionMetadata::default()
+            });
 
         info!(%session_id, %project_id, pid, "session registered from IPC (wrapper-owned)");
 
@@ -525,14 +544,18 @@ impl SessionService {
         let session = parse_session_row(&row)?;
         let alert = parse_alert_from_join(&row, session_id)?;
 
-        let (reattached_mirror, activity_summary) = {
+        // H4 fix: collect handle info under read lock, drop lock, then await mutex.
+        let live_info = {
             let live = state.live_sessions.read().await;
-            if let Some(handle) = live.get(&session_id) {
-                let summary = handle.activity.lock().await.current();
-                (handle.is_mirror, summary)
-            } else {
-                (false, None)
+            live.get(&session_id)
+                .map(|h| (h.is_mirror, h.activity.clone()))
+        };
+        let (reattached_mirror, activity_summary) = match live_info {
+            Some((is_mirror, activity)) => {
+                let summary = activity.lock().await.current();
+                (is_mirror, summary)
             }
+            None => (false, None),
         };
 
         Ok(SessionSummary {
@@ -607,7 +630,10 @@ pub(crate) fn parse_session_row(row: &sqlx::sqlite::SqliteRow) -> WorkbenchResul
             .as_deref()
             .map(parse_timestamp)
             .transpose()?,
-        metadata: serde_json::from_str(&metadata_json).unwrap_or_default(),
+        metadata: serde_json::from_str(&metadata_json).unwrap_or_else(|e| {
+            tracing::warn!(session_id = id, %e, "failed to parse session metadata_json, using default");
+            SessionMetadata::default()
+        }),
         working_directory: PathBuf::from(working_directory_str),
         exit_code: exit_code.map(|c| c as i32),
         error_reason,

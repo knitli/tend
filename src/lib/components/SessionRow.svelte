@@ -1,8 +1,32 @@
 <!-- T064: Single session row in the session list.
      Displays project name, label, status badge, ownership indicator,
      and dispatches a click event for session activation. -->
+<script lang="ts" module>
+  // M11 fix: Single shared ticker for all SessionRow instances.
+  // Avoids N independent intervals, ensures consistent display.
+  let sharedTick = $state(Date.now());
+  let refCount = 0;
+  let sharedInterval: ReturnType<typeof setInterval> | null = null;
+
+  function acquireTick(): void {
+    refCount++;
+    if (refCount === 1) {
+      sharedInterval = setInterval(() => { sharedTick = Date.now(); }, 5_000);
+    }
+  }
+
+  function releaseTick(): void {
+    refCount--;
+    if (refCount <= 0 && sharedInterval !== null) {
+      clearInterval(sharedInterval);
+      sharedInterval = null;
+      refCount = 0;
+    }
+  }
+</script>
+
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import type { SessionSummary } from '$lib/api/sessions';
 
   interface Props {
@@ -15,10 +39,9 @@
 
   let { session, projectName = '', missing = false, onActivate }: Props = $props();
 
-  let tick = $state(Date.now());
-  // T137: 5s tick for responsive idle-time display.
-  const tickInterval = setInterval(() => { tick = Date.now(); }, 5_000);
-  onDestroy(() => clearInterval(tickInterval));
+  const tick = $derived(sharedTick);
+  onMount(() => acquireTick());
+  onDestroy(() => releaseTick());
 
   const isInteractive = $derived(
     session.ownership === 'workbench' && !session.reattached_mirror,
@@ -41,7 +64,7 @@
     }
   });
 
-  const statusClass = $derived(`status-${session.status.replace('_', '-')}`);
+  const statusClass = $derived(`status-${session.status.replaceAll('_', '-')}`);
 
   const relativeTime = $derived.by(() => {
     const now = tick;
@@ -73,16 +96,38 @@
     return `idle ${diffHr}h`;
   });
 
-  /** T137: Activity summary truncated to ~60 chars for the row display. */
+  /** T137: Activity summary truncated to ~60 chars for the row display.
+   *  M7 fix: use Array.from for surrogate-safe truncation. */
   const displaySummary = $derived.by(() => {
     const raw = session.activity_summary;
     if (!raw) return null;
-    if (raw.length <= 60) return raw;
-    return raw.slice(0, 59) + '…';
+    const chars = Array.from(raw);
+    if (chars.length <= 60) return raw;
+    return chars.slice(0, 59).join('') + '…';
   });
 
-  /** T137: Task title from agent metadata, shown as a pill. */
-  const taskTitle = $derived(session.metadata?.task_title ?? null);
+  /** T137: Task title from agent metadata, shown as a pill.
+   *  M9 fix: cap at 200 chars to prevent unbounded agent metadata. */
+  const taskTitle = $derived.by(() => {
+    const raw = session.metadata?.task_title;
+    if (!raw) return null;
+    if (raw.length <= 200) return raw;
+    return raw.slice(0, 199) + '…';
+  });
+
+  /** H7: Comprehensive aria-label including alert and read-only state. */
+  const ariaLabel = $derived(
+    [
+      projectName ? `${projectName}:` : '',
+      session.label,
+      '-',
+      statusLabel,
+      session.alert ? `(alert: ${session.alert.reason ?? 'needs input'})` : '',
+      !isInteractive ? '(read-only)' : '',
+    ]
+      .filter(Boolean)
+      .join(' '),
+  );
 
   function handleClick(): void {
     onActivate?.(session);
@@ -100,7 +145,7 @@
   class="session-row"
   role="button"
   tabindex="0"
-  aria-label="{session.label} - {statusLabel}"
+  aria-label={ariaLabel}
   onclick={handleClick}
   onkeydown={handleKeydown}
 >
@@ -123,14 +168,14 @@
     {#if displaySummary}
       <span class="activity-summary" title={session.activity_summary ?? ''}>{displaySummary}</span>
     {:else if idleTime}
-      <span class="activity-summary idle-time">{idleTime}</span>
+      <span class="activity-summary idle-time" role="status" aria-live="polite">{idleTime}</span>
     {/if}
   </div>
 
   <div class="session-meta">
     <span class="badge {statusClass}">{statusLabel}</span>
     {#if session.alert}
-      <span class="badge badge-alert badge-pulse" title={session.alert.reason ?? 'Needs input'} aria-label="Needs input">!</span>
+      <span class="badge badge-alert badge-pulse" role="img" title={session.alert.reason ?? 'Needs input'} aria-label={session.alert.reason ?? 'Needs input'}>!</span>
     {/if}
     <span class="session-time">{relativeTime}</span>
   </div>
@@ -152,6 +197,11 @@
   .session-row:hover,
   .session-row:focus-visible {
     background: var(--color-surface-hover, #1e2028);
+  }
+
+  .session-row:focus-visible {
+    outline: 2px solid var(--color-accent, #60a5fa);
+    outline-offset: -2px;
   }
 
   .session-main {
@@ -294,5 +344,11 @@
   @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .badge-pulse {
+      animation: none;
+    }
   }
 </style>
