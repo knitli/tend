@@ -12,26 +12,28 @@ pub struct NoteService;
 impl NoteService {
     /// List notes for a project, ordered by created_at DESC.
     ///
-    /// Supports cursor-based pagination: `cursor` is the `created_at` ISO-8601
-    /// timestamp of the last note on the previous page.
+    /// Supports cursor-based pagination. Cursor format: `{created_at}:{id}`
+    /// (M4 fix: composite cursor prevents row-skipping on identical timestamps).
     pub async fn list(
         db: &Database,
         project_id: ProjectId,
         limit: Option<i64>,
         cursor: Option<&str>,
     ) -> WorkbenchResult<(Vec<Note>, Option<String>)> {
-        let limit = limit.unwrap_or(50).min(200);
-        // Fetch one extra to detect if there's a next page.
+        let limit = limit.unwrap_or(50).clamp(1, 200);
         let fetch_limit = limit + 1;
 
         let rows = if let Some(cursor) = cursor {
+            let (cursor_ts, cursor_id) = parse_cursor(cursor)?;
             sqlx::query(
                 "SELECT id, project_id, content, created_at, updated_at \
-                 FROM notes WHERE project_id = ?1 AND created_at < ?2 \
-                 ORDER BY created_at DESC LIMIT ?3",
+                 FROM notes WHERE project_id = ?1 \
+                 AND (created_at < ?2 OR (created_at = ?2 AND id < ?3)) \
+                 ORDER BY created_at DESC, id DESC LIMIT ?4",
             )
             .bind(project_id.get())
-            .bind(cursor)
+            .bind(&cursor_ts)
+            .bind(cursor_id)
             .bind(fetch_limit)
             .fetch_all(db.pool())
             .await?
@@ -39,7 +41,7 @@ impl NoteService {
             sqlx::query(
                 "SELECT id, project_id, content, created_at, updated_at \
                  FROM notes WHERE project_id = ?1 \
-                 ORDER BY created_at DESC LIMIT ?2",
+                 ORDER BY created_at DESC, id DESC LIMIT ?2",
             )
             .bind(project_id.get())
             .bind(fetch_limit)
@@ -54,12 +56,11 @@ impl NoteService {
             &rows
         };
 
-        let notes: Vec<Note> = rows
-            .iter()
-            .map(parse_note_row)
-            .collect::<Result<_, _>>()?;
+        let notes: Vec<Note> = rows.iter().map(parse_note_row).collect::<Result<_, _>>()?;
         let next_cursor = if has_next {
-            notes.last().map(|n| n.created_at.to_rfc3339())
+            notes
+                .last()
+                .map(|n| encode_cursor(&n.created_at.to_rfc3339(), n.id.get()))
         } else {
             None
         };
@@ -114,6 +115,9 @@ impl NoteService {
     }
 
     /// Update a note's content.
+    ///
+    /// H1 fix: uses `MAX(updated_at, now)` monotonic clamp for backward-clock safety.
+    /// M6 fix: UPDATE+SELECT wrapped in a transaction.
     pub async fn update(db: &Database, id: NoteId, content: &str) -> WorkbenchResult<Note> {
         let content = content.trim();
         if content.is_empty() {
@@ -125,24 +129,29 @@ impl NoteService {
 
         let now = Utc::now().to_rfc3339();
 
-        let result = sqlx::query("UPDATE notes SET content = ?1, updated_at = ?2 WHERE id = ?3")
-            .bind(content)
-            .bind(&now)
-            .bind(id.get())
-            .execute(db.pool())
-            .await?;
+        let mut tx = db.pool().begin().await?;
+
+        let result = sqlx::query(
+            "UPDATE notes SET content = ?1, updated_at = MAX(updated_at, ?2) WHERE id = ?3",
+        )
+        .bind(content)
+        .bind(&now)
+        .bind(id.get())
+        .execute(&mut *tx)
+        .await?;
 
         if result.rows_affected() == 0 {
             return Err(WorkbenchError::not_found(format!("note {id}")));
         }
 
-        // Fetch the updated row.
         let row = sqlx::query(
             "SELECT id, project_id, content, created_at, updated_at FROM notes WHERE id = ?1",
         )
         .bind(id.get())
-        .fetch_one(db.pool())
+        .fetch_one(&mut *tx)
         .await?;
+
+        tx.commit().await?;
 
         parse_note_row(&row)
     }
@@ -182,4 +191,22 @@ fn parse_ts(s: &str) -> WorkbenchResult<Timestamp> {
     chrono::DateTime::parse_from_rfc3339(s)
         .map(|dt| dt.with_timezone(&chrono::Utc))
         .map_err(|e| WorkbenchError::internal(format!("invalid timestamp '{s}': {e}")))
+}
+
+/// Encode a composite cursor as `{timestamp}:{id}`.
+fn encode_cursor(ts: &str, id: i64) -> String {
+    format!("{ts}:{id}")
+}
+
+/// Decode a composite cursor. Falls back to treating the whole string as a
+/// timestamp with id=0 for backward compatibility.
+fn parse_cursor(cursor: &str) -> WorkbenchResult<(String, i64)> {
+    if let Some(pos) = cursor.rfind(':') {
+        let ts = &cursor[..pos];
+        if let Ok(id) = cursor[pos + 1..].parse::<i64>() {
+            return Ok((ts.to_string(), id));
+        }
+    }
+    // Fallback: old-style timestamp-only cursor.
+    Ok((cursor.to_string(), 0))
 }

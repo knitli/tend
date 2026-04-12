@@ -27,11 +27,11 @@ impl OverviewService {
         let rows = sqlx::query(
             "SELECT r.id, r.project_id, r.content, r.state, r.created_at, r.done_at, \
                     p.id AS p_id, p.canonical_path, p.display_name, p.added_at, \
-                    p.archived_at, p.settings_json \
+                    p.last_active_at, p.archived_at, p.settings_json \
              FROM reminders r \
              JOIN projects p ON p.id = r.project_id \
              WHERE r.state = 'open' AND p.archived_at IS NULL \
-             ORDER BY p.display_name ASC, r.created_at DESC",
+             ORDER BY p.display_name ASC, p.id ASC, r.created_at DESC",
         )
         .fetch_all(db.pool())
         .await?;
@@ -65,6 +65,7 @@ fn parse_project_row(row: &sqlx::sqlite::SqliteRow) -> WorkbenchResult<Project> 
     let canonical_path: String = row.try_get("canonical_path")?;
     let display_name: String = row.try_get("display_name")?;
     let added_at: String = row.try_get("added_at")?;
+    let last_active_at: Option<String> = row.try_get("last_active_at")?;
     let archived_at: Option<String> = row.try_get("archived_at")?;
     let settings_json: String = row.try_get("settings_json")?;
 
@@ -73,9 +74,11 @@ fn parse_project_row(row: &sqlx::sqlite::SqliteRow) -> WorkbenchResult<Project> 
         canonical_path: std::path::PathBuf::from(canonical_path),
         display_name,
         added_at: parse_ts(&added_at)?,
-        last_active_at: None, // Not needed for overview display.
+        last_active_at: last_active_at.as_deref().map(parse_ts).transpose()?,
         archived_at: archived_at.as_deref().map(parse_ts).transpose()?,
-        settings: serde_json::from_str(&settings_json).unwrap_or_default(),
+        settings: serde_json::from_str(&settings_json)
+            .inspect_err(|e| tracing::warn!(project_id = id, error = %e, "malformed settings_json"))
+            .unwrap_or_default(),
     })
 }
 

@@ -10,6 +10,7 @@
   import SettingsDialog from '$lib/components/SettingsDialog.svelte';
   import { projectsStore } from '$lib/stores/projects.svelte';
   import { sessionsStore } from '$lib/stores/sessions.svelte';
+  import { scratchpadStore } from '$lib/stores/scratchpad.svelte';
   import type { Project } from '$lib/api/projects';
   import type { SessionSummary } from '$lib/api/sessions';
 
@@ -65,7 +66,7 @@
       <div class="session-panel-header">
         <button
           class="overview-btn"
-          onclick={() => { overviewOpen = !overviewOpen; activeSessionId = null; }}
+          onclick={() => { overviewOpen = !overviewOpen; activeSessionId = null; scratchpadStore.clear(); }}
           title="Cross-project reminder overview"
           aria-label="Open reminder overview"
           class:active={overviewOpen}

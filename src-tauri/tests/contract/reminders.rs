@@ -251,3 +251,31 @@ async fn reminder_delete_not_found() {
 
     assert_eq!(err.code, ErrorCode::NotFound);
 }
+
+// ── M1: reminder_set_state NOT_FOUND ────────────────────────────────────
+
+#[tokio::test]
+async fn reminder_set_state_not_found() {
+    let state = crate::common::mock_state().await;
+    let bogus = ReminderId::new(999_999);
+
+    let err = ReminderService::set_state(&state.db, bogus, ReminderState::Done)
+        .await
+        .expect_err("set_state on nonexistent reminder must fail");
+
+    assert_eq!(err.code, ErrorCode::NotFound);
+}
+
+// ── M2: reminder_create PROJECT_NOT_FOUND ───────────────────────────────
+
+#[tokio::test]
+async fn reminder_create_project_not_found() {
+    let state = crate::common::mock_state().await;
+    let bogus = agentui_workbench::model::ProjectId::new(999_999);
+
+    let err = ReminderService::create(&state.db, bogus, "test reminder")
+        .await
+        .expect_err("create with bogus project must fail");
+
+    assert_eq!(err.code, ErrorCode::NotFound);
+}

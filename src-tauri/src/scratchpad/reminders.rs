@@ -12,6 +12,12 @@ pub struct ReminderService;
 impl ReminderService {
     /// List reminders, optionally filtered by project and/or state.
     /// Ordered by created_at DESC.
+    /// List reminders, optionally filtered by project and/or state.
+    /// Ordered by created_at DESC.
+    ///
+    /// H3 fix: uses `sqlx::QueryBuilder` with typed binds instead of
+    /// string-coerced `Vec<String>`.
+    /// C1 fix: limit clamped to `[1, 200]`.
     pub async fn list(
         db: &Database,
         project_id: Option<ProjectId>,
@@ -19,37 +25,36 @@ impl ReminderService {
         limit: Option<i64>,
         cursor: Option<&str>,
     ) -> WorkbenchResult<(Vec<Reminder>, Option<String>)> {
-        let limit = limit.unwrap_or(50).min(200);
+        let limit = limit.unwrap_or(50).clamp(1, 200);
         let fetch_limit = limit + 1;
 
-        // Build dynamic query based on filters.
-        let mut sql = String::from(
+        // H3 fix: use QueryBuilder for typed binds.
+        let mut qb = sqlx::QueryBuilder::new(
             "SELECT id, project_id, content, state, created_at, done_at FROM reminders WHERE 1=1",
         );
-        let mut binds: Vec<String> = Vec::new();
 
         if let Some(pid) = project_id {
-            binds.push(pid.get().to_string());
-            sql.push_str(&format!(" AND project_id = ?{}", binds.len()));
+            qb.push(" AND project_id = ").push_bind(pid.get());
         }
         if let Some(st) = state {
-            binds.push(st.as_str().to_string());
-            sql.push_str(&format!(" AND state = ?{}", binds.len()));
+            qb.push(" AND state = ").push_bind(st.as_str().to_string());
         }
+        // M4 fix: composite cursor (created_at, id) to prevent row-skipping.
         if let Some(c) = cursor {
-            binds.push(c.to_string());
-            sql.push_str(&format!(" AND created_at < ?{}", binds.len()));
+            let (cursor_ts, cursor_id) = parse_cursor(c)?;
+            qb.push(" AND (created_at < ")
+                .push_bind(cursor_ts.clone())
+                .push(" OR (created_at = ")
+                .push_bind(cursor_ts)
+                .push(" AND id < ")
+                .push_bind(cursor_id)
+                .push("))");
         }
 
-        binds.push(fetch_limit.to_string());
-        sql.push_str(&format!(" ORDER BY created_at DESC LIMIT ?{}", binds.len()));
+        qb.push(" ORDER BY created_at DESC, id DESC LIMIT ")
+            .push_bind(fetch_limit);
 
-        let mut query = sqlx::query(&sql);
-        for b in &binds {
-            query = query.bind(b);
-        }
-
-        let rows = query.fetch_all(db.pool()).await?;
+        let rows = qb.build().fetch_all(db.pool()).await?;
 
         let has_next = rows.len() as i64 > limit;
         let rows = if has_next {
@@ -63,7 +68,9 @@ impl ReminderService {
             .map(parse_reminder_row)
             .collect::<Result<_, _>>()?;
         let next_cursor = if has_next {
-            reminders.last().map(|r| r.created_at.to_rfc3339())
+            reminders
+                .last()
+                .map(|r| encode_cursor(&r.created_at.to_rfc3339(), r.id.get()))
         } else {
             None
         };
@@ -118,6 +125,7 @@ impl ReminderService {
     }
 
     /// Set the state of a reminder (open/done).
+    /// M6 fix: UPDATE+SELECT wrapped in a transaction.
     pub async fn set_state(
         db: &Database,
         id: ReminderId,
@@ -129,11 +137,13 @@ impl ReminderService {
             ReminderState::Open => None,
         };
 
+        let mut tx = db.pool().begin().await?;
+
         let result = sqlx::query("UPDATE reminders SET state = ?1, done_at = ?2 WHERE id = ?3")
             .bind(state.as_str())
             .bind(done_at)
             .bind(id.get())
-            .execute(db.pool())
+            .execute(&mut *tx)
             .await?;
 
         if result.rows_affected() == 0 {
@@ -145,8 +155,10 @@ impl ReminderService {
              FROM reminders WHERE id = ?1",
         )
         .bind(id.get())
-        .fetch_one(db.pool())
+        .fetch_one(&mut *tx)
         .await?;
+
+        tx.commit().await?;
 
         parse_reminder_row(&row)
     }
@@ -190,4 +202,20 @@ fn parse_ts(s: &str) -> WorkbenchResult<Timestamp> {
     chrono::DateTime::parse_from_rfc3339(s)
         .map(|dt| dt.with_timezone(&chrono::Utc))
         .map_err(|e| WorkbenchError::internal(format!("invalid timestamp '{s}': {e}")))
+}
+
+/// Encode a composite cursor as `{timestamp}:{id}`.
+fn encode_cursor(ts: &str, id: i64) -> String {
+    format!("{ts}:{id}")
+}
+
+/// Decode a composite cursor. Falls back to timestamp-only for backward compat.
+fn parse_cursor(cursor: &str) -> WorkbenchResult<(String, i64)> {
+    if let Some(pos) = cursor.rfind(':') {
+        let ts = &cursor[..pos];
+        if let Ok(id) = cursor[pos + 1..].parse::<i64>() {
+            return Ok((ts.to_string(), id));
+        }
+    }
+    Ok((cursor.to_string(), 0))
 }

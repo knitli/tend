@@ -2,10 +2,10 @@
   T115: Per-project scratchpad with Notes and Reminders tabs.
 -->
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { scratchpadStore } from '$lib/stores/scratchpad.svelte';
   import { formatAge } from '$lib/util/age';
   import { renderInlineMarkdown } from '$lib/util/markdown';
+  import type { ReminderState } from '$lib/api/scratchpad';
 
   interface Props {
     projectId: number;
@@ -17,11 +17,7 @@
   let newNoteContent = $state('');
   let newReminderContent = $state('');
 
-  onMount(() => {
-    scratchpadStore.load(projectId);
-  });
-
-  // Reload when project changes.
+  // H6 fix: single $effect handles both initial load and project changes.
   $effect(() => {
     scratchpadStore.load(projectId);
   });
@@ -52,9 +48,9 @@
     }
   }
 
-  async function handleToggleReminder(id: number, currentState: string) {
-    const newState = currentState === 'open' ? 'done' : 'open';
-    await scratchpadStore.toggleReminder(id, newState as 'open' | 'done');
+  async function handleToggleReminder(id: number, currentState: ReminderState) {
+    const newState: ReminderState = currentState === 'open' ? 'done' : 'open';
+    await scratchpadStore.toggleReminder(id, newState);
   }
 
   async function handleDeleteReminder(id: number) {
@@ -79,19 +75,23 @@
 <div class="scratchpad" role="region" aria-label="Project scratchpad">
   <div class="tab-bar" role="tablist">
     <button
+      id="tab-notes"
       class="tab"
       class:active={activeTab === 'notes'}
       role="tab"
       aria-selected={activeTab === 'notes'}
+      aria-controls="panel-notes"
       onclick={() => activeTab = 'notes'}
     >
       Notes ({scratchpadStore.notes.length})
     </button>
     <button
+      id="tab-reminders"
       class="tab"
       class:active={activeTab === 'reminders'}
       role="tab"
       aria-selected={activeTab === 'reminders'}
+      aria-controls="panel-reminders"
       onclick={() => activeTab = 'reminders'}
     >
       Reminders ({scratchpadStore.reminders.length})
@@ -101,12 +101,13 @@
   {#if scratchpadStore.loading}
     <p class="empty">Loading...</p>
   {:else if activeTab === 'notes'}
-    <div class="tab-content">
+    <div class="tab-content" id="panel-notes" role="tabpanel" aria-labelledby="tab-notes">
       <div class="input-row">
         <textarea
           class="note-input"
           bind:value={newNoteContent}
           placeholder="Add a note... (Ctrl+Enter to save)"
+          aria-label="New note content"
           rows="2"
           onkeydown={handleNoteKeydown}
         ></textarea>
@@ -134,13 +135,14 @@
       {/if}
     </div>
   {:else}
-    <div class="tab-content">
+    <div class="tab-content" id="panel-reminders" role="tabpanel" aria-labelledby="tab-reminders">
       <div class="input-row">
         <input
           type="text"
           class="reminder-input"
           bind:value={newReminderContent}
           placeholder="Add a reminder... (Enter to save)"
+          aria-label="New reminder content"
           onkeydown={handleReminderKeydown}
         />
         <button class="add-btn" onclick={handleAddReminder} disabled={!newReminderContent.trim()}>
@@ -348,7 +350,9 @@
   }
 
   .note-item:hover .delete-btn,
-  .reminder-item:hover .delete-btn {
+  .reminder-item:hover .delete-btn,
+  .note-item:focus-within .delete-btn,
+  .reminder-item:focus-within .delete-btn {
     opacity: 1;
   }
 

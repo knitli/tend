@@ -218,3 +218,52 @@ async fn note_delete_not_found() {
 
     assert_eq!(err.code, ErrorCode::NotFound);
 }
+
+// ── M3: pagination cursor tests ─────────────────────────────────────────
+
+#[tokio::test]
+async fn note_list_pagination_with_cursor() {
+    let state = crate::common::mock_state().await;
+    let project_id = crate::common::seed_project(&state, "pagination-test").await;
+
+    // Create 5 notes.
+    for i in 0..5 {
+        NoteService::create(&state.db, project_id, &format!("note {i}"))
+            .await
+            .expect("create note");
+        // Small delay to ensure distinct timestamps.
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+    }
+
+    // First page: limit 2.
+    let (page1, cursor1) = NoteService::list(&state.db, project_id, Some(2), None)
+        .await
+        .expect("list page 1");
+    assert_eq!(page1.len(), 2, "first page should have 2 notes");
+    assert!(cursor1.is_some(), "should have a next_cursor");
+
+    // Second page using cursor.
+    let (page2, cursor2) = NoteService::list(&state.db, project_id, Some(2), cursor1.as_deref())
+        .await
+        .expect("list page 2");
+    assert_eq!(page2.len(), 2, "second page should have 2 notes");
+    assert!(cursor2.is_some(), "should have another next_cursor");
+
+    // Third page — only 1 remaining.
+    let (page3, cursor3) = NoteService::list(&state.db, project_id, Some(2), cursor2.as_deref())
+        .await
+        .expect("list page 3");
+    assert_eq!(page3.len(), 1, "third page should have 1 note");
+    assert!(cursor3.is_none(), "last page should have no next_cursor");
+
+    // Verify no duplicates across pages.
+    let all_ids: Vec<i64> = page1
+        .iter()
+        .chain(page2.iter())
+        .chain(page3.iter())
+        .map(|n| n.id.get())
+        .collect();
+    let unique: std::collections::HashSet<i64> = all_ids.iter().copied().collect();
+    assert_eq!(all_ids.len(), unique.len(), "no duplicates across pages");
+    assert_eq!(all_ids.len(), 5, "all 5 notes returned across pages");
+}

@@ -29,5 +29,8 @@ export function formatAge(isoTimestamp: string): string {
   if (diffWeeks < 5) return `${diffWeeks} week${diffWeeks === 1 ? '' : 's'} ago`;
 
   const diffMonths = Math.floor(diffDays / 30);
-  return `${diffMonths} month${diffMonths === 1 ? '' : 's'} ago`;
+  if (diffMonths < 12) return `${diffMonths} month${diffMonths === 1 ? '' : 's'} ago`;
+
+  const diffYears = Math.floor(diffMonths / 12);
+  return `${diffYears} year${diffYears === 1 ? '' : 's'} ago`;
 }

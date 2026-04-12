@@ -202,7 +202,7 @@ Indexes:
 
 Validation:
 
-- `content` trimmed; may not be empty (empty deletes the row instead)
+- `content` trimmed; may not be empty (returns `CONTENT_EMPTY` error on create/update)
 - `updated_at ≥ created_at`
 
 ---

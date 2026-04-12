@@ -115,3 +115,33 @@ async fn cross_project_overview_empty_when_no_open_reminders() {
 
     assert!(groups.is_empty(), "overview must be empty with no data");
 }
+
+/// L3: Within a group, reminders are ordered created_at DESC.
+#[tokio::test]
+async fn cross_project_overview_per_group_ordering() {
+    let state = crate::common::mock_state().await;
+    let project_id = crate::common::seed_project(&state, "ordering-test").await;
+
+    // Create 3 reminders with small delays so timestamps differ.
+    let mut ids = Vec::new();
+    for i in 0..3 {
+        let r = ReminderService::create(&state.db, project_id, &format!("reminder {i}"))
+            .await
+            .expect("create reminder");
+        ids.push(r.id.get());
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+    }
+
+    let groups = OverviewService::overview(&state.db)
+        .await
+        .expect("overview");
+
+    assert_eq!(groups.len(), 1);
+    let reminders = &groups[0].open_reminders;
+    assert_eq!(reminders.len(), 3);
+
+    // created_at DESC means the last-created reminder should be first.
+    assert_eq!(reminders[0].id.get(), ids[2], "newest should be first");
+    assert_eq!(reminders[1].id.get(), ids[1], "middle should be second");
+    assert_eq!(reminders[2].id.get(), ids[0], "oldest should be last");
+}
