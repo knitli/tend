@@ -7,6 +7,8 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "agentui run: CLI wrapper that registers external agent sessions with the workbench over IPC"
+# Internal workspace member; never published to crates.io.
+publish = false
 
 [[bin]]
 name = "agentui"

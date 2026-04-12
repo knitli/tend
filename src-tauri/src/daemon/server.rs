@@ -31,7 +31,7 @@ pub fn default_socket_path() -> PathBuf {
     let uid = {
         #[cfg(unix)]
         unsafe {
-            libc_getuid() as u32
+            libc_getuid()
         }
         #[cfg(not(unix))]
         {
@@ -120,7 +120,10 @@ async fn accept_loop(listener: UnixListener, state: Arc<WorkbenchState>) {
     }
 }
 
-async fn serve_connection(mut stream: UnixStream, state: Arc<WorkbenchState>) -> WorkbenchResult<()> {
+async fn serve_connection(
+    mut stream: UnixStream,
+    state: Arc<WorkbenchState>,
+) -> WorkbenchResult<()> {
     // Split once, keep two halves on the single stream using tokio's split.
     let (mut reader, mut writer) = stream.split();
 
@@ -192,13 +195,19 @@ where
         let bytes = serde_json::to_vec(&err)?;
         let len = (bytes.len() as u32).to_le_bytes();
         writer.write_all(&len).await.map_err(WorkbenchError::from)?;
-        writer.write_all(&bytes).await.map_err(WorkbenchError::from)?;
+        writer
+            .write_all(&bytes)
+            .await
+            .map_err(WorkbenchError::from)?;
         writer.flush().await.map_err(WorkbenchError::from)?;
         return Ok(());
     }
     let len = (bytes.len() as u32).to_le_bytes();
     writer.write_all(&len).await.map_err(WorkbenchError::from)?;
-    writer.write_all(&bytes).await.map_err(WorkbenchError::from)?;
+    writer
+        .write_all(&bytes)
+        .await
+        .map_err(WorkbenchError::from)?;
     writer.flush().await.map_err(WorkbenchError::from)?;
     Ok(())
 }

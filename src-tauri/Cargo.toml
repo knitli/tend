@@ -7,6 +7,8 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "agentui cross-repo workbench: Tauri 2 desktop app + backend daemon"
+# Internal workspace member; never published to crates.io.
+publish = false
 
 [lib]
 name = "agentui_workbench"

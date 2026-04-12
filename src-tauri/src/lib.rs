@@ -18,7 +18,7 @@ pub mod session;
 pub mod state;
 
 use crate::db::Database;
-use crate::error::{ErrorCode, WorkbenchError, WorkbenchResult};
+use crate::error::WorkbenchResult;
 use crate::session::recovery::reconcile_and_reattach;
 use crate::state::WorkbenchState;
 use tracing::info;
@@ -27,8 +27,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 /// Initialize structured logging. Uses env-filter controlled by `AGENTUI_LOG`
 /// (fallback: `info`). Pretty output in debug builds, JSON in release.
 pub fn init_tracing() {
-    let filter =
-        EnvFilter::try_from_env("AGENTUI_LOG").unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_from_env("AGENTUI_LOG").unwrap_or_else(|_| EnvFilter::new("info"));
 
     #[cfg(debug_assertions)]
     let layer = fmt::layer().pretty();
@@ -72,7 +71,10 @@ pub fn run() {
 
         // Daemon IPC socket (T022/T023).
         let daemon_handle = daemon::spawn_daemon(state.clone(), None).await?;
-        info!("daemon socket bound at {}", daemon_handle.socket_path.display());
+        info!(
+            "daemon socket bound at {}",
+            daemon_handle.socket_path.display()
+        );
 
         Ok((state, daemon_handle))
     });

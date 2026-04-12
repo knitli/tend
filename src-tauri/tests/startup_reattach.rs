@@ -19,7 +19,7 @@ mod common;
 
 use agentui_workbench::session::recovery::reconcile_and_reattach;
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 #[tokio::test]
 async fn reconcile_reattaches_live_and_ends_dead() {
@@ -46,8 +46,7 @@ async fn reconcile_reattaches_live_and_ends_dead() {
         let live_pid = live_child.id() as i64;
 
         // 2. Insert a wrapper-owned row pointing at that live pid.
-        let live_session =
-            common::seed_wrapper_session(&state, project_id, Some(live_pid)).await;
+        let live_session = common::seed_wrapper_session(&state, project_id, Some(live_pid)).await;
 
         // 3. Run reconcile.
         let report = reconcile_and_reattach(&state).await.expect("reconcile ok");
@@ -89,22 +88,18 @@ async fn reconcile_reattaches_live_and_ends_dead() {
         live_child.kill().expect("kill sleep");
         live_child.wait().expect("wait sleep");
 
-        // Wait briefly for the pid to definitely be reaped.
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(50));
-            // Our sysinfo refresh in reconcile_and_reattach will pick it up
-            // when we run again.
-            break;
-        }
+        // Give the OS a moment to finish reaping the child before the next
+        // sysinfo refresh runs inside reconcile_and_reattach.
+        std::thread::sleep(Duration::from_millis(50));
 
-        let dead_session =
-            common::seed_wrapper_session(&state, project_id, Some(live_pid)).await;
+        let dead_session = common::seed_wrapper_session(&state, project_id, Some(live_pid)).await;
 
         // Re-run reconcile. This is an additional pass, not a re-entry of the
         // first one — the first one already installed a handle for the live
         // row, which is fine.
-        let report2 = reconcile_and_reattach(&state).await.expect("reconcile ok 2");
+        let report2 = reconcile_and_reattach(&state)
+            .await
+            .expect("reconcile ok 2");
         assert!(
             report2.ended.contains(&dead_session),
             "expected dead session to be ended, got ended={:?}",

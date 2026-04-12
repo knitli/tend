@@ -39,7 +39,7 @@
 - [X] T008 [P] Create `src/app.html`, `src/app.css` (reset + theme tokens), `src/main.ts` (mount Svelte app), `src/routes/+page.svelte` (empty shell)
 - [X] T009 [P] Create `rustfmt.toml` (edition 2021, max_width 100), `.clippy.toml`, workspace `.editorconfig`
 - [X] T009b [P] Create `deny.toml` at workspace root with a `[bans]` section enforcing the FR-022 local-only scope at **build time**: deny `reqwest`, `hyper`, `isahc`, `ureq`, `surf`, `tonic`, `curl`, `tungstenite`, `tokio-tungstenite`, `native-tls`, `rustls-native-certs`, `openssl-sys` (and any other networking stack that sneaks in via a transitive dep). `cargo deny check bans` becomes the primary gate; T149's grep remains as a belt-and-braces layer. Allow exceptions only behind an explicit `[features]` flag with a comment referencing a future v2 feature.
-- [~] T010 Verify `pnpm install && cargo check && cargo install cargo-deny && cargo deny check bans && pnpm tauri dev` opens an empty window and the ban list passes; document in `specs/001-cross-repo-workbench/quickstart.md` if any system-dep gotchas appear
+- [X] T010 Verify `pnpm install && cargo check && cargo install cargo-deny && cargo deny check bans && pnpm tauri dev` opens an empty window and the ban list passes; document in `specs/001-cross-repo-workbench/quickstart.md` if any system-dep gotchas appear
 
 ---
 

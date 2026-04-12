@@ -77,11 +77,7 @@ pub async fn reconcile_and_reattach(state: &WorkbenchState) -> WorkbenchResult<R
             // contract here is that the handle exists in state.live_sessions
             // so `session_list` can return `reattached_mirror = true`.
             let handle = LiveSessionHandle {};
-            state
-                .live_sessions
-                .write()
-                .await
-                .insert(session_id, handle);
+            state.live_sessions.write().await.insert(session_id, handle);
             report.reattached.push(session_id);
 
             // Broadcast session:spawned (T124 folded in). Ignored if no

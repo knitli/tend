@@ -11,10 +11,26 @@
 
 [graph]
 all-features = false
+# FR-022 is enforced **per-target** against the platform we actually build
+# for. v1 ships Linux primary (per plan.md Technical Context); macOS and
+# Windows are Tauri-by-product and not in v1 CI. Tauri 2's Linux build does
+# NOT pull reqwest or any networking stack; its macOS build does (for the
+# updater subsystem we're not using). When we add macOS/Windows triples to
+# CI, we add them here, and any macOS-specific networking the Tauri runtime
+# drags in will need to be audited and either excluded via features or
+# explicitly allowed with a rationale.
+targets = [
+    { triple = "x86_64-unknown-linux-gnu" },
+]
 
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Internal workspace path deps use `{ workspace = true }` and have no version
+# field — cargo-deny 0.14+ treats that as a wildcard by default. This flag
+# exempts path-based workspace deps (our `agentui-protocol` path dep) while
+# keeping real `"*"` wildcards banned in our external crates.
+allow-wildcard-paths = true
 
 # FR-022: local-only. No network stacks. sqlx is pulled in with rustls for
 # TLS-less sqlite, not because we use TLS — sqlx forces a TLS backend choice
