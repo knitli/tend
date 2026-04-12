@@ -1,0 +1,57 @@
+[package]
+name = "agentui-workbench"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "agentui cross-repo workbench: Tauri 2 desktop app + backend daemon"
+
+[lib]
+name = "agentui_workbench"
+path = "src/lib.rs"
+
+[[bin]]
+name = "agentui-workbench"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Shared wire format — single source of truth. No local redefinition of Request/Response/ErrorCode.
+agentui-protocol = { workspace = true }
+
+# Tauri
+tauri = { version = "2", features = [] }
+tauri-plugin-notification = "2"
+
+# Async runtime + DB
+tokio = { workspace = true }
+sqlx = { workspace = true }
+
+# PTY + process observation
+portable-pty = "0.8"
+sysinfo = "0.30"
+
+# FS watching
+notify = "6"
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Errors + diagnostics
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Time + paths
+chrono = { workspace = true }
+dirs = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tempfile = "3"

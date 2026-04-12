@@ -1,0 +1,42 @@
+# Rust
+target/
+Cargo.lock.bak
+*.rs.bk
+*.pdb
+
+# Node / Vite
+node_modules/
+dist/
+*.log
+.vite/
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/
+src-tauri/WixTools/
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Coverage
+target/coverage/
+.nyc_output/
+coverage/
+
+# SQLite dev databases
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

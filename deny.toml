@@ -1,0 +1,61 @@
+# cargo-deny configuration.
+#
+# T009b: Build-time enforcement of FR-022 (local-only scope). Any networking
+# stack that sneaks into the dep graph fails the build. This is the PRIMARY
+# gate against v1 growing accidental network I/O; T149's grep is belt-and-
+# braces on top of this.
+#
+# Exceptions MUST be behind an explicit `[features]` flag with a comment
+# referencing a future v2 feature. Edit this file; do NOT add per-package
+# allows elsewhere.
+
+[graph]
+all-features = false
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+# FR-022: local-only. No network stacks. sqlx is pulled in with rustls for
+# TLS-less sqlite, not because we use TLS — sqlx forces a TLS backend choice
+# even for sqlite-only feature sets. No actual network code path exists.
+deny = [
+    { name = "reqwest" },
+    { name = "hyper" },
+    { name = "isahc" },
+    { name = "ureq" },
+    { name = "surf" },
+    { name = "tonic" },
+    { name = "curl" },
+    { name = "curl-sys" },
+    { name = "tungstenite" },
+    { name = "tokio-tungstenite" },
+    { name = "native-tls" },
+    { name = "rustls-native-certs" },
+    { name = "openssl-sys" },
+]
+
+[advisories]
+yanked = "warn"
+ignore = []
+
+[licenses]
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MPL-2.0",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    "OpenSSL",
+]
+confidence-threshold = 0.93
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "warn"
