@@ -201,6 +201,7 @@ fn resolve_socket_path() -> Result<PathBuf> {
         return Ok(PathBuf::from(dir).join("agentui.sock"));
     }
     // Fallback: /tmp/agentui-$UID.sock
+    // SAFETY: getuid(2) has no preconditions, takes no arguments, and cannot fail.
     let uid = unsafe { libc::getuid() };
     Ok(PathBuf::from(format!("/tmp/agentui-{uid}.sock")))
 }

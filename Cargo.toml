@@ -20,6 +20,7 @@ thiserror = "1"
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
+base64 = "0.22"
 
 # Shared wire-format crate (single source of truth for daemon IPC)
 agentui-protocol = { path = "protocol" }

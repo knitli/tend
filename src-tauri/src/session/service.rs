@@ -33,23 +33,9 @@ impl SessionService {
         project_id: Option<ProjectId>,
         include_ended: bool,
     ) -> WorkbenchResult<Vec<SessionSummary>> {
-        // Build the WHERE clause dynamically.
-        let mut conditions: Vec<String> = Vec::new();
-        if let Some(pid) = project_id {
-            conditions.push(format!("s.project_id = {}", pid.get()));
-        }
-        if !include_ended {
-            conditions.push("s.status NOT IN ('ended','error')".to_string());
-        }
-
-        let where_clause = if conditions.is_empty() {
-            String::new()
-        } else {
-            format!("WHERE {}", conditions.join(" AND "))
-        };
-
-        let sql = format!(
-            r#"
+        // M1: Use bind parameters instead of format-string interpolation.
+        // M4: Use a correlated subquery for the alert JOIN to prevent duplicate rows.
+        let base = r#"
             SELECT
                 s.id, s.project_id, s.label, s.pid, s.status, s.status_source,
                 s.ownership, s.started_at, s.ended_at, s.last_activity_at,
@@ -59,15 +45,41 @@ impl SessionService {
                 a.raised_at AS alert_raised_at, a.acknowledged_at AS alert_ack_at,
                 a.cleared_by AS alert_cleared_by
             FROM sessions s
-            LEFT JOIN alerts a
-                ON a.session_id = s.id
-                AND a.acknowledged_at IS NULL
-            {where_clause}
-            ORDER BY s.started_at DESC
-            "#
-        );
+            LEFT JOIN alerts a ON a.id = (
+                SELECT a2.id FROM alerts a2
+                WHERE a2.session_id = s.id AND a2.acknowledged_at IS NULL
+                ORDER BY a2.raised_at DESC LIMIT 1
+            )
+        "#;
 
-        let rows = sqlx::query(&sql).fetch_all(state.db.pool()).await?;
+        let rows = match (project_id, include_ended) {
+            (Some(pid), false) => {
+                let sql = format!(
+                    "{base} WHERE s.project_id = ?1 AND s.status NOT IN ('ended','error') ORDER BY s.started_at DESC"
+                );
+                sqlx::query(&sql)
+                    .bind(pid.get())
+                    .fetch_all(state.db.pool())
+                    .await?
+            }
+            (Some(pid), true) => {
+                let sql = format!("{base} WHERE s.project_id = ?1 ORDER BY s.started_at DESC");
+                sqlx::query(&sql)
+                    .bind(pid.get())
+                    .fetch_all(state.db.pool())
+                    .await?
+            }
+            (None, false) => {
+                let sql = format!(
+                    "{base} WHERE s.status NOT IN ('ended','error') ORDER BY s.started_at DESC"
+                );
+                sqlx::query(&sql).fetch_all(state.db.pool()).await?
+            }
+            (None, true) => {
+                let sql = format!("{base} ORDER BY s.started_at DESC");
+                sqlx::query(&sql).fetch_all(state.db.pool()).await?
+            }
+        };
 
         let live_sessions = state.live_sessions.read().await;
         let mut summaries = Vec::with_capacity(rows.len());
@@ -148,27 +160,53 @@ impl SessionService {
         let session_id = SessionId::new(result.last_insert_rowid());
 
         // Spawn the PTY with the real session id.
-        let (actor, handle) = spawn_live_session(session_id, command, cwd, env, 80, 24)?;
+        // H2: If spawn or the subsequent pid UPDATE fails, mark the DB row
+        // ended immediately so it doesn't remain orphaned as 'working'.
+        let (actor, handle) = match spawn_live_session(session_id, command, cwd, env, 80, 24) {
+            Ok(pair) => pair,
+            Err(e) => {
+                let _ = sqlx::query(
+                    "UPDATE sessions SET status='ended', ended_at=?1, error_reason='spawn_failed' WHERE id=?2",
+                )
+                .bind(Utc::now().to_rfc3339())
+                .bind(session_id.get())
+                .execute(state.db.pool())
+                .await;
+                return Err(e);
+            }
+        };
 
         let pid = actor.pty.pid().map(|p| Pid(p as i32));
 
         // Update the pid in the DB now that we know it.
         if let Some(p) = pid {
-            sqlx::query("UPDATE sessions SET pid = ?1 WHERE id = ?2")
+            if let Err(e) = sqlx::query("UPDATE sessions SET pid = ?1 WHERE id = ?2")
                 .bind(p.0 as i64)
                 .bind(session_id.get())
                 .execute(state.db.pool())
-                .await?;
+                .await
+            {
+                let _ = sqlx::query(
+                    "UPDATE sessions SET status='ended', ended_at=?1, error_reason='pid_update_failed' WHERE id=?2",
+                )
+                .bind(Utc::now().to_rfc3339())
+                .bind(session_id.get())
+                .execute(state.db.pool())
+                .await;
+                return Err(e.into());
+            }
         }
 
-        // Start supervisor tasks.
-        let _task_handles = supervisor::spawn_session_tasks(actor, state);
+        // Install the handle BEFORE starting supervisor tasks so the reaper
+        // cannot race ahead and find nothing in the map if the child exits fast
+        // (H1: stale LiveSessionHandle race fix).
+        state
+            .live_sessions
+            .write()
+            .await
+            .insert(session_id, handle.clone());
 
-        // Emit session:spawned.
-        let _ = state
-            .event_bus
-            .send(SessionEventEnvelope::Spawned { session_id });
-
+        // Build the session struct before starting tasks so we can emit it.
         let session = Session {
             id: session_id,
             project_id,
@@ -186,6 +224,14 @@ impl SessionService {
             exit_code: None,
             error_reason: None,
         };
+
+        // Start supervisor tasks.
+        let _task_handles = supervisor::spawn_session_tasks(actor, state);
+
+        // Emit session:spawned with the full session record.
+        let _ = state.event_bus.send(SessionEventEnvelope::Spawned {
+            session: session.clone(),
+        });
 
         info!(%session_id, %project_id, ?pid, "session spawned locally (workbench-owned)");
         Ok((session, handle))
@@ -254,12 +300,27 @@ impl SessionService {
     }
 
     /// Update session status and source.
+    ///
+    /// When the new status is `NeedsInput`, an alert row is inserted (H6).
+    /// When transitioning *away* from `NeedsInput`, open alerts are cleared (H7).
     pub async fn set_status(
         db: &Database,
         session_id: SessionId,
         status: SessionStatus,
         source: StatusSource,
+        reason: Option<&str>,
     ) -> WorkbenchResult<()> {
+        // Fetch old status and project_id so we can manage alerts.
+        let row = sqlx::query("SELECT status, project_id FROM sessions WHERE id = ?1")
+            .bind(session_id.get())
+            .fetch_optional(db.pool())
+            .await?;
+
+        let row = require_found(row, format!("session {session_id}"))?;
+        let old_status_str: String = row.try_get("status")?;
+        let project_id: i64 = row.try_get("project_id")?;
+        let old_status: SessionStatus = old_status_str.parse().map_err(WorkbenchError::internal)?;
+
         let result = sqlx::query(
             r#"
             UPDATE sessions
@@ -278,10 +339,47 @@ impl SessionService {
             return Err(WorkbenchError::not_found(format!("session {session_id}")));
         }
 
+        // H7: Clear open alerts when transitioning away from NeedsInput.
+        if old_status == SessionStatus::NeedsInput && status != SessionStatus::NeedsInput {
+            let now = Utc::now().to_rfc3339();
+            sqlx::query(
+                r#"
+                UPDATE alerts SET acknowledged_at = ?1, cleared_by = 'session_resumed'
+                WHERE session_id = ?2 AND acknowledged_at IS NULL
+                "#,
+            )
+            .bind(&now)
+            .bind(session_id.get())
+            .execute(db.pool())
+            .await?;
+        }
+
+        // H6: Create an alert row when transitioning to NeedsInput.
+        if status == SessionStatus::NeedsInput {
+            let now = Utc::now().to_rfc3339();
+            sqlx::query(
+                r#"
+                INSERT INTO alerts (session_id, project_id, kind, reason, raised_at)
+                VALUES (?1, ?2, 'needs_input', ?3, ?4)
+                "#,
+            )
+            .bind(session_id.get())
+            .bind(project_id)
+            .bind(reason)
+            .bind(&now)
+            .execute(db.pool())
+            .await?;
+        }
+
         Ok(())
     }
 
     /// Mark a session as ended with optional exit code.
+    ///
+    /// H5: exit 0 (or None) → status 'ended'; exit != 0 → status 'error'.
+    /// H4: Idempotent — if the session is already ended/error the call is a
+    /// no-op success, avoiding the double-mark race between `handle_end_session`
+    /// and the reaper.
     pub async fn mark_ended(
         db: &Database,
         session_id: SessionId,
@@ -289,16 +387,25 @@ impl SessionService {
     ) -> WorkbenchResult<()> {
         let now = Utc::now().to_rfc3339();
 
+        // H5: Compute status based on exit code per data-model state diagram.
+        let status = match exit_code {
+            Some(0) | None => "ended",
+            Some(_) => "error",
+        };
+
+        // H4: Guard with `status NOT IN ('ended','error')` so a second call
+        // is a harmless no-op instead of a NOT_FOUND error.
         let result = sqlx::query(
             r#"
             UPDATE sessions
-            SET status = 'ended',
-                ended_at = ?1,
-                exit_code = ?2,
+            SET status = ?1,
+                ended_at = ?2,
+                exit_code = ?3,
                 pid = NULL
-            WHERE id = ?3
+            WHERE id = ?4 AND status NOT IN ('ended', 'error')
             "#,
         )
+        .bind(status)
         .bind(&now)
         .bind(exit_code.map(|c| c as i64))
         .bind(session_id.get())
@@ -306,10 +413,33 @@ impl SessionService {
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(WorkbenchError::not_found(format!("session {session_id}")));
+            // Could be already ended (idempotent) or genuinely missing.
+            // Check existence to distinguish.
+            let exists = sqlx::query("SELECT 1 FROM sessions WHERE id = ?1")
+                .bind(session_id.get())
+                .fetch_optional(db.pool())
+                .await?;
+            if exists.is_none() {
+                return Err(WorkbenchError::not_found(format!("session {session_id}")));
+            }
+            // Already ended — treat as success.
+            info!(%session_id, "mark_ended: already ended, idempotent no-op");
+            return Ok(());
         }
 
-        info!(%session_id, ?exit_code, "session marked ended");
+        // H7: Clear any open alerts for the ended session.
+        sqlx::query(
+            r#"
+            UPDATE alerts SET acknowledged_at = ?1, cleared_by = 'session_ended'
+            WHERE session_id = ?2 AND acknowledged_at IS NULL
+            "#,
+        )
+        .bind(&now)
+        .bind(session_id.get())
+        .execute(db.pool())
+        .await?;
+
+        info!(%session_id, ?exit_code, %status, "session marked ended");
         Ok(())
     }
 
@@ -370,7 +500,7 @@ impl SessionService {
 // ---- Row parsing helpers ----
 
 /// Parse a `Session` from a sqlx row (works for both direct queries and JOINs).
-fn parse_session_row(row: &sqlx::sqlite::SqliteRow) -> WorkbenchResult<Session> {
+pub(crate) fn parse_session_row(row: &sqlx::sqlite::SqliteRow) -> WorkbenchResult<Session> {
     let id: i64 = row.try_get("id")?;
     let project_id: i64 = row.try_get("project_id")?;
     let label: String = row.try_get("label")?;

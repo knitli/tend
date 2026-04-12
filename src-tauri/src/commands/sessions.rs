@@ -87,11 +87,10 @@ pub async fn session_spawn(
 
     let label = args.label.unwrap_or_else(|| "session".to_string());
 
-    let (session, handle) =
+    // spawn_local inserts the handle into live_sessions before starting
+    // supervisor tasks, so no separate insert is needed here.
+    let (session, _handle) =
         SessionService::spawn_local(&state, project_id, &label, &cwd, &args.command, &env).await?;
-
-    // Install the handle in the live sessions map.
-    state.live_sessions.write().await.insert(session.id, handle);
 
     Ok(serde_json::json!({ "session": session }))
 }

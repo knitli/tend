@@ -10,6 +10,11 @@ import {
   type SessionSummary,
   type SessionStatus,
 } from '$lib/api/sessions';
+import {
+  listen,
+  type AlertRaisedEvent,
+  type AlertClearedEvent,
+} from '$lib/api/events';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 
 export interface SessionOutputHandler {
@@ -158,6 +163,9 @@ function createSessionsStore() {
           started_at: new Date().toISOString(),
           ended_at: null,
           last_activity_at: new Date().toISOString(),
+          last_heartbeat_at: null,
+          exit_code: null,
+          error_reason: null,
           metadata: {},
           working_directory: '',
           activity_summary: null,
@@ -186,7 +194,22 @@ function createSessionsStore() {
         }
       });
 
-      unlisteners = [spawned, ended, output];
+      const alertRaised = await listen('alert:raised', (payload: AlertRaisedEvent) => {
+        const alert = payload.alert;
+        this.update(alert.session_id, { alert });
+      });
+
+      const alertCleared = await listen('alert:cleared', (payload: AlertClearedEvent) => {
+        // Find the session that owns this alert and clear it
+        for (const session of sessions) {
+          if (session.alert?.id === payload.alert_id) {
+            this.update(session.id, { alert: null });
+            break;
+          }
+        }
+      });
+
+      unlisteners = [spawned, ended, output, alertRaised, alertCleared];
 
       return () => {
         for (const unlisten of unlisteners) {

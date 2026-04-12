@@ -50,13 +50,19 @@ impl ProjectWatcher {
         let pid = project_id;
         let watched_path = path.to_path_buf();
 
+        let wp = watched_path.clone();
         let mut watcher = notify::recommended_watcher(move |res: Result<Event, _>| match res {
-            Ok(event) => {
-                if matches!(event.kind, EventKind::Remove(_)) {
+            Ok(event) => match event.kind {
+                EventKind::Remove(_) => {
                     let _ = event_bus
                         .send(SessionEventEnvelope::ProjectPathMissing { project_id: pid });
                 }
-            }
+                EventKind::Create(_) if wp.exists() => {
+                    let _ = event_bus
+                        .send(SessionEventEnvelope::ProjectPathRestored { project_id: pid });
+                }
+                _ => {}
+            },
             Err(e) => {
                 warn!("filesystem watch error for project {pid}: {e}");
             }

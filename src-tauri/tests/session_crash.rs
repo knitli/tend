@@ -170,8 +170,8 @@ async fn session_killed_child_marks_ended_with_signal() {
                         .expect("query session status");
 
                 assert_eq!(
-                    row.0, "ended",
-                    "session status must transition to 'ended' after child exit"
+                    row.0, "error",
+                    "non-zero exit must set status to 'error' (H5 fix)"
                 );
                 assert_eq!(row.1, Some(1), "exit_code must be 1 for /bin/false");
             }

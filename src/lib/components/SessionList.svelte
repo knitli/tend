@@ -15,18 +15,13 @@
 
   let filterText = $state('');
   let debouncedFilter = $state('');
-  let debounceTimer = $state<ReturnType<typeof setTimeout> | undefined>(undefined);
   let showEnded = $state(false);
 
   // Debounce filter input at 150ms
   $effect(() => {
     const value = filterText;
-    if (debounceTimer !== undefined) {
-      clearTimeout(debounceTimer);
-    }
-    debounceTimer = setTimeout(() => {
-      debouncedFilter = value;
-    }, 150);
+    const timer = setTimeout(() => { debouncedFilter = value; }, 150);
+    return () => clearTimeout(timer);
   });
 
   /** Sessions filtered by project selection, text filter, and ended toggle. */

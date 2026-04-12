@@ -10,14 +10,15 @@
   import type { SessionSummary } from '$lib/api/sessions';
 
   let selectedProjectId = $state<number | null>(null);
-  let activeSession = $state<SessionSummary | null>(null);
+  let activeSessionId = $state<number | null>(null);
+  const activeSession = $derived(activeSessionId !== null ? sessionsStore.byId(activeSessionId) ?? null : null);
 
   function handleSelectProject(project: Project): void {
     selectedProjectId = project.id;
   }
 
   function handleActivateSession(session: SessionSummary): void {
-    activeSession = session;
+    activeSessionId = session.id;
   }
 
   onMount(() => {

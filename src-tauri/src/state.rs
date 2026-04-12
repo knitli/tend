@@ -1,7 +1,7 @@
 //! Shared backend state wired into Tauri via `.manage(state)`.
 
 use crate::db::Database;
-use crate::model::{Alert, AlertClearedBy, AlertId, ProjectId, SessionId};
+use crate::model::{Alert, AlertClearedBy, AlertId, ProjectId, Session, SessionId};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
@@ -14,8 +14,8 @@ pub use crate::session::live::LiveSessionHandle;
 pub enum SessionEventEnvelope {
     /// A session was freshly spawned or reattached after crash recovery.
     Spawned {
-        /// Target session id.
-        session_id: SessionId,
+        /// The full session record (contract: `{ session: Session }`).
+        session: Session,
     },
     /// A session's child process exited.
     Ended {

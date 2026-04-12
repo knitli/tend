@@ -2,6 +2,7 @@
      Displays project name, label, status badge, ownership indicator,
      and dispatches a click event for session activation. -->
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import type { SessionSummary } from '$lib/api/sessions';
 
   interface Props {
@@ -11,6 +12,10 @@
   }
 
   let { session, projectName = '', onActivate }: Props = $props();
+
+  let tick = $state(Date.now());
+  const tickInterval = setInterval(() => { tick = Date.now(); }, 30_000);
+  onDestroy(() => clearInterval(tickInterval));
 
   const isInteractive = $derived(
     session.ownership === 'workbench' && !session.reattached_mirror,
@@ -36,8 +41,9 @@
   const statusClass = $derived(`status-${session.status.replace('_', '-')}`);
 
   const relativeTime = $derived.by(() => {
-    const now = Date.now();
+    const now = tick;
     const then = new Date(session.last_activity_at).getTime();
+    if (Number.isNaN(then)) return 'unknown';
     const diffMs = now - then;
     const diffSec = Math.floor(diffMs / 1000);
 

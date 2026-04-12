@@ -3,6 +3,7 @@
 //! T053: a tokio task that subscribes to the broadcast bus and forwards each
 //! envelope as a Tauri event so the Svelte frontend can receive typed payloads.
 
+use crate::model::Session;
 use crate::state::{SessionEventEnvelope, WorkbenchState};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -31,13 +32,8 @@ pub fn spawn_event_bridge(app: AppHandle, state: &WorkbenchState) {
 
 fn emit_envelope(app: &AppHandle, envelope: SessionEventEnvelope) {
     match envelope {
-        SessionEventEnvelope::Spawned { session_id } => {
-            let _ = app.emit(
-                "session:spawned",
-                SessionSpawnedPayload {
-                    session_id: session_id.get(),
-                },
-            );
+        SessionEventEnvelope::Spawned { session } => {
+            let _ = app.emit("session:spawned", SessionSpawnedPayload { session });
         }
         SessionEventEnvelope::Ended { session_id, code } => {
             let _ = app.emit(
@@ -49,11 +45,13 @@ fn emit_envelope(app: &AppHandle, envelope: SessionEventEnvelope) {
             );
         }
         SessionEventEnvelope::Output { session_id, bytes } => {
+            use base64::Engine;
+            let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
             let _ = app.emit(
                 "session:event",
                 SessionEventPayload {
                     session_id: session_id.get(),
-                    bytes,
+                    bytes: encoded,
                 },
             );
         }
@@ -65,7 +63,7 @@ fn emit_envelope(app: &AppHandle, envelope: SessionEventEnvelope) {
                 "alert:cleared",
                 AlertClearedPayload {
                     alert_id: alert_id.get(),
-                    by: format!("{by:?}"),
+                    by: by.as_str().to_owned(),
                 },
             );
         }
@@ -90,7 +88,7 @@ fn emit_envelope(app: &AppHandle, envelope: SessionEventEnvelope) {
 
 #[derive(Clone, Serialize)]
 struct SessionSpawnedPayload {
-    session_id: i64,
+    session: Session,
 }
 
 #[derive(Clone, Serialize)]
@@ -102,7 +100,8 @@ struct SessionEndedPayload {
 #[derive(Clone, Serialize)]
 struct SessionEventPayload {
     session_id: i64,
-    bytes: Vec<u8>,
+    /// Base64-encoded PTY output bytes.
+    bytes: String,
 }
 
 #[derive(Clone, Serialize)]

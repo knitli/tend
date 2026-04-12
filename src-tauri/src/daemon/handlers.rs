@@ -131,11 +131,11 @@ async fn handle_register_session(
     let handle = crate::session::live::LiveSessionHandle::attached_mirror(session.id);
     state.live_sessions.write().await.insert(session.id, handle);
 
-    // Broadcast session:spawned event.
+    // Broadcast session:spawned event with full session record.
     let _ = state
         .event_bus
         .send(crate::state::SessionEventEnvelope::Spawned {
-            session_id: session.id,
+            session: session.clone(),
         });
 
     info!(
@@ -156,9 +156,11 @@ async fn handle_update_status(
     state: &WorkbenchState,
     session_id: i64,
     status: SessionStatusWire,
-    _reason: Option<String>,
-    _summary: Option<String>,
+    reason: Option<String>,
+    summary: Option<String>, // US4 — unused in v1, reserved for activity-summary feature.
 ) -> Response {
+    let _ = &summary; // Suppress unused warning without discarding the value.
+
     let sid = SessionId::new(session_id);
 
     let new_status = match status {
@@ -167,7 +169,15 @@ async fn handle_update_status(
         SessionStatusWire::NeedsInput => SessionStatus::NeedsInput,
     };
 
-    match SessionService::set_status(&state.db, sid, new_status, StatusSource::Ipc).await {
+    match SessionService::set_status(
+        &state.db,
+        sid,
+        new_status,
+        StatusSource::Ipc,
+        reason.as_deref(),
+    )
+    .await
+    {
         Ok(_) => Response::Ack,
         Err(e) => Response::from(e),
     }

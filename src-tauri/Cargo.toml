@@ -50,6 +50,9 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
+# Encoding
+base64 = { workspace = true }
+
 # Time + paths
 chrono = { workspace = true }
 dirs = { workspace = true }

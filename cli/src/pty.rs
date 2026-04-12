@@ -64,6 +64,22 @@ pub fn run_child(command: &[String], cwd: &Path) -> Result<PtyChild> {
     })
 }
 
+/// RAII guard that restores cooked terminal mode on drop (including panics).
+struct RawModeGuard;
+
+impl RawModeGuard {
+    fn enable() -> Result<Self> {
+        crossterm::terminal::enable_raw_mode().context("failed to enable raw mode")?;
+        Ok(Self)
+    }
+}
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        let _ = crossterm::terminal::disable_raw_mode();
+    }
+}
+
 /// Proxy I/O bidirectionally between `stdin`/`stdout` and the PTY master.
 ///
 /// Blocks until the child process exits. Returns the child exit code.
@@ -71,6 +87,10 @@ pub fn run_child(command: &[String], cwd: &Path) -> Result<PtyChild> {
 /// This function takes ownership of the `PtyChild` and puts the user's
 /// terminal into raw mode for the duration.
 pub fn spawn_proxy(mut pty_child: PtyChild) -> Result<i32> {
+    // H3: Enable raw mode so the child PTY receives every keystroke
+    // (including Ctrl+C) without the parent shell intercepting them.
+    let _raw_guard = RawModeGuard::enable()?;
+
     let master_reader = pty_child
         .master
         .try_clone_reader()
@@ -164,12 +184,8 @@ fn current_terminal_size() -> PtySize {
 }
 
 /// Convert a `portable_pty::ExitStatus` to an integer exit code.
+///
+/// M9: Return the actual exit code instead of collapsing everything to 0/1.
 fn exit_status_to_code(status: &portable_pty::ExitStatus) -> i32 {
-    if status.success() {
-        0
-    } else {
-        // ExitStatus doesn't expose the raw code on all platforms via
-        // portable-pty's public API. Default to 1 for failure.
-        1
-    }
+    status.exit_code() as i32
 }

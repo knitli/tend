@@ -30,6 +30,7 @@ pub fn default_socket_path() -> PathBuf {
     }
     let uid = {
         #[cfg(unix)]
+        // SAFETY: getuid(2) has no preconditions, takes no arguments, and cannot fail.
         unsafe {
             libc_getuid()
         }

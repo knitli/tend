@@ -23,6 +23,7 @@
 use crate::error::WorkbenchResult;
 use crate::model::SessionId;
 use crate::session::live::LiveSessionHandle;
+use crate::session::service::parse_session_row;
 use crate::state::{SessionEventEnvelope, WorkbenchState};
 use chrono::Utc;
 use sqlx::Row;
@@ -48,7 +49,9 @@ pub async fn reconcile_and_reattach(state: &WorkbenchState) -> WorkbenchResult<R
 
     let rows = sqlx::query(
         r#"
-        SELECT id, pid
+        SELECT id, project_id, label, pid, status, status_source, ownership,
+               started_at, ended_at, last_activity_at, last_heartbeat_at,
+               metadata_json, working_directory, exit_code, error_reason
         FROM sessions
         WHERE status IN ('working','idle','needs_input')
           AND ended_at IS NULL
@@ -81,11 +84,13 @@ pub async fn reconcile_and_reattach(state: &WorkbenchState) -> WorkbenchResult<R
             state.live_sessions.write().await.insert(session_id, handle);
             report.reattached.push(session_id);
 
-            // Broadcast session:spawned (T124 folded in). Ignored if no
-            // subscribers yet — the event bridge task attaches later in run().
+            // Broadcast session:spawned with full session (T124 folded in).
+            // Ignored if no subscribers yet — the event bridge task attaches
+            // later in run().
+            let session = parse_session_row(&row)?;
             let _ = state
                 .event_bus
-                .send(SessionEventEnvelope::Spawned { session_id });
+                .send(SessionEventEnvelope::Spawned { session });
             info!(%session_id, "reattached live session on workbench restart");
         } else {
             let now = Utc::now().to_rfc3339();
@@ -97,6 +102,18 @@ pub async fn reconcile_and_reattach(state: &WorkbenchState) -> WorkbenchResult<R
                     error_reason = 'workbench_restart',
                     pid = NULL
                 WHERE id = ?2
+                "#,
+            )
+            .bind(&now)
+            .bind(id)
+            .execute(state.db.pool())
+            .await?;
+
+            // M2: Clear any orphaned open alerts for the dead session.
+            sqlx::query(
+                r#"
+                UPDATE alerts SET acknowledged_at = ?1, cleared_by = 'session_ended'
+                WHERE session_id = ?2 AND acknowledged_at IS NULL
                 "#,
             )
             .bind(&now)

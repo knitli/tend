@@ -6,10 +6,12 @@
 use crate::error::{ErrorCode, WorkbenchError, WorkbenchResult};
 use crate::model::{SessionId, SessionStatus};
 use crate::session::pty::{OutputRx, Pty};
+use crate::session::status::StatusUpdate;
 use portable_pty::PtySize;
 use std::collections::BTreeMap;
 use std::path::Path;
-use tokio::sync::{broadcast, mpsc, watch};
+use std::sync::Arc;
+use tokio::sync::{broadcast, mpsc, watch, Mutex};
 
 /// Clone-able handle to a live session. Stored in `WorkbenchState::live_sessions`.
 #[derive(Clone, Debug)]
@@ -22,6 +24,9 @@ pub struct LiveSessionHandle {
     resize_tx: Option<mpsc::UnboundedSender<(u16, u16)>>,
     /// Kill signal — None for mirror sessions.
     kill_tx: Option<mpsc::UnboundedSender<()>>,
+    /// IPC status update sender — set after supervisor tasks start.
+    /// Used by daemon `update_status` to push cooperative status to the monitor.
+    ipc_status_tx: Arc<Mutex<Option<mpsc::UnboundedSender<StatusUpdate>>>>,
     /// Whether this handle has a real PTY backing it (false for mirrors).
     pub is_mirror: bool,
 }
@@ -39,6 +44,7 @@ impl LiveSessionHandle {
             writer_tx: Some(writer_tx),
             resize_tx: Some(resize_tx),
             kill_tx: Some(kill_tx),
+            ipc_status_tx: Arc::new(Mutex::new(None)),
             is_mirror: false,
         }
     }
@@ -50,7 +56,24 @@ impl LiveSessionHandle {
             writer_tx: None,
             resize_tx: None,
             kill_tx: None,
+            ipc_status_tx: Arc::new(Mutex::new(None)),
             is_mirror: true,
+        }
+    }
+
+    /// Install the IPC status sender. Called after supervisor tasks start.
+    pub async fn set_ipc_status_tx(&self, tx: mpsc::UnboundedSender<StatusUpdate>) {
+        *self.ipc_status_tx.lock().await = Some(tx);
+    }
+
+    /// Send a cooperative status update to the monitor task.
+    pub async fn send_ipc_status(&self, update: StatusUpdate) -> WorkbenchResult<()> {
+        let guard = self.ipc_status_tx.lock().await;
+        match &*guard {
+            Some(tx) => tx.send(update).map_err(|_| {
+                WorkbenchError::new(ErrorCode::SessionEnded, "IPC status channel closed")
+            }),
+            None => Ok(()), // Not yet wired or mirror session — silently ignore.
         }
     }
 

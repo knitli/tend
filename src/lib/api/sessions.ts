@@ -16,6 +16,14 @@ import type { UnlistenFn } from '@tauri-apps/api/event';
 export type SessionStatus = 'working' | 'idle' | 'needs_input' | 'ended' | 'error';
 export type SessionOwnership = 'workbench' | 'wrapper';
 
+export interface SessionMetadata {
+  readonly task_title?: string;
+  readonly branch?: string;
+  readonly model?: string;
+  readonly command?: string[];
+  readonly [key: string]: unknown;
+}
+
 export interface Alert {
   readonly id: number;
   readonly session_id: number;
@@ -38,7 +46,10 @@ export interface Session {
   readonly started_at: string;
   readonly ended_at: string | null;
   readonly last_activity_at: string;
-  readonly metadata: Record<string, unknown>;
+  readonly last_heartbeat_at: string | null;
+  readonly exit_code: number | null;
+  readonly error_reason: string | null;
+  readonly metadata: SessionMetadata;
   readonly working_directory: string;
 }
 
@@ -57,7 +68,10 @@ export interface SessionSummary {
   readonly started_at: string;
   readonly ended_at: string | null;
   readonly last_activity_at: string;
-  readonly metadata: Record<string, unknown>;
+  readonly last_heartbeat_at: string | null;
+  readonly exit_code: number | null;
+  readonly error_reason: string | null;
+  readonly metadata: SessionMetadata;
   readonly working_directory: string;
   readonly activity_summary: string | null;
   readonly alert: Alert | null;
@@ -73,8 +87,7 @@ export async function sessionList(
   opts?: { projectId?: number; includeEnded?: boolean },
 ): Promise<{ sessions: SessionSummary[] }> {
   return invoke<{ sessions: SessionSummary[] }>('session_list', {
-    project_id: opts?.projectId,
-    include_ended: opts?.includeEnded ?? false,
+    args: { project_id: opts?.projectId, include_ended: opts?.includeEnded ?? false },
   });
 }
 
@@ -91,11 +104,13 @@ export async function sessionSpawn(
   },
 ): Promise<{ session: Session }> {
   return invoke<{ session: Session }>('session_spawn', {
-    project_id: opts.projectId,
-    label: opts.label,
-    command: opts.command,
-    working_directory: opts.workingDirectory,
-    env: opts.env,
+    args: {
+      project_id: opts.projectId,
+      label: opts.label,
+      command: opts.command,
+      working_directory: opts.workingDirectory,
+      env: opts.env,
+    },
   });
 }
 
@@ -106,8 +121,7 @@ export async function sessionSendInput(
   opts: { sessionId: number; bytes: string },
 ): Promise<void> {
   await invoke<Record<string, never>>('session_send_input', {
-    session_id: opts.sessionId,
-    bytes: opts.bytes,
+    args: { session_id: opts.sessionId, bytes: opts.bytes },
   });
 }
 
@@ -118,9 +132,7 @@ export async function sessionResize(
   opts: { sessionId: number; cols: number; rows: number },
 ): Promise<void> {
   await invoke<Record<string, never>>('session_resize', {
-    session_id: opts.sessionId,
-    cols: opts.cols,
-    rows: opts.rows,
+    args: { session_id: opts.sessionId, cols: opts.cols, rows: opts.rows },
   });
 }
 
@@ -131,8 +143,7 @@ export async function sessionEnd(
   opts: { sessionId: number; signal?: 'TERM' | 'KILL' },
 ): Promise<{ session: Session }> {
   return invoke<{ session: Session }>('session_end', {
-    session_id: opts.sessionId,
-    signal: opts.signal,
+    args: { session_id: opts.sessionId, signal: opts.signal },
   });
 }
 
@@ -143,8 +154,7 @@ export async function sessionAcknowledgeAlert(
   opts: { sessionId: number; alertId: number },
 ): Promise<void> {
   await invoke<Record<string, never>>('session_acknowledge_alert', {
-    session_id: opts.sessionId,
-    alert_id: opts.alertId,
+    args: { session_id: opts.sessionId, alert_id: opts.alertId },
   });
 }
 

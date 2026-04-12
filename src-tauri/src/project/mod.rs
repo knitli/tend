@@ -207,6 +207,19 @@ impl ProjectService {
         .execute(db.pool())
         .await?;
 
+        // M3: Clear open alerts for all sessions belonging to this project.
+        sqlx::query(
+            r#"
+            UPDATE alerts SET acknowledged_at = ?1, cleared_by = 'session_ended'
+            WHERE session_id IN (SELECT id FROM sessions WHERE project_id = ?2)
+              AND acknowledged_at IS NULL
+            "#,
+        )
+        .bind(&now)
+        .bind(id.get())
+        .execute(db.pool())
+        .await?;
+
         sqlx::query("UPDATE projects SET archived_at = ?1 WHERE id = ?2")
             .bind(&now)
             .bind(id.get())
