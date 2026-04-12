@@ -147,17 +147,6 @@ export async function sessionEnd(
   });
 }
 
-/**
- * Acknowledge (clear) a needs_input alert manually.
- */
-export async function sessionAcknowledgeAlert(
-  opts: { sessionId: number; alertId: number },
-): Promise<void> {
-  await invoke<Record<string, never>>('session_acknowledge_alert', {
-    args: { session_id: opts.sessionId, alert_id: opts.alertId },
-  });
-}
-
 // ---------- Event subscribers ----------
 
 /**

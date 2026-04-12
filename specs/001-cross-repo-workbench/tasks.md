@@ -173,37 +173,37 @@
 
 ### Contract + integration tests (write FIRST)
 
-- [ ] T066 [P] [US2] Contract test `session_acknowledge_alert` + `alert:cleared` event in `src-tauri/tests/contract/alerts.rs`
-- [ ] T067 [P] [US2] Contract test `notification_preference_get` + `notification_preference_set` (global default + per-project override) in `src-tauri/tests/contract/notification_preferences.rs`
+- [X] T066 [P] [US2] Contract test `session_acknowledge_alert` + `alert:cleared` event in `src-tauri/tests/contract/alerts.rs`
+- [X] T067 [P] [US2] Contract test `notification_preference_get` + `notification_preference_set` (global default + per-project override) in `src-tauri/tests/contract/notification_preferences.rs`
 - ~~T068~~ **DROPPED** — `emit_alert` was removed from the v1 daemon IPC surface (see spec-panel round 2, Medium #3). The happy path it would have tested (a session transitioning into `needs_input` via the socket) is fully covered by `update_status` in T038 plus the alert-raise/clear coverage in T066 and T070. Adding back `emit_alert` later will require both a contract test and a `protocol_version` bump — do not revive this task as-is.
-- [ ] T069 [P] [US2] Integration test: PTY session that writes a known prompt pattern is flagged `needs_input` within 2 s by the heuristic monitor in `src-tauri/tests/integration/needs_input_heuristic.rs`
-- [ ] T070 [P] [US2] Integration test: `update_status(Working)` after `NeedsInput` automatically clears the alert and emits `alert:cleared { by: "session_resumed" }` in `src-tauri/tests/integration/alert_autoclear.rs`
-- [ ] T071 [P] [US2] Integration test: quiet-hours policy suppresses OS notification but still emits in-app `alert:raised` event in `src-tauri/tests/integration/quiet_hours.rs`
+- [X] T069 [P] [US2] Integration test: PTY session that writes a known prompt pattern is flagged `needs_input` within 2 s by the heuristic monitor in `src-tauri/tests/integration/needs_input_heuristic.rs`
+- [X] T070 [P] [US2] Integration test: `update_status(Working)` after `NeedsInput` automatically clears the alert and emits `alert:cleared { by: "session_resumed" }` in `src-tauri/tests/integration/alert_autoclear.rs`
+- [X] T071 [P] [US2] Integration test: quiet-hours policy suppresses OS notification but still emits in-app `alert:raised` event in `src-tauri/tests/integration/quiet_hours.rs`
 
 ### Backend: alert service + heuristic status
 
-- [ ] T072 [P] [US2] Create `src-tauri/src/notifications/alerts.rs` with `AlertService::raise(session_id, kind, reason) -> Alert`, `clear(alert_id, by)`, `list_open(session_id)`, deduping identical consecutive raises within a 2 s window
-- [ ] T073 [US2] Extend `src-tauri/src/session/status.rs` with heuristic prompt detection per the pruned pattern set in `research.md §7`: maintain a rolling last-256-byte buffer per session (ANSI-stripped), match against the **high-precision** set only — `\[y/N\]` / `\[Y/n\]` / `\[yes/no\]` / `\(yes/no\)` (case-insensitive), `password:` / `passphrase:` at end of last non-empty line, and the weak signal "last non-empty line ends in `?` or `:`, no trailing newline, ≥ 1 s of no output before AND after." **Explicitly do NOT** match bare `> ` at EOL or standalone `continue?` — these caused unacceptable false positives on diff and log output. Cooperative-IPC monotonicity: once a session has ever emitted an `update_status` from the daemon socket, the heuristic is muted for the remainder of the session's lifetime (stored as a `cooperative_seen: bool` on `LiveSession`). On a match, flip status to `NeedsInput` with `StatusSource::Heuristic` and call `AlertService::raise`.
-- [ ] T073b [US2] Create `tests/fixtures/ptyoutput/` with an adversarial PTY-output corpus: `diff_with_y_N.txt` (a multi-KB unified diff whose context lines contain the literal `[y/N]`), `code_with_password_literal.txt` (a Python/Rust file containing `password:` as a string literal), `agent_narration_with_gt.txt` (agent-narrated plan text using `>` as a marker, with ANSI escapes), `readme_render.txt` (a long README rendered through `less -R` capture), `mixed_ansi_prompts.txt` (mix of real prompts and decoy text with ANSI coloring). Commit all fixtures to the repo. Create `src-tauri/tests/integration/heuristic_false_positives.rs` that feeds each fixture byte-by-byte into the heuristic monitor (as if it were PTY output over time) and asserts the total number of `needs_input` flips across a 100-session simulation (each session = 1 fixture, replayed) is **≤ 1**. This is the enforcement gate for SC-011. MUST be RED before T073 lands. Failure means the pattern set needs further pruning, not the test loosening.
+- [X] T072 [P] [US2] Create `src-tauri/src/notifications/alerts.rs` with `AlertService::raise(session_id, kind, reason) -> Alert`, `clear(alert_id, by)`, `list_open(session_id)`, deduping identical consecutive raises within a 2 s window
+- [X] T073 [US2] Extend `src-tauri/src/session/status.rs` with heuristic prompt detection per the pruned pattern set in `research.md §7`: maintain a rolling last-256-byte buffer per session (ANSI-stripped), match against the **high-precision** set only — `\[y/N\]` / `\[Y/n\]` / `\[yes/no\]` / `\(yes/no\)` (case-insensitive), `password:` / `passphrase:` at end of last non-empty line, and the weak signal "last non-empty line ends in `?` or `:`, no trailing newline, ≥ 1 s of no output before AND after." **Explicitly do NOT** match bare `> ` at EOL or standalone `continue?` — these caused unacceptable false positives on diff and log output. Cooperative-IPC monotonicity: once a session has ever emitted an `update_status` from the daemon socket, the heuristic is muted for the remainder of the session's lifetime (stored as a `cooperative_seen: bool` on `LiveSession`). On a match, flip status to `NeedsInput` with `StatusSource::Heuristic` and call `AlertService::raise`.
+- [X] T073b [US2] Create `tests/fixtures/ptyoutput/` with an adversarial PTY-output corpus: `diff_with_y_N.txt` (a multi-KB unified diff whose context lines contain the literal `[y/N]`), `code_with_password_literal.txt` (a Python/Rust file containing `password:` as a string literal), `agent_narration_with_gt.txt` (agent-narrated plan text using `>` as a marker, with ANSI escapes), `readme_render.txt` (a long README rendered through `less -R` capture), `mixed_ansi_prompts.txt` (mix of real prompts and decoy text with ANSI coloring). Commit all fixtures to the repo. Create `src-tauri/tests/integration/heuristic_false_positives.rs` that feeds each fixture byte-by-byte into the heuristic monitor (as if it were PTY output over time) and asserts the total number of `needs_input` flips across a 100-session simulation (each session = 1 fixture, replayed) is **≤ 1**. This is the enforcement gate for SC-011. MUST be RED before T073 lands. Failure means the pattern set needs further pruning, not the test loosening.
 
 ### Backend: notification preferences + Tauri plugin glue
 
-- [ ] T075 [P] [US2] Create `src-tauri/src/notifications/preferences.rs` with `PreferenceService::get(project_id?)` resolving per-project → global default, `set(project_id?, channels, quiet_hours)`, channel enum (`OsNotification`, `InAppOnly`, `Silent`), `QuietHours { start: NaiveTime, end: NaiveTime, tz: "local" }`
-- [ ] T076 [P] [US2] Create `src-tauri/src/notifications/mod.rs` with `dispatch_alert(alert, prefs)` that checks quiet hours, then calls `tauri_plugin_notification::Notification::new` for `OsNotification` channel
-- [ ] T077 [US2] Wire alert bus → `dispatch_alert` in the event bridge task (from T053) so raised alerts fire OS notifications
+- [X] T075 [P] [US2] Create `src-tauri/src/notifications/preferences.rs` with `PreferenceService::get(project_id?)` resolving per-project → global default, `set(project_id?, channels, quiet_hours)`, channel enum (`OsNotification`, `InAppOnly`, `Silent`), `QuietHours { start: NaiveTime, end: NaiveTime, tz: "local" }`
+- [X] T076 [P] [US2] Create `src-tauri/src/notifications/mod.rs` with `dispatch_alert(alert, prefs)` that checks quiet hours, then calls `tauri_plugin_notification::Notification::new` for `OsNotification` channel
+- [X] T077 [US2] Wire alert bus → `dispatch_alert` in the event bridge task (from T053) so raised alerts fire OS notifications
 
 ### Backend: commands + events
 
-- [ ] T078 [US2] Create `src-tauri/src/commands/notifications.rs` with `notification_preference_get`, `notification_preference_set`, and `session_acknowledge_alert` (calls `AlertService::clear(alert_id, "user")`); register in `lib.rs`
-- [ ] T079 [US2] Emit `alert:raised`, `alert:cleared` events via the bridge task
+- [X] T078 [US2] Create `src-tauri/src/commands/notifications.rs` with `notification_preference_get`, `notification_preference_set`, and `session_acknowledge_alert` (calls `AlertService::clear(alert_id, "user")`); register in `lib.rs`
+- [X] T079 [US2] Emit `alert:raised`, `alert:cleared` events via the bridge task
 
 ### Frontend
 
-- [ ] T080 [P] [US2] Create `src/lib/api/notifications.ts` wrappers + event subscribers `onAlertRaised`, `onAlertCleared`
-- [ ] T081 [P] [US2] Extend `sessions.svelte.ts` store with `alerts: Map<SessionId, Alert>` keyed by session, `$derived` count of open alerts; reacts to alert events
-- [ ] T082 [P] [US2] Create `src/lib/components/AlertBar.svelte` pinned above the session list, showing all open alerts with project + session label + reason + "acknowledge" button, click → `sessionAcknowledgeAlert`
-- [ ] T083 [P] [US2] Create `src/lib/components/SettingsDialog.svelte` with notification preferences form (channel select, quiet hours start/end); wire to `notification_preference_get`/`set`
-- [ ] T084 [US2] Update `SessionRow.svelte` to show a `needs_input` badge with pulsing style when the session has an open alert
+- [X] T080 [P] [US2] Create `src/lib/api/notifications.ts` wrappers + event subscribers `onAlertRaised`, `onAlertCleared`
+- [X] T081 [P] [US2] Extend `sessions.svelte.ts` store with `alerts: Map<SessionId, Alert>` keyed by session, `$derived` count of open alerts; reacts to alert events
+- [X] T082 [P] [US2] Create `src/lib/components/AlertBar.svelte` pinned above the session list, showing all open alerts with project + session label + reason + "acknowledge" button, click → `sessionAcknowledgeAlert`
+- [X] T083 [P] [US2] Create `src/lib/components/SettingsDialog.svelte` with notification preferences form (channel select, quiet hours start/end); wire to `notification_preference_get`/`set`
+- [X] T084 [US2] Update `SessionRow.svelte` to show a `needs_input` badge with pulsing style when the session has an open alert
 
 **Checkpoint**: Running a session that prompts for input triggers an alert bar entry and an OS notification; responding clears it.
 

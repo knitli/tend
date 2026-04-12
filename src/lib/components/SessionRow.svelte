@@ -91,7 +91,7 @@
   <div class="session-meta">
     <span class="badge {statusClass}">{statusLabel}</span>
     {#if session.alert}
-      <span class="badge badge-alert" title={session.alert.reason ?? 'Alert'}>!</span>
+      <span class="badge badge-alert badge-pulse" title={session.alert.reason ?? 'Needs input'} aria-label="Needs input">!</span>
     {/if}
     <span class="session-time">{relativeTime}</span>
   </div>
@@ -206,5 +206,14 @@
     font-size: 0.625rem;
     text-transform: uppercase;
     letter-spacing: 0.03em;
+  }
+
+  .badge-pulse {
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
   }
 </style>

@@ -20,6 +20,15 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tracing::info;
 
+/// Result of a status change, carrying alert side-effects for event emission.
+#[derive(Debug, Default)]
+pub struct StatusChangeResult {
+    /// If the status change raised a new alert.
+    pub raised_alert: Option<Alert>,
+    /// If the status change cleared alerts (transition away from NeedsInput).
+    pub cleared_alert_ids: Vec<AlertId>,
+}
+
 /// Session service — stateless, operates on the shared DB + state.
 pub struct SessionService;
 
@@ -301,19 +310,28 @@ impl SessionService {
 
     /// Update session status and source.
     ///
-    /// When the new status is `NeedsInput`, an alert row is inserted (H6).
-    /// When transitioning *away* from `NeedsInput`, open alerts are cleared (H7).
+    /// When the new status is `NeedsInput`, an alert is raised via AlertService
+    /// (H6, coalescing duplicates). When transitioning *away* from `NeedsInput`,
+    /// open alerts are cleared via AlertService (H7).
+    ///
+    /// Returns a `StatusChangeResult` with alert info for event emission.
     pub async fn set_status(
         db: &Database,
         session_id: SessionId,
         status: SessionStatus,
         source: StatusSource,
         reason: Option<&str>,
-    ) -> WorkbenchResult<()> {
+    ) -> WorkbenchResult<StatusChangeResult> {
+        use crate::notifications::AlertService;
+
+        // Use a transaction to prevent TOCTOU races between the SELECT and
+        // UPDATE+alert side-effects. BEGIN IMMEDIATE serializes writers.
+        let mut tx = db.pool().begin().await?;
+
         // Fetch old status and project_id so we can manage alerts.
         let row = sqlx::query("SELECT status, project_id FROM sessions WHERE id = ?1")
             .bind(session_id.get())
-            .fetch_optional(db.pool())
+            .fetch_optional(&mut *tx)
             .await?;
 
         let row = require_found(row, format!("session {session_id}"))?;
@@ -332,46 +350,41 @@ impl SessionService {
         .bind(status.as_str())
         .bind(source.as_str())
         .bind(session_id.get())
-        .execute(db.pool())
+        .execute(&mut *tx)
         .await?;
 
         if result.rows_affected() == 0 {
             return Err(WorkbenchError::not_found(format!("session {session_id}")));
         }
 
+        tx.commit().await?;
+
+        let mut change = StatusChangeResult {
+            raised_alert: None,
+            cleared_alert_ids: Vec::new(),
+        };
+
         // H7: Clear open alerts when transitioning away from NeedsInput.
         if old_status == SessionStatus::NeedsInput && status != SessionStatus::NeedsInput {
-            let now = Utc::now().to_rfc3339();
-            sqlx::query(
-                r#"
-                UPDATE alerts SET acknowledged_at = ?1, cleared_by = 'session_resumed'
-                WHERE session_id = ?2 AND acknowledged_at IS NULL
-                "#,
-            )
-            .bind(&now)
-            .bind(session_id.get())
-            .execute(db.pool())
-            .await?;
+            change.cleared_alert_ids =
+                AlertService::clear_all_for_session(db, session_id, AlertClearedBy::SessionResumed)
+                    .await?;
         }
 
-        // H6: Create an alert row when transitioning to NeedsInput.
-        if status == SessionStatus::NeedsInput {
-            let now = Utc::now().to_rfc3339();
-            sqlx::query(
-                r#"
-                INSERT INTO alerts (session_id, project_id, kind, reason, raised_at)
-                VALUES (?1, ?2, 'needs_input', ?3, ?4)
-                "#,
+        // H6: Raise an alert only when transitioning INTO NeedsInput (not on re-entry).
+        if status == SessionStatus::NeedsInput && old_status != SessionStatus::NeedsInput {
+            let alert = AlertService::raise(
+                db,
+                session_id,
+                ProjectId::new(project_id),
+                AlertKind::NeedsInput,
+                reason,
             )
-            .bind(session_id.get())
-            .bind(project_id)
-            .bind(reason)
-            .bind(&now)
-            .execute(db.pool())
             .await?;
+            change.raised_alert = Some(alert);
         }
 
-        Ok(())
+        Ok(change)
     }
 
     /// Mark a session as ended with optional exit code.

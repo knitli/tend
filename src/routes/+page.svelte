@@ -4,6 +4,8 @@
   import { onMount } from 'svelte';
   import Sidebar from '$lib/components/Sidebar.svelte';
   import SessionList from '$lib/components/SessionList.svelte';
+  import AlertBar from '$lib/components/AlertBar.svelte';
+  import SettingsDialog from '$lib/components/SettingsDialog.svelte';
   import { projectsStore } from '$lib/stores/projects.svelte';
   import { sessionsStore } from '$lib/stores/sessions.svelte';
   import type { Project } from '$lib/api/projects';
@@ -11,6 +13,7 @@
 
   let selectedProjectId = $state<number | null>(null);
   let activeSessionId = $state<number | null>(null);
+  let settingsOpen = $state(false);
   const activeSession = $derived(activeSessionId !== null ? sessionsStore.byId(activeSessionId) ?? null : null);
 
   function handleSelectProject(project: Project): void {
@@ -55,6 +58,17 @@
 
   <main class="main-panel">
     <div class="session-panel">
+      <div class="session-panel-header">
+        <button
+          class="settings-btn"
+          onclick={() => settingsOpen = true}
+          title="Notification settings"
+          aria-label="Open notification settings"
+        >
+          Settings
+        </button>
+      </div>
+      <AlertBar onActivateSession={handleActivateSession} />
       <SessionList
         {selectedProjectId}
         onActivateSession={handleActivateSession}
@@ -92,6 +106,8 @@
   </main>
 </div>
 
+<SettingsDialog open={settingsOpen} onclose={() => settingsOpen = false} />
+
 <style>
   .app-layout {
     display: flex;
@@ -113,6 +129,30 @@
     min-width: 240px;
     border-right: 1px solid var(--color-border, #2a2d35);
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .session-panel-header {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0.375rem 0.5rem;
+    border-bottom: 1px solid var(--color-border, #2a2d35);
+  }
+
+  .settings-btn {
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--color-border, #2a2d35);
+    border-radius: 0.25rem;
+    background: transparent;
+    color: var(--color-text-muted, #8b8fa3);
+    cursor: pointer;
+    font-size: 0.75rem;
+  }
+
+  .settings-btn:hover {
+    background: var(--color-surface-hover, #1a1d25);
+    color: var(--color-text, #e6e8ef);
   }
 
   .content-panel {

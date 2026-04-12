@@ -2,7 +2,6 @@
 
 use agentui_protocol::{Request, Response, SessionStatusWire};
 use agentui_workbench::daemon::handlers::dispatch;
-use agentui_workbench::model::SessionId;
 
 /// Status enum validation: working, idle, and needs_input are all accepted.
 #[tokio::test]

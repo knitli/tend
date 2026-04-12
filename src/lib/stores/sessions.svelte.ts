@@ -53,10 +53,24 @@ function createSessionsStore() {
     return groups;
   });
 
-  /** Sessions that have an active alert. */
+  /** Sessions that have an active (open) alert. */
   const sessionsWithAlerts = $derived(
     sessions.filter((s) => s.alert !== null),
   );
+
+  /** Map of open alerts keyed by session id (T081). */
+  const alertsBySession = $derived.by(() => {
+    const map = new Map<number, SessionSummary['alert']>();
+    for (const s of sessions) {
+      if (s.alert) {
+        map.set(s.id, s.alert);
+      }
+    }
+    return map;
+  });
+
+  /** Total count of open alerts across all sessions (T081). */
+  const openAlertCount = $derived(sessionsWithAlerts.length);
 
   // Event unlisten handles for cleanup
   let unlisteners: UnlistenFn[] = [];
@@ -73,6 +87,12 @@ function createSessionsStore() {
     },
     get sessionsWithAlerts() {
       return sessionsWithAlerts;
+    },
+    get alertsBySession() {
+      return alertsBySession;
+    },
+    get openAlertCount() {
+      return openAlertCount;
     },
     get loading() {
       return loading;
@@ -200,10 +220,12 @@ function createSessionsStore() {
       });
 
       const alertCleared = await listen('alert:cleared', (payload: AlertClearedEvent) => {
-        // Find the session that owns this alert and clear it
-        for (const session of sessions) {
+        // Find the session that owns this alert and clear it.
+        // Read from sessionsMap directly (not the derived `sessions` array)
+        // to avoid a stale closure over the derived snapshot.
+        for (const [id, session] of sessionsMap) {
           if (session.alert?.id === payload.alert_id) {
-            this.update(session.id, { alert: null });
+            this.update(id, { alert: null });
             break;
           }
         }

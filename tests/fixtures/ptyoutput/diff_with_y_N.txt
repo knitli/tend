@@ -1,0 +1,77 @@
+diff --git a/config.yml b/config.yml
+index 3a1f2b4..8c7e9d1 100644
+--- a/config.yml
++++ b/config.yml
+@@ -1,8 +1,8 @@
+ # Application Configuration
+
+-# Overwrite existing? [y/N]
++# Overwrite existing config? [y/N]
+ overwrite: false
+-timeout: 30
++timeout: 60
+ retry_count: 3
+
+ # Connection settings
+@@ -10,7 +10,7 @@
+ database:
+   host: localhost
+   port: 5432
+-  name: myapp_dev
++  name: myapp_prod
+   pool_size: 10
+
+ # Feature flags
+@@ -22,12 +22,12 @@
+   # Enable experimental caching? [y/N]
+   experimental_cache: false
+
+-  # Continue with changes? [Y/n]
++  # Continue with migration changes? [Y/n]
+   auto_migrate: true
+
+-  # Apply pending updates? [y/N]
++  # Apply all pending schema updates? [y/N]
+   auto_update: false
+
+ logging:
+-  level: debug
++  level: info
+   format: json
+@@ -40,7 +40,7 @@
+   output: stdout
+   # Rotate logs? [Y/n]
+   rotate: true
+-  max_size: 100MB
++  max_size: 500MB
+   retention_days: 30
+
+ monitoring:
+@@ -50,9 +50,9 @@
+   metrics_port: 9090
+   health_check:
+     enabled: true
+-    interval: 30s
++    interval: 15s
+     # Skip health check confirmation? [y/N]
+-    skip_confirmation: false
++    skip_confirmation: true
+     timeout: 5s
+
+ # Deployment settings
+@@ -65,7 +65,7 @@
+   strategy: rolling
+   max_surge: 25%
+   max_unavailable: 0
+-  # Proceed with deployment? [y/N]
++  # Proceed with production deployment? [y/N]
+   auto_deploy: false
+
+ # Security
+@@ -78,5 +78,5 @@
+   cors:
+     enabled: true
+     origins:
+-      - http://localhost:3000
++      - https://app.example.com
+     methods: [GET, POST, PUT, DELETE]

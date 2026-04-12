@@ -11,6 +11,7 @@ pub mod daemon;
 pub mod db;
 pub mod error;
 pub mod model;
+pub mod notifications;
 pub mod project;
 pub mod session;
 pub mod state;
@@ -101,6 +102,9 @@ pub fn run() {
             commands::projects::project_unarchive,
             commands::sessions::session_list,
             commands::sessions::session_spawn,
+            commands::notifications::notification_preference_get,
+            commands::notifications::notification_preference_set,
+            commands::notifications::session_acknowledge_alert,
         ])
         .setup(move |app| {
             // T053: event bridge — forward state.event_bus → Tauri events.

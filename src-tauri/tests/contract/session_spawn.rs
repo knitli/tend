@@ -66,8 +66,8 @@ async fn spawn_local_happy_path() {
 #[tokio::test]
 async fn spawn_project_not_found() {
     let state = crate::common::mock_state().await;
-    let tmp = tempfile::tempdir().expect("create temp dir");
-    let env: BTreeMap<String, String> = BTreeMap::new();
+    let _tmp = tempfile::tempdir().expect("create temp dir");
+    let _env: BTreeMap<String, String> = BTreeMap::new();
 
     // Use a non-existent project id.
     let result = ProjectService::get_by_id(&state.db, ProjectId::new(999_999)).await;

@@ -3,6 +3,7 @@
 //! T053: a tokio task that subscribes to the broadcast bus and forwards each
 //! envelope as a Tauri event so the Svelte frontend can receive typed payloads.
 
+use crate::db::Database;
 use crate::model::Session;
 use crate::state::{SessionEventEnvelope, WorkbenchState};
 use serde::Serialize;
@@ -13,11 +14,12 @@ use tracing::{debug, warn};
 /// starts. The task runs for the lifetime of the app.
 pub fn spawn_event_bridge(app: AppHandle, state: &WorkbenchState) {
     let mut rx = state.event_bus.subscribe();
+    let db = state.db.clone();
 
     tokio::spawn(async move {
         loop {
             match rx.recv().await {
-                Ok(envelope) => emit_envelope(&app, envelope),
+                Ok(envelope) => emit_envelope(&app, &db, envelope).await,
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                     warn!("event bridge lagged by {n} messages");
                 }
@@ -30,7 +32,7 @@ pub fn spawn_event_bridge(app: AppHandle, state: &WorkbenchState) {
     });
 }
 
-fn emit_envelope(app: &AppHandle, envelope: SessionEventEnvelope) {
+async fn emit_envelope(app: &AppHandle, db: &Database, envelope: SessionEventEnvelope) {
     match envelope {
         SessionEventEnvelope::Spawned { session } => {
             let _ = app.emit("session:spawned", SessionSpawnedPayload { session });
@@ -55,8 +57,10 @@ fn emit_envelope(app: &AppHandle, envelope: SessionEventEnvelope) {
                 },
             );
         }
-        SessionEventEnvelope::AlertRaised { alert } => {
+        SessionEventEnvelope::AlertRaised { ref alert } => {
             let _ = app.emit("alert:raised", &alert);
+            // T077: dispatch OS notification for raised alerts.
+            crate::notifications::dispatch::dispatch_alert(db, app, alert).await;
         }
         SessionEventEnvelope::AlertCleared { alert_id, by } => {
             let _ = app.emit(

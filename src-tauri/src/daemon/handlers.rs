@@ -151,7 +151,10 @@ async fn handle_register_session(
     }
 }
 
-/// T052: UpdateStatus — validate status, update row, broadcast event.
+/// T052: UpdateStatus — validate status, update row, broadcast events.
+///
+/// Now emits alert:raised / alert:cleared events based on the status change
+/// result from SessionService (T072 integration).
 async fn handle_update_status(
     state: &WorkbenchState,
     session_id: i64,
@@ -178,7 +181,34 @@ async fn handle_update_status(
     )
     .await
     {
-        Ok(_) => Response::Ack,
+        Ok(change) => {
+            // Emit alert events based on the status change.
+            if let Some(alert) = change.raised_alert {
+                let _ = state
+                    .event_bus
+                    .send(crate::state::SessionEventEnvelope::AlertRaised { alert });
+            }
+            for alert_id in change.cleared_alert_ids {
+                let _ = state
+                    .event_bus
+                    .send(crate::state::SessionEventEnvelope::AlertCleared {
+                        alert_id,
+                        by: crate::model::AlertClearedBy::SessionResumed,
+                    });
+            }
+
+            // Push cooperative status update to the live session's monitor.
+            if let Some(handle) = state.live_sessions.read().await.get(&sid) {
+                let _ = handle
+                    .send_ipc_status(crate::session::status::StatusUpdate {
+                        status: new_status,
+                        reason: reason.clone(),
+                    })
+                    .await;
+            }
+
+            Response::Ack
+        }
         Err(e) => Response::from(e),
     }
 }

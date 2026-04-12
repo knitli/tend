@@ -7,7 +7,9 @@
 mod common;
 
 mod contract {
+    pub mod alerts;
     pub mod daemon;
+    pub mod notification_preferences;
     pub mod project_archive;
     pub mod project_list;
     pub mod project_register;

@@ -1,0 +1,31 @@
+[1mBuilding project...[0m
+Compiling agentui v0.1.0 (/home/user/agentui)
+Compiling agentui-protocol v0.1.0 (/home/user/agentui/protocol)
+[32mCompiling 42 crates...[0m
+Checking dependencies... [y/N] (from cached config)
+[32m   Compiling serde v1.0.210[0m
+[32m   Compiling tokio v1.40.0[0m
+[32m   Compiling sqlx v0.8.0[0m
+Resolving feature flags for target platform
+[33mwarning:[0m unused import `std::collections::HashMap`
+  --> src/main.rs:3:5
+[32mAll checks passed[0m
+Enter your password: (stored in keychain)
+[1m[32m    Finished[0m dev [unoptimized + debuginfo] target(s) in 23.4s
+[1m[32m     Running[0m `target/debug/agentui`
+Server listening on 127.0.0.1:9456
+[36mINFO[0m agentui::daemon: daemon socket bound path="/tmp/agentui.sock"
+[36mINFO[0m agentui::state: database opened path=":memory:"
+Detected existing session from previous run
+password: field missing from config, using default
+[33mWARN[0m agentui::session: stale session found id=42 status="working"
+Reconciling 3 sessions...
+Session 42: pid 12345 alive, reattaching
+Session 43: pid 12346 dead, marking ended
+Session 44: pid 12347 alive, reattaching
+[32mReconciliation complete[0m: 2 reattached, 1 ended
+[y/N] marker found in cached git config, ignoring
+Ready to accept connections.
+[36mINFO[0m agentui::daemon::handlers: client connected addr="@/tmp/agentui-client-1.sock"
+Processing register_session request...
+[32mSession registered[0m: id=45 project="my-project" ownership="wrapper"

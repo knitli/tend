@@ -5,7 +5,8 @@
 //!   2. **Exit watcher** — blocks on pty.wait(), sends exit code to oneshot.
 //!   3. **Writer** — reads input/resize/kill from handle channels, applies to PTY.
 //!      Also watches for child exit via a tokio oneshot from the exit watcher.
-//!   4. **Monitor** — runs `status::run()` for idle detection and IPC updates.
+//!   4. **Monitor** — runs `status::run()` for idle detection, IPC updates, and
+//!      heuristic prompt detection (T073).
 
 use crate::session::live::LiveSessionActor;
 use crate::session::status::{self, StatusUpdate};
@@ -37,6 +38,8 @@ pub fn spawn_session_tasks(actor: LiveSessionActor, state: &WorkbenchState) -> S
     // Channels for the status monitor.
     let (activity_tx, activity_rx) = mpsc::unbounded_channel::<()>();
     let (ipc_status_tx, ipc_status_rx) = mpsc::unbounded_channel::<StatusUpdate>();
+    // Channel for raw PTY output → heuristic detector (T073).
+    let (heuristic_tx, heuristic_rx) = mpsc::unbounded_channel::<Vec<u8>>();
 
     // Oneshot for the exit watcher to signal the writer thread.
     let (exit_tx, exit_rx) = oneshot::channel::<Option<i32>>();
@@ -49,17 +52,16 @@ pub fn spawn_session_tasks(actor: LiveSessionActor, state: &WorkbenchState) -> S
             let _ = reader_output_tx.send(chunk.clone());
             let _ = reader_event_bus.send(SessionEventEnvelope::Output {
                 session_id,
-                bytes: chunk,
+                bytes: chunk.clone(),
             });
             let _ = activity_tx.send(());
+            // Feed raw bytes to the heuristic detector.
+            let _ = heuristic_tx.send(chunk);
         }
         trace!(%session_id, "reader task: PTY output ended");
     });
 
     // ---- Exit watcher (blocking thread — calls pty.wait()) ----
-    // We need to split the PTY: the exit watcher owns pty.wait(), the writer
-    // thread owns pty.write_bytes/resize/kill. Since Pty has interior mutability
-    // (Arc<Mutex<…>>), we can share the same Pty across threads.
     let pty_for_writer = pty;
     let pty_for_exit = pty_for_writer.clone_for_wait();
     let exit_event_bus = event_bus;
@@ -123,9 +125,9 @@ pub fn spawn_session_tasks(actor: LiveSessionActor, state: &WorkbenchState) -> S
         trace!(%session_id, "writer thread exiting");
     });
 
-    // ---- Monitor task ----
+    // ---- Monitor task (T046 idle + T073 heuristic) ----
     tokio::spawn(async move {
-        status::run(status_tx, activity_rx, ipc_status_rx).await;
+        status::run(status_tx, activity_rx, ipc_status_rx, Some(heuristic_rx)).await;
     });
 
     SessionTaskHandles { ipc_status_tx }
