@@ -176,6 +176,33 @@ impl Pty {
         let status = c.wait().map_err(WorkbenchError::from)?;
         Ok(status.exit_code() as i32)
     }
+
+    /// Create a wait-only handle that can be sent to a separate thread.
+    /// The returned handle shares the child Arc so `wait()` on either blocks
+    /// until the child exits.
+    pub fn clone_for_wait(&self) -> PtyWaitHandle {
+        PtyWaitHandle {
+            child: Arc::clone(&self.child),
+        }
+    }
+}
+
+/// A handle that can only wait for the child to exit.
+/// Safe to send to a separate thread for exit detection.
+pub struct PtyWaitHandle {
+    child: Arc<Mutex<Box<dyn Child + Send + Sync>>>,
+}
+
+impl PtyWaitHandle {
+    /// Block until the child exits and return its exit code.
+    pub fn wait(&self) -> WorkbenchResult<i32> {
+        let mut c = self
+            .child
+            .lock()
+            .map_err(|_| WorkbenchError::new(ErrorCode::Internal, "pty child mutex poisoned"))?;
+        let status = c.wait().map_err(WorkbenchError::from)?;
+        Ok(status.exit_code() as i32)
+    }
 }
 
 impl std::fmt::Debug for Pty {

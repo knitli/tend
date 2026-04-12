@@ -1,6 +1,12 @@
-//! Session lifecycle. In Phase 2 we only have the PTY wrapper (T020) and
-//! the crash-recovery reconcile_and_reattach pass (T025). The actor, status
-//! monitor, service, and commands land in US1.
+//! Session lifecycle — PTY wrapper, live-session actor, status monitor,
+//! supervisor tasks, service layer, and crash-recovery reconciliation.
 
+pub mod live;
 pub mod pty;
+pub mod reaper;
 pub mod recovery;
+pub mod service;
+pub mod status;
+pub mod supervisor;
+
+pub use service::SessionService;

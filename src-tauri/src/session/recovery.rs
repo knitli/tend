@@ -22,7 +22,8 @@
 
 use crate::error::WorkbenchResult;
 use crate::model::SessionId;
-use crate::state::{LiveSessionHandle, SessionEventEnvelope, WorkbenchState};
+use crate::session::live::LiveSessionHandle;
+use crate::state::{SessionEventEnvelope, WorkbenchState};
 use chrono::Utc;
 use sqlx::Row;
 use sysinfo::{Pid, System};
@@ -76,7 +77,7 @@ pub async fn reconcile_and_reattach(state: &WorkbenchState) -> WorkbenchResult<R
             // Phase 2 (T017); real LiveSessionHandle lands in T045. The
             // contract here is that the handle exists in state.live_sessions
             // so `session_list` can return `reattached_mirror = true`.
-            let handle = LiveSessionHandle {};
+            let handle = LiveSessionHandle::attached_mirror(session_id);
             state.live_sessions.write().await.insert(session_id, handle);
             report.reattached.push(session_id);
 

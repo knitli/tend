@@ -1,0 +1,179 @@
+// T060: typed wrappers for session Tauri commands and event subscribers.
+// Mirrors the session surface from contracts/tauri-commands.md §2 and the
+// event map from events.ts.
+
+import { invoke } from './invoke';
+import {
+  listen,
+  type SessionSpawnedEvent,
+  type SessionEndedEvent,
+  type SessionOutputEvent,
+} from './events';
+import type { UnlistenFn } from '@tauri-apps/api/event';
+
+// ---------- Types ----------
+
+export type SessionStatus = 'working' | 'idle' | 'needs_input' | 'ended' | 'error';
+export type SessionOwnership = 'workbench' | 'wrapper';
+
+export interface Alert {
+  readonly id: number;
+  readonly session_id: number;
+  readonly project_id: number;
+  readonly reason?: string;
+  readonly raised_at: string;
+}
+
+/**
+ * Full session row as returned by session_spawn and session_end.
+ */
+export interface Session {
+  readonly id: number;
+  readonly project_id: number;
+  readonly label: string;
+  readonly pid: number | null;
+  readonly status: SessionStatus;
+  readonly status_source: 'ipc' | 'heuristic';
+  readonly ownership: SessionOwnership;
+  readonly started_at: string;
+  readonly ended_at: string | null;
+  readonly last_activity_at: string;
+  readonly metadata: Record<string, unknown>;
+  readonly working_directory: string;
+}
+
+/**
+ * Derived summary returned by session_list. Includes the session fields plus
+ * runtime-computed alert, activity_summary, and reattached_mirror flag.
+ */
+export interface SessionSummary {
+  readonly id: number;
+  readonly project_id: number;
+  readonly label: string;
+  readonly pid: number | null;
+  readonly status: SessionStatus;
+  readonly status_source: 'ipc' | 'heuristic';
+  readonly ownership: SessionOwnership;
+  readonly started_at: string;
+  readonly ended_at: string | null;
+  readonly last_activity_at: string;
+  readonly metadata: Record<string, unknown>;
+  readonly working_directory: string;
+  readonly activity_summary: string | null;
+  readonly alert: Alert | null;
+  readonly reattached_mirror: boolean;
+}
+
+// ---------- Commands ----------
+
+/**
+ * List sessions, optionally filtered by project and/or including ended ones.
+ */
+export async function sessionList(
+  opts?: { projectId?: number; includeEnded?: boolean },
+): Promise<{ sessions: SessionSummary[] }> {
+  return invoke<{ sessions: SessionSummary[] }>('session_list', {
+    project_id: opts?.projectId,
+    include_ended: opts?.includeEnded ?? false,
+  });
+}
+
+/**
+ * Spawn a new workbench-owned session under a PTY.
+ */
+export async function sessionSpawn(
+  opts: {
+    projectId: number;
+    command: string[];
+    label?: string;
+    workingDirectory?: string;
+    env?: Record<string, string>;
+  },
+): Promise<{ session: Session }> {
+  return invoke<{ session: Session }>('session_spawn', {
+    project_id: opts.projectId,
+    label: opts.label,
+    command: opts.command,
+    working_directory: opts.workingDirectory,
+    env: opts.env,
+  });
+}
+
+/**
+ * Send input bytes to a workbench-owned session's PTY stdin.
+ */
+export async function sessionSendInput(
+  opts: { sessionId: number; bytes: string },
+): Promise<void> {
+  await invoke<Record<string, never>>('session_send_input', {
+    session_id: opts.sessionId,
+    bytes: opts.bytes,
+  });
+}
+
+/**
+ * Resize a workbench-owned session's PTY.
+ */
+export async function sessionResize(
+  opts: { sessionId: number; cols: number; rows: number },
+): Promise<void> {
+  await invoke<Record<string, never>>('session_resize', {
+    session_id: opts.sessionId,
+    cols: opts.cols,
+    rows: opts.rows,
+  });
+}
+
+/**
+ * End a workbench-owned session by sending a signal to the child process.
+ */
+export async function sessionEnd(
+  opts: { sessionId: number; signal?: 'TERM' | 'KILL' },
+): Promise<{ session: Session }> {
+  return invoke<{ session: Session }>('session_end', {
+    session_id: opts.sessionId,
+    signal: opts.signal,
+  });
+}
+
+/**
+ * Acknowledge (clear) a needs_input alert manually.
+ */
+export async function sessionAcknowledgeAlert(
+  opts: { sessionId: number; alertId: number },
+): Promise<void> {
+  await invoke<Record<string, never>>('session_acknowledge_alert', {
+    session_id: opts.sessionId,
+    alert_id: opts.alertId,
+  });
+}
+
+// ---------- Event subscribers ----------
+
+/**
+ * Subscribe to new session spawn events.
+ * Returns an unlisten function; call it on component unmount.
+ */
+export function onSessionSpawned(
+  cb: (payload: SessionSpawnedEvent) => void,
+): Promise<UnlistenFn> {
+  return listen('session:spawned', cb);
+}
+
+/**
+ * Subscribe to session ended events.
+ */
+export function onSessionEnded(
+  cb: (payload: SessionEndedEvent) => void,
+): Promise<UnlistenFn> {
+  return listen('session:ended', cb);
+}
+
+/**
+ * Subscribe to session output (PTY bytes) events.
+ */
+export function onSessionOutput(
+  cb: (payload: SessionOutputEvent) => void,
+): Promise<UnlistenFn> {
+  return listen('session:event', cb);
+}

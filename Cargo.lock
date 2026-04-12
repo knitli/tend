@@ -16,10 +16,12 @@ dependencies = [
  "anyhow",
  "clap",
  "dirs 5.0.1",
+ "libc",
  "portable-pty",
  "serde",
  "serde_json",
  "tempfile",
+ "term_size",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -5047,6 +5049,16 @@ checksum = "c4790fc369d5a530f4b544b094e31388b9b3a37c0f4652ade4505945f5660d24"
 dependencies = [
  "new_debug_unreachable",
  "utf-8",
+]
+
+[[package]]
+name = "term_size"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e4129646ca0ed8f45d09b929036bafad5377103edd06e50bf574b353d2b08d9"
+dependencies = [
+ "libc",
+ "winapi",
 ]
 
 [[package]]

@@ -1,19 +1,17 @@
 //! Workbench backend library — `run()` bootstraps the Tauri app and all the
 //! backend services.
 //!
-//! T018 + T026: initialize `tracing_subscriber` with env-filter (`AGENTUI_LOG`),
-//! pretty output in dev builds and JSON in release builds, open the DB,
-//! construct `WorkbenchState`, run crash recovery (T025), bind the daemon
-//! socket (T022/T023), and hand control to Tauri with the notification plugin
-//! installed. US1 will grow the `tauri::generate_handler![]` list — for now
-//! the handler surface is empty.
+//! T018 + T026 + T044/T049/T053: initialize tracing, open DB, crash recovery,
+//! bind daemon, register Tauri commands, start event bridge.
 
 #![warn(missing_docs)]
 
+pub mod commands;
 pub mod daemon;
 pub mod db;
 pub mod error;
 pub mod model;
+pub mod project;
 pub mod session;
 pub mod state;
 
@@ -76,6 +74,9 @@ pub fn run() {
             daemon_handle.socket_path.display()
         );
 
+        // Session reaper — listens for child-exit events and updates the DB.
+        session::reaper::spawn_reaper(state.clone());
+
         Ok((state, daemon_handle))
     });
 
@@ -87,10 +88,25 @@ pub fn run() {
         }
     };
 
+    let state_clone = state.clone();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .manage(state)
-        .invoke_handler(tauri::generate_handler![])
+        .invoke_handler(tauri::generate_handler![
+            commands::projects::project_list,
+            commands::projects::project_register,
+            commands::projects::project_update,
+            commands::projects::project_archive,
+            commands::projects::project_unarchive,
+            commands::sessions::session_list,
+            commands::sessions::session_spawn,
+        ])
+        .setup(move |app| {
+            // T053: event bridge — forward state.event_bus → Tauri events.
+            commands::events::spawn_event_bridge(app.handle().clone(), &state_clone);
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
