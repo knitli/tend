@@ -1,7 +1,6 @@
 [package]
 name = "tend-cli"
 version = "0.1.0"
-authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 description = "tend run: CLI wrapper that registers external agent sessions with the workbench over IPC"

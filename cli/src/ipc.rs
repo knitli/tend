@@ -213,15 +213,17 @@ mod tests {
     #[test]
     fn resolve_socket_from_env() {
         // Temporarily set AGENTUI_SOCKET and verify it takes precedence.
+        // SAFETY: Test runs in a single thread (#[test] is not #[tokio::test]),
+        // so no concurrent env reads can race.
         let original = std::env::var("AGENTUI_SOCKET").ok();
-        std::env::set_var("AGENTUI_SOCKET", "/run/custom.sock");
+        unsafe { std::env::set_var("AGENTUI_SOCKET", "/run/custom.sock") };
         let path = resolve_socket_path().unwrap();
         assert_eq!(path, PathBuf::from("/run/custom.sock"));
 
         // Restore.
         match original {
-            Some(v) => std::env::set_var("AGENTUI_SOCKET", v),
-            None => std::env::remove_var("AGENTUI_SOCKET"),
+            Some(v) => unsafe { std::env::set_var("AGENTUI_SOCKET", v) },
+            None => unsafe { std::env::remove_var("AGENTUI_SOCKET") },
         }
     }
 }

@@ -10,7 +10,7 @@ description = "Tend is a local agent orchestration UI for human-in-the-loop auto
 readme = "README.md"
 homepage = "https://knitli.com"
 repository = "https://github.com/knitli/tend"
-license-file = "LICENSE"
+license = "MIT"
 
 [workspace.dependencies]
 anyhow = "1"

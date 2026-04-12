@@ -43,13 +43,15 @@ pub fn default_socket_path() -> PathBuf {
 }
 
 #[cfg(unix)]
-extern "C" {
+unsafe extern "C" {
     fn getuid() -> u32;
 }
 
 #[cfg(unix)]
 unsafe fn libc_getuid() -> u32 {
-    getuid()
+    // SAFETY: getuid() is a C FFI call with no preconditions — it always
+    // succeeds and has no undefined behavior.
+    unsafe { getuid() }
 }
 
 /// Handle returned by [`spawn_daemon`]. Holds the listener task so the caller
@@ -89,7 +91,9 @@ pub async fn spawn_daemon(
     // Export AGENTUI_SOCKET in our own env so child processes the workbench
     // spawns (e.g. T049's session_spawn) can find the socket without any
     // separate discovery dance.
-    std::env::set_var(SOCKET_ENV, &path);
+    // SAFETY: This runs once during daemon startup, before any multi-threaded
+    // work begins. No concurrent reads of SOCKET_ENV can race.
+    unsafe { std::env::set_var(SOCKET_ENV, &path) };
 
     info!("daemon listening at {}", path.display());
 
