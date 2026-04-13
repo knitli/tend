@@ -52,13 +52,13 @@ echo "Bumping $CURRENT → $NEW"
 # ---------------------------------------------------------------------------
 
 # Cargo.toml (workspace)
-sed -i "s/^version = \"$CURRENT\"/version = \"$NEW\"/" Cargo.toml
+perl -pi -e "s/^version = \"$CURRENT\"/version = \"$NEW\"/" Cargo.toml
 
 # src-tauri/tauri.conf.json
-sed -i "s/\"version\": \"$CURRENT\"/\"version\": \"$NEW\"/" src-tauri/tauri.conf.json
+perl -pi -e "s/\"version\": \"$CURRENT\"/\"version\": \"$NEW\"/" src-tauri/tauri.conf.json
 
 # package.json
-sed -i "s/\"version\": \"$CURRENT\"/\"version\": \"$NEW\"/" package.json
+perl -pi -e "s/\"version\": \"$CURRENT\"/\"version\": \"$NEW\"/" package.json
 
 # ---------------------------------------------------------------------------
 # Regenerate Cargo.lock to pick up workspace version change
@@ -78,7 +78,9 @@ fi
 # ---------------------------------------------------------------------------
 # Commit and tag
 # ---------------------------------------------------------------------------
-git add Cargo.toml Cargo.lock src-tauri/tauri.conf.json package.json CHANGELOG.md
+STAGE=(Cargo.toml Cargo.lock src-tauri/tauri.conf.json package.json)
+[ -f CHANGELOG.md ] && STAGE+=(CHANGELOG.md)
+git add "${STAGE[@]}"
 git commit -m "chore: release v${NEW}"
 git tag -a "v${NEW}" -m "v${NEW}"
 

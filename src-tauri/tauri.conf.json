@@ -16,7 +16,7 @@
   },
   "build": {
     "beforeBuildCommand": "cargo build --release -p tend-cli && cp target/release/tend target/release/tend-$(rustc -vV | sed -n 's/host: //p') && pnpm build",
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "cargo build --release -p tend-cli && cp target/release/tend target/release/tend-$(rustc -vV | sed -n 's/host: //p') && pnpm dev",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
