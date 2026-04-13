@@ -71,4 +71,4 @@ Each limitation is tracked as a post-v1 enhancement in [`research.md` section 16
 
 ## License
 
-Private. Not yet licensed for distribution.
+MIT OR Apache-2.0; you pick.
