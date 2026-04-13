@@ -62,13 +62,13 @@ jobs:
       - name: cargo deny
         run: cargo deny check bans
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v5
         with:
-          version: 9
+          version: 10.33.0
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -115,13 +115,13 @@ jobs:
       - name: cargo test
         run: cargo test --workspace
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
         with:
-          version: 9
+          version: 10.33.0
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -161,9 +161,9 @@ jobs:
             libjavascriptcoregtk-4.1-dev \
             patchelf
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
         with:
-          version: 10
+          version: 10.33.0
 
       - uses: actions/setup-node@v6
         with:
