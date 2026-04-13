@@ -15,17 +15,36 @@
     ]
   },
   "build": {
-    "beforeBuildCommand": "pnpm build",
-    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "cargo build --release -p tend-cli && cp target/release/tend target/release/tend-$(rustc -vV | sed -n 's/host: //p') && pnpm build",
+    "beforeDevCommand": "cargo build --release -p tend-cli && cp target/release/tend target/release/tend-$(rustc -vV | sed -n 's/host: //p') && pnpm dev",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
   "bundle": {
     "active": true,
+    "externalBin": [
+      "../target/release/tend"
+    ],
     "icon": [
       "icons/icon.png"
     ],
-    "targets": "all"
+    "linux": {
+      "deb": {
+        "section": "utils",
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libayatana-appindicator3-1"
+        ]
+      },
+      "rpm": {
+        "release": "1"
+      }
+    },
+    "targets": [
+      "deb",
+      "rpm",
+      "appimage"
+    ]
   },
   "identifier": "io.knitli.tend",
   "plugins": {

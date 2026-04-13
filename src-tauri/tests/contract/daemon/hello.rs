@@ -1,6 +1,6 @@
 //! T036: `hello` daemon IPC contract tests.
 
-use tend_protocol::{Request, Response, PROTOCOL_VERSION};
+use tend_protocol::{PROTOCOL_VERSION, Request, Response};
 use tend_workbench::daemon::handlers::dispatch;
 
 /// Happy path: Hello with correct protocol_version returns Welcome with

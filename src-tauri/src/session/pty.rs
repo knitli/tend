@@ -13,7 +13,7 @@
 //! sessions at once.
 
 use crate::error::{ErrorCode, WorkbenchError, WorkbenchResult};
-use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::path::Path;

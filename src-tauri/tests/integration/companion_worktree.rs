@@ -8,10 +8,10 @@
 //!    (The companion's `initial_cwd` is set at spawn time, but the shell's
 //!    internal cwd must be preserved through resize/reactivation.)
 
+use std::collections::BTreeMap;
 use tend_workbench::companion::CompanionService;
 use tend_workbench::project::ProjectService;
 use tend_workbench::session::SessionService;
-use std::collections::BTreeMap;
 
 /// Companion spawns in the session's working_directory (worktree), not the
 /// project root.

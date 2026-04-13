@@ -5,11 +5,11 @@
 //! the session-lifecycle boundary: ending a session must leave the scratchpad
 //! tables completely untouched.
 
+use sqlx::Row;
+use std::collections::BTreeMap;
 use tend_workbench::project::ProjectService;
 use tend_workbench::scratchpad::notes::NoteService;
 use tend_workbench::scratchpad::reminders::ReminderService;
-use sqlx::Row;
-use std::collections::BTreeMap;
 
 /// Ending a session must not delete or modify notes or reminders.
 #[tokio::test]

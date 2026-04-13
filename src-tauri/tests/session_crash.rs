@@ -10,11 +10,11 @@
 
 mod common;
 
-use tend_workbench::model::SessionOwnership;
-use tend_workbench::session::reaper::spawn_reaper;
-use tend_workbench::session::SessionService;
 use std::collections::BTreeMap;
 use std::time::Duration;
+use tend_workbench::model::SessionOwnership;
+use tend_workbench::session::SessionService;
+use tend_workbench::session::reaper::spawn_reaper;
 
 #[tokio::test]
 async fn session_child_exit_marks_ended() {

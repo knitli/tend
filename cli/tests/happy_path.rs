@@ -6,9 +6,9 @@
 
 mod common;
 
-use tend_protocol::{Request, Response, PROTOCOL_VERSION};
-use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
+use tend_protocol::{PROTOCOL_VERSION, Request, Response};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixListener;
 

@@ -7,4 +7,4 @@
 pub mod handlers;
 pub mod server;
 
-pub use server::{default_socket_path, spawn_daemon, DaemonHandle};
+pub use server::{DaemonHandle, default_socket_path, spawn_daemon};

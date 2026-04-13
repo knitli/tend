@@ -6,8 +6,8 @@
 //! - **Tier 1 (cooperative)**: Once IPC status seen, heuristic permanently muted.
 //! - **Tier 2 (heuristic)**: Pattern matching (`[y/N]`, `password:`, etc.).
 
-use tend_workbench::session::heuristic::{HeuristicDetector, HeuristicResult};
 use std::time::{Duration, Instant};
+use tend_workbench::session::heuristic::{HeuristicDetector, HeuristicResult};
 
 /// Password prompt followed by silence triggers NeedsInput.
 #[test]

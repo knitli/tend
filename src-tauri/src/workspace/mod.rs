@@ -12,7 +12,7 @@ use crate::model::WorkspaceState;
 use chrono::Utc;
 use sqlx::Row;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex, Notify};
+use tokio::sync::{Mutex, Notify, mpsc};
 use tracing::{info, warn};
 
 /// Workspace service — stateless read/write helpers against the DB.
@@ -163,12 +163,12 @@ impl WorkspaceDebouncer {
 
             // Write the latest to DB.
             let to_write = latest.lock().await.take();
-            if let Some(ws) = to_write {
-                if let Err(e) = WorkspaceService::write(&db, &ws).await {
-                    tracing::error!(error = %e, "workspace debouncer write failed");
-                    // Put it back for the next cycle / flush to pick up.
-                    *latest.lock().await = Some(ws);
-                }
+            if let Some(ws) = to_write
+                && let Err(e) = WorkspaceService::write(&db, &ws).await
+            {
+                tracing::error!(error = %e, "workspace debouncer write failed");
+                // Put it back for the next cycle / flush to pick up.
+                *latest.lock().await = Some(ws);
             }
         }
     }

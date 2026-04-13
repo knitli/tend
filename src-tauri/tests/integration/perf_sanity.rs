@@ -10,12 +10,12 @@
 //! Thresholds are relaxed to 200ms for debug-mode builds; production
 //! target is < 100ms per SC-004.
 
+use std::time::Instant;
 use tend_workbench::model::ProjectId;
 use tend_workbench::project::ProjectService;
 use tend_workbench::scratchpad::notes::NoteService;
 use tend_workbench::scratchpad::overview::OverviewService as _OverviewService;
 use tend_workbench::session::SessionService;
-use std::time::Instant;
 
 /// SC-004: session_list across 10 sessions / 5 projects < 200 ms (debug build).
 #[tokio::test]
