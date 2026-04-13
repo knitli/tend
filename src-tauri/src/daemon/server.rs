@@ -75,10 +75,10 @@ pub async fn spawn_daemon(
     let path = socket_path.unwrap_or_else(default_socket_path);
 
     // Stale socket from a previous run? Remove it. `bind()` would otherwise fail.
-    if path.exists() {
-        if let Err(e) = std::fs::remove_file(&path) {
-            warn!("could not remove stale socket at {}: {e}", path.display());
-        }
+    if path.exists()
+        && let Err(e) = std::fs::remove_file(&path)
+    {
+        warn!("could not remove stale socket at {}: {e}", path.display());
     }
 
     if let Some(parent) = path.parent() {

@@ -163,16 +163,16 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(move |_app, event| {
             // C2: Flush workspace debouncer on graceful exit.
-            if let tauri::RunEvent::ExitRequested { .. } = &event {
-                if let Some(ref debouncer) = shutdown_state.workspace_debouncer {
-                    // Block the exit until the flush completes.
-                    let debouncer = debouncer.clone();
-                    let rt = tokio::runtime::Handle::try_current();
-                    if let Ok(handle) = rt {
-                        handle.block_on(debouncer.flush());
-                    }
-                    info!("workspace debouncer flushed on exit");
+            if let tauri::RunEvent::ExitRequested { .. } = &event
+                && let Some(ref debouncer) = shutdown_state.workspace_debouncer
+            {
+                // Block the exit until the flush completes.
+                let debouncer = debouncer.clone();
+                let rt = tokio::runtime::Handle::try_current();
+                if let Ok(handle) = rt {
+                    handle.block_on(debouncer.flush());
                 }
+                info!("workspace debouncer flushed on exit");
             }
         });
 }

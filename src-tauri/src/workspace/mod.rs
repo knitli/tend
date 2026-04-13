@@ -163,12 +163,12 @@ impl WorkspaceDebouncer {
 
             // Write the latest to DB.
             let to_write = latest.lock().await.take();
-            if let Some(ws) = to_write {
-                if let Err(e) = WorkspaceService::write(&db, &ws).await {
-                    tracing::error!(error = %e, "workspace debouncer write failed");
-                    // Put it back for the next cycle / flush to pick up.
-                    *latest.lock().await = Some(ws);
-                }
+            if let Some(ws) = to_write
+                && let Err(e) = WorkspaceService::write(&db, &ws).await
+            {
+                tracing::error!(error = %e, "workspace debouncer write failed");
+                // Put it back for the next cycle / flush to pick up.
+                *latest.lock().await = Some(ws);
             }
         }
     }

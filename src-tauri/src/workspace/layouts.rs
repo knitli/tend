@@ -130,10 +130,10 @@ impl LayoutService {
         let live = app_state.live_sessions.read().await;
         let mut missing = Vec::new();
 
-        if let Some(sid) = layout.payload.focused_session_id {
-            if !live.contains_key(&sid) {
-                missing.push(sid);
-            }
+        if let Some(sid) = layout.payload.focused_session_id
+            && !live.contains_key(&sid)
+        {
+            missing.push(sid);
         }
 
         Ok((layout.payload, missing))
