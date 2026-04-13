@@ -4,12 +4,12 @@
 //! reminders rows. Create notes + reminders, spawn a session that produces
 //! PTY output, end the session — notes and reminders table counts are unchanged.
 
+use sqlx::Row;
+use std::collections::BTreeMap;
 use tend_workbench::project::ProjectService;
 use tend_workbench::scratchpad::notes::NoteService;
 use tend_workbench::scratchpad::reminders::ReminderService;
 use tend_workbench::session::SessionService;
-use sqlx::Row;
-use std::collections::BTreeMap;
 
 /// Spawn a session with PTY output; verify notes/reminders are untouched.
 #[tokio::test]

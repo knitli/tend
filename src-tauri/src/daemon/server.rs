@@ -8,11 +8,11 @@
 use crate::daemon::handlers::dispatch;
 use crate::error::{WorkbenchError, WorkbenchResult};
 use crate::state::WorkbenchState;
-use tend_protocol::{
-    error as protocol_error, ErrorCode as ProtocolErrorCode, Request, Response, MAX_FRAME_SIZE,
-};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tend_protocol::{
+    ErrorCode as ProtocolErrorCode, MAX_FRAME_SIZE, Request, Response, error as protocol_error,
+};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::task::JoinHandle;
@@ -75,10 +75,10 @@ pub async fn spawn_daemon(
     let path = socket_path.unwrap_or_else(default_socket_path);
 
     // Stale socket from a previous run? Remove it. `bind()` would otherwise fail.
-    if path.exists() {
-        if let Err(e) = std::fs::remove_file(&path) {
-            warn!("could not remove stale socket at {}: {e}", path.display());
-        }
+    if path.exists()
+        && let Err(e) = std::fs::remove_file(&path)
+    {
+        warn!("could not remove stale socket at {}: {e}", path.display());
     }
 
     if let Some(parent) = path.parent() {

@@ -8,7 +8,7 @@ use crate::project::ProjectService;
 use crate::session::SessionService;
 use crate::state::WorkbenchState;
 use tend_protocol::{
-    error as protocol_error, ErrorCode, Request, Response, SessionStatusWire, PROTOCOL_VERSION,
+    ErrorCode, PROTOCOL_VERSION, Request, Response, SessionStatusWire, error as protocol_error,
 };
 use tracing::{debug, info, warn};
 

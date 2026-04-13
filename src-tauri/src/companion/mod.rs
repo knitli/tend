@@ -67,24 +67,24 @@ impl CompanionService {
             let pid: Option<i64> = row.try_get("pid")?;
 
             // Check if the existing companion's PTY is still alive.
-            if let Some(p) = pid {
-                if is_process_alive(p as u32) {
-                    // Existing companion is alive — return it.
-                    let shell_path: String = row.try_get("shell_path")?;
-                    let initial_cwd: String = row.try_get("initial_cwd")?;
-                    let started_at: String = row.try_get("started_at")?;
-                    let ended_at: Option<String> = row.try_get("ended_at")?;
+            if let Some(p) = pid
+                && is_process_alive(p as u32)
+            {
+                // Existing companion is alive — return it.
+                let shell_path: String = row.try_get("shell_path")?;
+                let initial_cwd: String = row.try_get("initial_cwd")?;
+                let started_at: String = row.try_get("started_at")?;
+                let ended_at: Option<String> = row.try_get("ended_at")?;
 
-                    return Ok(CompanionTerminal {
-                        id: companion_id,
-                        session_id,
-                        pid: Some(Pid(p as i32)),
-                        shell_path: PathBuf::from(shell_path),
-                        initial_cwd: PathBuf::from(initial_cwd),
-                        started_at: parse_timestamp(&started_at)?,
-                        ended_at: ended_at.as_deref().map(parse_timestamp).transpose()?,
-                    });
-                }
+                return Ok(CompanionTerminal {
+                    id: companion_id,
+                    session_id,
+                    pid: Some(Pid(p as i32)),
+                    shell_path: PathBuf::from(shell_path),
+                    initial_cwd: PathBuf::from(initial_cwd),
+                    started_at: parse_timestamp(&started_at)?,
+                    ended_at: ended_at.as_deref().map(parse_timestamp).transpose()?,
+                });
             }
 
             // Companion exists but PTY is dead — mark old as ended and respawn.

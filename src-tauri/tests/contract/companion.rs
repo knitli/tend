@@ -7,10 +7,10 @@
 //! Written RED-first (TDD gate) — they will turn GREEN when the companion
 //! service and Tauri commands are fully wired.
 
+use std::collections::BTreeMap;
 use tend_workbench::companion::CompanionService;
 use tend_workbench::project::ProjectService;
 use tend_workbench::session::SessionService;
-use std::collections::BTreeMap;
 
 /// Helper: spawn a workbench session with a real PTY and then ensure a companion.
 async fn setup_session_with_companion(

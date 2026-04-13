@@ -11,11 +11,11 @@
 
 mod common;
 
-use tend_protocol::{Request, Response, PROTOCOL_VERSION};
+use std::time::Duration;
+use tend_protocol::{PROTOCOL_VERSION, Request, Response};
 use tend_workbench::daemon::spawn_daemon;
 use tend_workbench::model::SessionOwnership;
 use tend_workbench::session::SessionService;
-use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 

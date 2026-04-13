@@ -17,10 +17,10 @@
 
 mod common;
 
-use tend_workbench::session::recovery::reconcile_and_reattach;
-use tend_workbench::state::SessionEventEnvelope;
 use std::process::{Command, Stdio};
 use std::time::Duration;
+use tend_workbench::session::recovery::reconcile_and_reattach;
+use tend_workbench::state::SessionEventEnvelope;
 
 #[tokio::test]
 async fn reconcile_reattaches_live_and_ends_dead() {

@@ -120,10 +120,10 @@ impl ActivitySummary {
     #[must_use]
     pub fn current(&self) -> Option<String> {
         // Check override first.
-        if let Some(ref summary) = self.override_summary {
-            if !self.is_override_expired() {
-                return Some(summary.clone());
-            }
+        if let Some(ref summary) = self.override_summary
+            && !self.is_override_expired()
+        {
+            return Some(summary.clone());
         }
 
         // Fall back to last non-blank, non-prompt line from the ring buffer.
@@ -147,10 +147,10 @@ impl ActivitySummary {
         // Activity timeout: if output has been produced continuously for ≥10 s
         // since the override was set, expire it. H1 fix: removed the 500ms
         // query-time guard which made this path practically unreachable.
-        if let Some(last_activity) = self.last_activity_after_override {
-            if last_activity.duration_since(set_at) >= OVERRIDE_ACTIVITY_TIMEOUT {
-                return true;
-            }
+        if let Some(last_activity) = self.last_activity_after_override
+            && last_activity.duration_since(set_at) >= OVERRIDE_ACTIVITY_TIMEOUT
+        {
+            return true;
         }
 
         false
@@ -232,8 +232,8 @@ fn strip_ansi(s: &str) -> Cow<'_, str> {
             // Skip CSI sequences: ESC [ ... final_byte
             if chars.peek() == Some(&'[') {
                 chars.next(); // consume '['
-                              // Consume parameter bytes (0x30-0x3F) and intermediate bytes (0x20-0x2F)
-                              // until a final byte (0x40-0x7E).
+                // Consume parameter bytes (0x30-0x3F) and intermediate bytes (0x20-0x2F)
+                // until a final byte (0x40-0x7E).
                 loop {
                     match chars.peek() {
                         Some(&c) if ('\x40'..='\x7e').contains(&c) => {

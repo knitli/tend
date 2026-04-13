@@ -26,11 +26,11 @@
 
 #![allow(dead_code)] // Shared helpers; not every test file uses every helper.
 
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tend_workbench::db::Database;
 use tend_workbench::model::{ProjectId, SessionId};
 use tend_workbench::state::WorkbenchState;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Monotonic counter for unique ephemeral paths.
 static SEQ: AtomicU64 = AtomicU64::new(0);

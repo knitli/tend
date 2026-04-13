@@ -5,10 +5,10 @@
 //! correctly detects an existing alive companion and returns it instead of
 //! inserting duplicate rows.
 
+use std::collections::BTreeMap;
 use tend_workbench::companion::CompanionService;
 use tend_workbench::project::ProjectService;
 use tend_workbench::session::SessionService;
-use std::collections::BTreeMap;
 
 /// Activating the same session 3 times creates exactly one companion_terminals row.
 #[tokio::test]

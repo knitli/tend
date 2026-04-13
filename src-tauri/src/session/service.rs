@@ -4,14 +4,14 @@
 //! lifecycle operations. Static methods operate on the shared `WorkbenchState`
 //! and `Database`.
 
-use crate::db::queries::require_found;
 use crate::db::Database;
+use crate::db::queries::require_found;
 use crate::error::{ErrorCode, WorkbenchError, WorkbenchResult};
 use crate::model::{
     Alert, AlertClearedBy, AlertId, AlertKind, Pid, ProjectId, Session, SessionId, SessionMetadata,
     SessionOwnership, SessionStatus, SessionSummary, StatusSource, Timestamp,
 };
-use crate::session::live::{spawn_live_session, LiveSessionHandle};
+use crate::session::live::{LiveSessionHandle, spawn_live_session};
 use crate::session::supervisor;
 use crate::state::{SessionEventEnvelope, WorkbenchState};
 use chrono::Utc;
@@ -207,22 +207,21 @@ impl SessionService {
         let pid = actor.pty.pid().map(|p| Pid(p as i32));
 
         // Update the pid in the DB now that we know it.
-        if let Some(p) = pid {
-            if let Err(e) = sqlx::query("UPDATE sessions SET pid = ?1 WHERE id = ?2")
+        if let Some(p) = pid
+            && let Err(e) = sqlx::query("UPDATE sessions SET pid = ?1 WHERE id = ?2")
                 .bind(p.0 as i64)
                 .bind(session_id.get())
                 .execute(state.db.pool())
                 .await
-            {
-                let _ = sqlx::query(
+        {
+            let _ = sqlx::query(
                     "UPDATE sessions SET status='ended', ended_at=?1, error_reason='pid_update_failed' WHERE id=?2",
                 )
                 .bind(Utc::now().to_rfc3339())
                 .bind(session_id.get())
                 .execute(state.db.pool())
                 .await;
-                return Err(e.into());
-            }
+            return Err(e.into());
         }
 
         // Install the handle BEFORE starting supervisor tasks so the reaper
@@ -663,7 +662,7 @@ fn parse_alert_from_join(
         other => {
             return Err(WorkbenchError::internal(format!(
                 "unknown alert kind: {other}"
-            )))
+            )));
         }
     };
 

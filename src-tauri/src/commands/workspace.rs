@@ -3,8 +3,8 @@
 use crate::error::WorkbenchResult;
 use crate::model::{Layout, LayoutId, SessionId, WorkspaceState};
 use crate::state::WorkbenchState;
-use crate::workspace::layouts::LayoutService;
 use crate::workspace::WorkspaceService;
+use crate::workspace::layouts::LayoutService;
 use tauri::State;
 
 /// Return the current workspace state for frontend hydration.

@@ -7,13 +7,13 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+use sqlx::Row;
+use std::collections::BTreeMap;
 use tend_workbench::companion::CompanionService;
 use tend_workbench::model::SessionId;
 use tend_workbench::project::ProjectService;
-use tend_workbench::session::live::KillSignal;
 use tend_workbench::session::SessionService;
-use sqlx::Row;
-use std::collections::BTreeMap;
+use tend_workbench::session::live::KillSignal;
 
 /// Helper: spawn a real session with a long-running child.
 async fn spawn_test_session(
