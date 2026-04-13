@@ -9,8 +9,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::thread;
 
-use anyhow::{bail, Context, Result};
-use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
+use anyhow::{Context, Result, bail};
+use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
 /// A spawned child process inside a PTY.
 pub struct PtyChild {

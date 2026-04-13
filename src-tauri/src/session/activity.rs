@@ -232,8 +232,8 @@ fn strip_ansi(s: &str) -> Cow<'_, str> {
             // Skip CSI sequences: ESC [ ... final_byte
             if chars.peek() == Some(&'[') {
                 chars.next(); // consume '['
-                              // Consume parameter bytes (0x30-0x3F) and intermediate bytes (0x20-0x2F)
-                              // until a final byte (0x40-0x7E).
+                // Consume parameter bytes (0x30-0x3F) and intermediate bytes (0x20-0x2F)
+                // until a final byte (0x40-0x7E).
                 loop {
                     match chars.peek() {
                         Some(&c) if ('\x40'..='\x7e').contains(&c) => {

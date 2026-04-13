@@ -6,7 +6,7 @@ use crate::model::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, broadcast};
 
 // Re-export so existing callers can use `crate::state::LiveSessionHandle`.
 pub use crate::session::live::LiveSessionHandle;

@@ -7,12 +7,12 @@
 //! Written RED-first (TDD gate) — they will turn GREEN as the service stubs
 //! become real implementations.
 
+use std::collections::BTreeMap;
 use tend_workbench::companion::CompanionService;
 use tend_workbench::error::ErrorCode;
 use tend_workbench::model::SessionId;
 use tend_workbench::project::ProjectService;
 use tend_workbench::session::SessionService;
-use std::collections::BTreeMap;
 
 /// Helper: spawn a workbench-owned session backed by a real PTY in a temp dir.
 /// Returns `(SessionId, tempfile::TempDir)` — caller must hold `TempDir` alive.

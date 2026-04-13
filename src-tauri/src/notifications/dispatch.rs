@@ -6,7 +6,7 @@
 
 use crate::db::Database;
 use crate::model::{Alert, NotificationChannel};
-use crate::notifications::preferences::{is_quiet_hours, PreferenceService};
+use crate::notifications::preferences::{PreferenceService, is_quiet_hours};
 use tracing::{info, trace};
 
 /// Dispatch an OS notification for an alert according to notification preferences.

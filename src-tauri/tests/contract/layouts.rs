@@ -125,8 +125,7 @@ async fn layout_restore_happy() {
 
     // Install a live session handle so the restore can find it.
     {
-        let handle =
-            tend_workbench::session::live::LiveSessionHandle::attached_mirror(session_id);
+        let handle = tend_workbench::session::live::LiveSessionHandle::attached_mirror(session_id);
         state.live_sessions.write().await.insert(session_id, handle);
     }
 

@@ -7,8 +7,8 @@
 use crate::companion::CompanionService;
 use crate::error::{ErrorCode, WorkbenchError};
 use crate::model::{ProjectId, SessionId};
-use crate::session::live::KillSignal;
 use crate::session::SessionService;
+use crate::session::live::KillSignal;
 use crate::state::WorkbenchState;
 use serde::Deserialize;
 use std::collections::BTreeMap;

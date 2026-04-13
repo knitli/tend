@@ -8,11 +8,11 @@
 use crate::daemon::handlers::dispatch;
 use crate::error::{WorkbenchError, WorkbenchResult};
 use crate::state::WorkbenchState;
-use tend_protocol::{
-    error as protocol_error, ErrorCode as ProtocolErrorCode, Request, Response, MAX_FRAME_SIZE,
-};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tend_protocol::{
+    ErrorCode as ProtocolErrorCode, MAX_FRAME_SIZE, Request, Response, error as protocol_error,
+};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::task::JoinHandle;

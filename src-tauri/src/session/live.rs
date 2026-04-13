@@ -12,7 +12,7 @@ use portable_pty::PtySize;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, watch, Mutex};
+use tokio::sync::{Mutex, broadcast, mpsc, watch};
 
 /// Signal to send to the child process.
 #[derive(Clone, Copy, Debug)]

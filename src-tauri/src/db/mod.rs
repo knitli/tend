@@ -6,8 +6,8 @@
 pub mod queries;
 
 use crate::error::{ErrorCode, WorkbenchError, WorkbenchResult};
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use tracing::info;

@@ -251,7 +251,7 @@ fn parse_alert_row(row: &sqlx::sqlite::SqliteRow) -> WorkbenchResult<Alert> {
         other => {
             return Err(WorkbenchError::internal(format!(
                 "unknown alert kind: {other}"
-            )))
+            )));
         }
     };
 

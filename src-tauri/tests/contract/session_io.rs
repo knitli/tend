@@ -7,10 +7,10 @@
 //! Written RED-first (TDD gate) — they will turn GREEN once the service
 //! methods and Tauri commands are wired.
 
+use std::collections::BTreeMap;
 use tend_workbench::error::ErrorCode;
 use tend_workbench::project::ProjectService;
 use tend_workbench::session::SessionService;
-use std::collections::BTreeMap;
 
 /// Helper: spawn a workbench-owned session backed by a real PTY.
 async fn spawn_real_workbench_session(

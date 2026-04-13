@@ -6,11 +6,11 @@
 
 use std::path::PathBuf;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
-use tend_protocol::{Request, Response, SessionStatusWire, MAX_FRAME_SIZE, PROTOCOL_VERSION};
+use tend_protocol::{MAX_FRAME_SIZE, PROTOCOL_VERSION, Request, Response, SessionStatusWire};
 
 /// IPC client wrapping a Unix domain socket connection.
 pub struct IpcClient {

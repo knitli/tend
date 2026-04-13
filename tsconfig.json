@@ -1,25 +1,35 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noEmit": true,
-    "allowSyntheticDefaultImports": true,
-    "useDefineForClassFields": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["vite/client", "svelte", "vitest/globals"],
-    "baseUrl": ".",
-    "paths": {
-      "$lib": ["src/lib"],
-      "$lib/*": ["src/lib/*"]
-    }
-  },
-  "include": ["src/**/*.ts", "src/**/*.svelte", "vite.config.ts"],
-  "exclude": ["node_modules", "dist", "src-tauri/target"]
+	"compilerOptions": {
+		"allowSyntheticDefaultImports": true,
+		"esModuleInterop": true,
+		"forceConsistentCasingInFileNames": true,
+		"isolatedModules": true,
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"noEmit": true,
+		"paths": {
+			"$lib": ["./src/lib"],
+			"$lib/*": ["./src/lib/*"]
+		},
+		"resolveJsonModule": true,
+		"allowJs": true,
+		"rootDir": ".",
+		"skipLibCheck": true,
+		"strict": true,
+		"target": "esnext",
+
+		"types": ["svelte", "vite/client"],
+		"useDefineForClassFields": true,
+		"verbatimModuleSyntax": true,
+		"allowArbitraryExtensions": true
+	},
+	"exclude": ["node_modules", "dist", "src-tauri/target"],
+	"include": [
+		"src/**/*.ts",
+		"src/**/*.svelte",
+		"vite.config.ts",
+		".*.ts",
+		".*.js"
+	]
 }

@@ -12,7 +12,7 @@ use crate::model::WorkspaceState;
 use chrono::Utc;
 use sqlx::Row;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex, Notify};
+use tokio::sync::{Mutex, Notify, mpsc};
 use tracing::{info, warn};
 
 /// Workspace service — stateless read/write helpers against the DB.

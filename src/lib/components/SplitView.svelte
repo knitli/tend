@@ -132,10 +132,10 @@
       <AgentPane {session} />
     </div>
 
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_no_noninteractive_tabindex -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
       class="divider"
-      role="separator"
+      role="slider"
       aria-orientation="vertical"
       aria-valuenow={Math.round(splitPercent)}
       aria-valuemin={SPLIT_MIN}

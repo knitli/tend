@@ -20,9 +20,9 @@
 //! (or add a `pub check_after_silence(Duration)` method) to support
 //! integration testing without real sleep delays.
 
-use tend_workbench::session::heuristic::{HeuristicDetector, HeuristicResult};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+use tend_workbench::session::heuristic::{HeuristicDetector, HeuristicResult};
 
 /// Locate the fixtures directory relative to the workspace root.
 fn fixtures_dir() -> PathBuf {

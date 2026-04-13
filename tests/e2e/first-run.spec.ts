@@ -11,29 +11,33 @@
  * Requires: tauri-driver + built Tauri app.
  */
 
-import { test, expect } from '@playwright/test';
-import { waitForAppReady, registerProject } from './helpers';
+import { expect, test } from "@playwright/test";
+import { registerProject, waitForAppReady } from "./helpers";
 
-test.describe('First Run', () => {
-  test('shows empty state on fresh launch', async ({ page }) => {
-    await page.goto('http://localhost:1420');
-    await waitForAppReady(page);
+test.describe("First Run", () => {
+	test("shows empty state on fresh launch", async ({ page }) => {
+		await page.goto("http://localhost:1420");
+		await waitForAppReady(page);
 
-    const emptyState = page.locator('text=No projects registered');
-    await expect(emptyState).toBeVisible({ timeout: 5_000 });
-  });
+		const emptyState = page.locator("text=No projects registered");
+		await expect(emptyState).toBeVisible({ timeout: 5_000 });
+	});
 
-  test('can register a project and see it in sidebar', async ({ page }) => {
-    await page.goto('http://localhost:1420');
-    await waitForAppReady(page);
+	test("can register a project and see it in sidebar", async ({ page }) => {
+		await page.goto("http://localhost:1420");
+		await waitForAppReady(page);
 
-    const projectId = await registerProject(page, '/tmp/e2e-test-project', 'E2E Test');
-    expect(projectId).toBeGreaterThan(0);
+		const projectId = await registerProject(
+			page,
+			"/tmp/e2e-test-project",
+			"E2E Test",
+		);
+		expect(projectId).toBeGreaterThan(0);
 
-    // Wait for the sidebar to update with the new project
-    await page.waitForSelector('text=E2E Test', {
-      state: 'visible',
-      timeout: 5_000,
-    });
-  });
+		// Wait for the sidebar to update with the new project
+		await page.waitForSelector("text=E2E Test", {
+			state: "visible",
+			timeout: 5_000,
+		});
+	});
 });

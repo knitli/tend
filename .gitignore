@@ -40,3 +40,9 @@ coverage/
 *.db-journal
 *.db-wal
 *.db-shm
+
+# Other package manager lock files
+yarn.lock
+package-lock.json
+bun.lock
+!pnpm-lock.yaml

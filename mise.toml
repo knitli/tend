@@ -1,0 +1,21 @@
+experimental_monorepo_root = true
+
+[shell_alias]
+mx = "mise x --"
+mr = "mise run"
+px = "pnpm dlx"
+# spellchecker:ignore-next-line
+pn = "pnpm"
+
+[tools]
+node = "24"
+pnpm = "latest"
+"npm:@tauri-apps/cli" = "latest"
+rust = "1.89"
+typos = "latest"
+
+[prepare]
+pnpm = { auto = true }
+
+[settings]
+experimental = true

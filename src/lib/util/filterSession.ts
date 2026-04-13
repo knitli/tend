@@ -6,14 +6,14 @@
  * everything.
  */
 export function matchesSessionFilter(
-  query: string,
-  sessionLabel: string,
-  projectDisplayName: string,
+	query: string,
+	sessionLabel: string,
+	projectDisplayName: string,
 ): boolean {
-  const q = query.toLowerCase().trim();
-  if (!q) return true;
-  return (
-    sessionLabel.toLowerCase().includes(q) ||
-    projectDisplayName.toLowerCase().includes(q)
-  );
+	const q = query.toLowerCase().trim();
+	if (!q) return true;
+	return (
+		sessionLabel.toLowerCase().includes(q) ||
+		projectDisplayName.toLowerCase().includes(q)
+	);
 }

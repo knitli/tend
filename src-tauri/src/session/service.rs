@@ -4,14 +4,14 @@
 //! lifecycle operations. Static methods operate on the shared `WorkbenchState`
 //! and `Database`.
 
-use crate::db::queries::require_found;
 use crate::db::Database;
+use crate::db::queries::require_found;
 use crate::error::{ErrorCode, WorkbenchError, WorkbenchResult};
 use crate::model::{
     Alert, AlertClearedBy, AlertId, AlertKind, Pid, ProjectId, Session, SessionId, SessionMetadata,
     SessionOwnership, SessionStatus, SessionSummary, StatusSource, Timestamp,
 };
-use crate::session::live::{spawn_live_session, LiveSessionHandle};
+use crate::session::live::{LiveSessionHandle, spawn_live_session};
 use crate::session::supervisor;
 use crate::state::{SessionEventEnvelope, WorkbenchState};
 use chrono::Utc;
@@ -663,7 +663,7 @@ fn parse_alert_from_join(
         other => {
             return Err(WorkbenchError::internal(format!(
                 "unknown alert kind: {other}"
-            )))
+            )));
         }
     };
 

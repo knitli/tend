@@ -1,4 +1,4 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig } from "@playwright/test";
 
 /**
  * Playwright config for E2E tests.
@@ -19,26 +19,26 @@ import { defineConfig } from '@playwright/test';
  * Run with: pnpm e2e
  */
 export default defineConfig({
-  testDir: './tests/e2e',
-  timeout: 30_000,
-  retries: 0,
-  use: {
-    baseURL: 'http://localhost:1420',
-    trace: 'on-first-retry',
-    screenshot: 'only-on-failure',
-  },
-  // Start the Vite dev server automatically if not already running.
-  // For tauri-driver mode, comment this out and use a custom fixture.
-  webServer: {
-    command: 'pnpm dev',
-    url: 'http://localhost:1420',
-    reuseExistingServer: true,
-    timeout: 30_000,
-  },
-  projects: [
-    {
-      name: 'tauri',
-      testMatch: '**/*.spec.ts',
-    },
-  ],
+	testDir: "./tests/e2e",
+	timeout: 30_000,
+	retries: 0,
+	use: {
+		baseURL: "http://127.0.0.1:1420",
+		trace: "on-first-retry",
+		screenshot: "only-on-failure",
+	},
+	// Start the Vite dev server automatically if not already running.
+	// For tauri-driver mode, comment this out and use a custom fixture.
+	webServer: {
+		command: "pnpm dev",
+		url: "http://127.0.0.1:1420",
+		reuseExistingServer: true,
+		timeout: 30_000,
+	},
+	projects: [
+		{
+			name: "tauri",
+			testMatch: "**/*.spec.ts",
+		},
+	],
 });
