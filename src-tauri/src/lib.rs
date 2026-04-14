@@ -100,6 +100,12 @@ pub fn run() {
     let state_clone = state.clone();
     let shutdown_state = state.clone();
 
+    // Tauri's `.setup()` and `.run()` callbacks execute on threads that do not
+    // have a Tokio runtime entered. Capture a handle to our bootstrap runtime
+    // so we can spawn onto it and block_on from those callbacks.
+    let setup_rt_handle = rt.handle().clone();
+    let shutdown_rt_handle = rt.handle().clone();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .manage(state)
@@ -138,6 +144,10 @@ pub fn run() {
             commands::workspace::layout_delete,
         ])
         .setup(move |app| {
+            // Enter the bootstrap runtime so tokio::spawn calls below (and any
+            // spawn calls inside spawn_event_bridge) find a runtime context.
+            let _guard = setup_rt_handle.enter();
+
             // T053: event bridge — forward state.event_bus → Tauri events.
             commands::events::spawn_event_bridge(app.handle().clone(), &state_clone);
 
@@ -145,7 +155,7 @@ pub fn run() {
             // frontend can bootstrap without an explicit workspace_get call.
             let app_handle = app.handle().clone();
             let db = state_clone.db.clone();
-            tokio::spawn(async move {
+            setup_rt_handle.spawn(async move {
                 match workspace::WorkspaceService::get(&db).await {
                     Ok(ws) => {
                         use tauri::Emitter;
@@ -169,20 +179,12 @@ pub fn run() {
                 && let Some(ref debouncer) = shutdown_state.workspace_debouncer
             {
                 let debouncer = debouncer.clone();
-                let rt = tokio::runtime::Handle::try_current();
-                match rt {
-                    Ok(handle) => {
-                        let result = handle.block_on(async {
-                            tokio::time::timeout(Duration::from_secs(5), debouncer.flush()).await
-                        });
-                        match result {
-                            Ok(()) => info!("workspace debouncer flushed on exit"),
-                            Err(_) => warn!("workspace debouncer flush timed out after 5s"),
-                        }
-                    }
-                    Err(_) => {
-                        warn!("no tokio runtime available at exit, workspace flush skipped");
-                    }
+                let result = shutdown_rt_handle.block_on(async {
+                    tokio::time::timeout(Duration::from_secs(5), debouncer.flush()).await
+                });
+                match result {
+                    Ok(()) => info!("workspace debouncer flushed on exit"),
+                    Err(_) => warn!("workspace debouncer flush timed out after 5s"),
                 }
             }
         });
