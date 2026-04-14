@@ -85,8 +85,19 @@ pub async fn session_spawn(
         None => project.canonical_path.clone(),
     };
 
-    // Convert env HashMap to BTreeMap for Pty::spawn.
-    let env: BTreeMap<String, String> = args.env.unwrap_or_default().into_iter().collect();
+    // Build the spawn environment by layering:
+    //   1. Captured user shell env (PATH, HOME, NVM/PYENV, etc. from ~/.zshrc).
+    //   2. Per-spawn overrides from args.env (explicit beats inherited).
+    let mut env: BTreeMap<String, String> = state
+        .shell_env
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    if let Some(overrides) = args.env {
+        for (k, v) in overrides {
+            env.insert(k, v);
+        }
+    }
 
     let label = args.label.unwrap_or_else(|| "session".to_string());
 

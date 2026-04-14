@@ -10,6 +10,7 @@ pub mod commands;
 pub mod companion;
 pub mod daemon;
 pub mod db;
+pub mod env;
 pub mod error;
 pub mod model;
 pub mod notifications;
@@ -61,6 +62,12 @@ pub fn run() {
         info!("opening workbench database at default XDG path");
         let db = Database::open_default().await?;
         let mut state = WorkbenchState::new(db);
+
+        // Capture the user's interactive shell environment so workbench-spawned
+        // sessions inherit the user's PATH (nvm, pyenv, ~/.local/bin, etc.).
+        // Failures fall back to the current process env — non-fatal.
+        let shell_env = env::capture_user_env().await;
+        state.set_shell_env(shell_env);
 
         // Crash recovery (T025): single merged pass. Must run BEFORE Tauri's
         // frontend is ready to call `session_list`.

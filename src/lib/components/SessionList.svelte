@@ -11,9 +11,15 @@
     selectedProjectId?: number | null;
     missingSessions?: Set<number>;
     onActivateSession?: (session: SessionSummary) => void;
+    onSpawnSession?: () => void;
   }
 
-  let { selectedProjectId = null, missingSessions = new Set(), onActivateSession }: Props = $props();
+  let {
+    selectedProjectId = null,
+    missingSessions = new Set(),
+    onActivateSession,
+    onSpawnSession,
+  }: Props = $props();
 
   let filterText = $state('');
   let debouncedFilter = $state('');
@@ -150,9 +156,22 @@
       {:else}
         <div class="empty-state empty-state-hint">
           <p class="hint-lead">No active sessions yet.</p>
-          <p class="hint-body">
-            Sessions are started from the CLI. Run this in a terminal:
-          </p>
+          {#if onSpawnSession && projectsStore.activeProjects.length > 0}
+            <button
+              type="button"
+              class="btn-primary-block"
+              onclick={() => onSpawnSession?.()}
+            >
+              Start a session
+            </button>
+            <p class="hint-divider">or run from a terminal:</p>
+          {:else if projectsStore.activeProjects.length === 0}
+            <p class="hint-body">
+              Add a project in the sidebar first.
+            </p>
+          {:else}
+            <p class="hint-body">Run this in a terminal:</p>
+          {/if}
           <div class="hint-command">
             <code>{hintCommand}</code>
             <button
@@ -165,11 +184,6 @@
               {copied ? 'Copied' : 'Copy'}
             </button>
           </div>
-          <p class="hint-foot">
-            Replace <code>claude</code> with the agent you want to run
-            (<code>codex</code>, <code>aider</code>, a script, etc.).
-            It will appear here once it starts.
-          </p>
         </div>
       {/if}
     {:else}
@@ -267,17 +281,34 @@
     font-weight: 500;
   }
 
-  .hint-body,
-  .hint-foot {
+  .hint-body {
     margin: 0;
     line-height: 1.5;
   }
 
-  .hint-foot code {
-    background: var(--color-surface-raised, #15171c);
-    padding: 0 4px;
-    border-radius: 3px;
+  .hint-divider {
+    margin: 0;
     font-size: 0.75rem;
+    color: var(--color-text-muted, #8b8fa3);
+    text-align: center;
+  }
+
+  .btn-primary-block {
+    width: 100%;
+    padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
+    border: none;
+    border-radius: var(--radius-sm, 4px);
+    background: var(--color-accent, #60a5fa);
+    color: var(--color-surface, #0f1115);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 120ms;
+  }
+
+  .btn-primary-block:hover {
+    background: var(--color-accent-hover, #93c5fd);
   }
 
   .hint-command {

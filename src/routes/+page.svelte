@@ -8,6 +8,7 @@
   import SplitView from '$lib/components/SplitView.svelte';
   import CrossProjectOverview from '$lib/components/CrossProjectOverview.svelte';
   import SettingsDialog from '$lib/components/SettingsDialog.svelte';
+  import SpawnSessionDialog from '$lib/components/SpawnSessionDialog.svelte';
   import LayoutSwitcher from '$lib/components/LayoutSwitcher.svelte';
   import { projectsStore } from '$lib/stores/projects.svelte';
   import { sessionsStore } from '$lib/stores/sessions.svelte';
@@ -20,6 +21,13 @@
   let activeSessionId = $state<number | null>(null);
   let settingsOpen = $state(false);
   let overviewOpen = $state(false);
+  let spawnDialogOpen = $state(false);
+  let spawnDialogProject = $state<Project | null>(null);
+
+  function openSpawnDialog(project: Project | null = null): void {
+    spawnDialogProject = project;
+    spawnDialogOpen = true;
+  }
   /** Session ids that were missing after workspace/layout restore. */
   let missingSessions = $state<Set<number>>(new Set());
   const activeSession = $derived(activeSessionId !== null ? sessionsStore.byId(activeSessionId) ?? null : null);
@@ -95,6 +103,7 @@
   <Sidebar
     {selectedProjectId}
     onSelectProject={handleSelectProject}
+    onSpawnSession={(project) => openSpawnDialog(project)}
   />
 
   <main class="main-panel">
@@ -124,6 +133,11 @@
         {selectedProjectId}
         {missingSessions}
         onActivateSession={handleActivateSession}
+        onSpawnSession={() => openSpawnDialog(
+          selectedProjectId !== null
+            ? projectsStore.byId(selectedProjectId) ?? null
+            : null,
+        )}
       />
     </div>
 
@@ -159,6 +173,18 @@
 </div>
 
 <SettingsDialog open={settingsOpen} onclose={() => settingsOpen = false} />
+
+<SpawnSessionDialog
+  open={spawnDialogOpen}
+  lockedProject={spawnDialogProject}
+  onClose={() => (spawnDialogOpen = false)}
+  onSpawned={(session) => {
+    // Activate the new session so the user lands directly in its terminal.
+    activeSessionId = session.id;
+    overviewOpen = false;
+    workspaceStore.update({ focused_session_id: session.id });
+  }}
+/>
 
 <style>
   .app-layout {

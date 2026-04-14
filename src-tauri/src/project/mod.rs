@@ -11,8 +11,29 @@ use crate::error::{ErrorCode, WorkbenchError, WorkbenchResult};
 use crate::model::{Project, ProjectId, ProjectSettings, Timestamp};
 use chrono::Utc;
 use sqlx::Row;
-use std::path::Path;
+use std::path::PathBuf;
 use tracing::info;
+
+/// Expand a leading `~` or `~/` to the user's home directory.
+///
+/// - `~` → `$HOME`
+/// - `~/foo` → `$HOME/foo`
+/// - `~user/...` → not supported (would need getpwnam); returned unchanged so
+///   `canonicalize` produces a clear `PATH_NOT_FOUND` error.
+/// - anything else → returned unchanged.
+///
+/// If `home_dir()` cannot be determined, the input is returned unchanged.
+pub(crate) fn expand_tilde(input: &str) -> PathBuf {
+    if input == "~" {
+        return dirs::home_dir().unwrap_or_else(|| PathBuf::from(input));
+    }
+    if let Some(rest) = input.strip_prefix("~/")
+        && let Some(home) = dirs::home_dir()
+    {
+        return home.join(rest);
+    }
+    PathBuf::from(input)
+}
 
 /// Project service — stateless, operates on the shared DB.
 pub struct ProjectService;
@@ -29,10 +50,12 @@ impl ProjectService {
         path: &str,
         display_name: Option<&str>,
     ) -> WorkbenchResult<Project> {
-        let raw = Path::new(path);
+        // Expand leading ~ before canonicalizing — std::fs::canonicalize doesn't
+        // do shell-style tilde expansion, so "~/foo" would otherwise fail.
+        let expanded = expand_tilde(path);
 
         // Canonicalize — also proves the path exists on disk.
-        let canonical = std::fs::canonicalize(raw).map_err(|_| {
+        let canonical = std::fs::canonicalize(&expanded).map_err(|_| {
             WorkbenchError::new(
                 ErrorCode::PathNotFound,
                 format!("path does not exist: {path}"),
@@ -284,4 +307,49 @@ fn parse_timestamp(s: &str) -> WorkbenchResult<Timestamp> {
     chrono::DateTime::parse_from_rfc3339(s)
         .map(|dt| dt.with_timezone(&chrono::Utc))
         .map_err(|e| WorkbenchError::internal(format!("invalid timestamp '{s}': {e}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tilde_alone_expands_to_home() {
+        let home = dirs::home_dir().expect("test requires HOME");
+        assert_eq!(expand_tilde("~"), home);
+    }
+
+    #[test]
+    fn tilde_slash_expands_to_home_subpath() {
+        let home = dirs::home_dir().expect("test requires HOME");
+        assert_eq!(expand_tilde("~/foo"), home.join("foo"));
+        assert_eq!(expand_tilde("~/foo/bar/baz"), home.join("foo/bar/baz"));
+    }
+
+    #[test]
+    fn absolute_paths_pass_through() {
+        assert_eq!(expand_tilde("/etc/hosts"), PathBuf::from("/etc/hosts"));
+        assert_eq!(expand_tilde("/"), PathBuf::from("/"));
+    }
+
+    #[test]
+    fn relative_paths_pass_through() {
+        assert_eq!(expand_tilde("foo/bar"), PathBuf::from("foo/bar"));
+        assert_eq!(expand_tilde("./foo"), PathBuf::from("./foo"));
+        assert_eq!(expand_tilde(""), PathBuf::from(""));
+    }
+
+    #[test]
+    fn other_tilde_forms_pass_through() {
+        // ~user/... is not supported (would need getpwnam); pass through so
+        // canonicalize gives a clear error.
+        assert_eq!(
+            expand_tilde("~someuser/foo"),
+            PathBuf::from("~someuser/foo")
+        );
+        // No slash after ~something.
+        assert_eq!(expand_tilde("~bin"), PathBuf::from("~bin"));
+        // Tilde in the middle isn't expanded.
+        assert_eq!(expand_tilde("/foo/~/bar"), PathBuf::from("/foo/~/bar"));
+    }
 }

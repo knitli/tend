@@ -55,8 +55,11 @@ chrono = { workspace = true }
 dirs = { workspace = true }
 libc = "0.2.184"
 
-[dev-dependencies]
+# Tempfile for shell-env capture (writing the env dump to a tempfile keeps rc-file
+# stdout pollution out of the parsed payload).
 tempfile = "3"
+
+[dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 
 [build-dependencies]

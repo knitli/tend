@@ -134,6 +134,11 @@ pub struct WorkbenchState {
     pub event_bus: broadcast::Sender<SessionEventEnvelope>,
     /// Debounced workspace writer (C1/C2 fix). Initialized once in `run()`.
     pub workspace_debouncer: Option<crate::workspace::WorkspaceDebouncer>,
+    /// Captured user shell environment (PATH, HOME, etc. from a fresh login +
+    /// interactive shell). Merged into spawned-session env so workbench-launched
+    /// agents see the same PATH the user has in their terminal. Populated once
+    /// during bootstrap; empty until then.
+    pub shell_env: Arc<HashMap<String, String>>,
 }
 
 impl WorkbenchState {
@@ -147,6 +152,7 @@ impl WorkbenchState {
             companion_locks: Arc::new(RwLock::new(HashMap::new())),
             event_bus,
             workspace_debouncer: None,
+            shell_env: Arc::new(HashMap::new()),
         }
     }
 
@@ -155,6 +161,12 @@ impl WorkbenchState {
     pub fn init_debouncer(&mut self) {
         self.workspace_debouncer =
             Some(crate::workspace::WorkspaceDebouncer::spawn(self.db.clone()));
+    }
+
+    /// Install the captured user shell environment. Called once during
+    /// bootstrap, before Tauri starts accepting commands.
+    pub fn set_shell_env(&mut self, env: HashMap<String, String>) {
+        self.shell_env = Arc::new(env);
     }
 
     /// Get or create a per-session mutex for companion operations.

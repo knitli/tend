@@ -7,9 +7,14 @@
   interface Props {
     selectedProjectId?: number | null;
     onSelectProject?: (project: Project) => void;
+    onSpawnSession?: (project: Project) => void;
   }
 
-  let { selectedProjectId = null, onSelectProject }: Props = $props();
+  let {
+    selectedProjectId = null,
+    onSelectProject,
+    onSpawnSession,
+  }: Props = $props();
 
   let showArchived = $state(false);
   let addingProject = $state(false);
@@ -162,6 +167,17 @@
             </div>
             <div class="project-actions">
               {#if !project.archived_at}
+                <button
+                  class="btn-icon btn-sm"
+                  title="Start a session in this project"
+                  aria-label="Start a session in {project.display_name}"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    onSpawnSession?.(project);
+                  }}
+                >
+                  ▶
+                </button>
                 <button
                   class="btn-icon btn-sm"
                   class:copied={copiedProjectId === project.id}
