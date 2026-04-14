@@ -88,11 +88,32 @@ pub async fn spawn_daemon(
 ) -> WorkbenchResult<DaemonHandle> {
     let path = socket_path.unwrap_or_else(default_socket_path);
 
-    // Stale socket from a previous run? Remove it. `bind()` would otherwise fail.
-    if path.exists()
-        && let Err(e) = std::fs::remove_file(&path)
-    {
-        warn!("could not remove stale socket at {}: {e}", path.display());
+    // If a socket file exists, find out whether something is actively
+    // listening on it before removing it.
+    //
+    // This protects against the scenario where a second workbench instance
+    // clobbers the socket of an already-running workbench, leaving the first
+    // instance with a hijacked daemon and confusing UX (sessions registered
+    // by the CLI go to the wrong instance, the original UI never updates).
+    if path.exists() {
+        match tokio::net::UnixStream::connect(&path).await {
+            Ok(_) => {
+                return Err(WorkbenchError::new(
+                    crate::error::ErrorCode::Internal,
+                    format!(
+                        "another tend workbench appears to be running (daemon socket at {} is accepting connections). \
+                         Close the existing instance before starting a new one.",
+                        path.display()
+                    ),
+                ));
+            }
+            Err(_) => {
+                // Connection failed — socket is stale. Remove it so bind() succeeds.
+                if let Err(e) = std::fs::remove_file(&path) {
+                    warn!("could not remove stale socket at {}: {e}", path.display());
+                }
+            }
+        }
     }
 
     if let Some(parent) = path.parent() {

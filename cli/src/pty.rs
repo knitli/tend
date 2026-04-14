@@ -4,13 +4,47 @@
 //! bidirectional I/O proxying between the user's real tty and the
 //! child PTY.
 
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 use std::thread;
 
 use anyhow::{Context, Result, bail};
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
+
+/// Read from a raw fd, retrying on EINTR. Returns 0 on EOF.
+fn read_fd(fd: i32, buf: &mut [u8]) -> std::io::Result<usize> {
+    loop {
+        // SAFETY: read(2) with a valid fd, a writable buffer, and a length
+        // that fits in the buffer. EINTR is retried.
+        let n = unsafe { libc::read(fd, buf.as_mut_ptr().cast(), buf.len()) };
+        if n >= 0 {
+            return Ok(n as usize);
+        }
+        let err = std::io::Error::last_os_error();
+        if err.kind() != std::io::ErrorKind::Interrupted {
+            return Err(err);
+        }
+    }
+}
+
+/// Write all bytes to a raw fd, retrying on EINTR and short writes.
+fn write_all_fd(fd: i32, mut buf: &[u8]) -> std::io::Result<()> {
+    while !buf.is_empty() {
+        // SAFETY: write(2) with a valid fd, a readable buffer, and a length
+        // that fits in the buffer. EINTR is retried; short writes are looped.
+        let n = unsafe { libc::write(fd, buf.as_ptr().cast(), buf.len()) };
+        if n >= 0 {
+            buf = &buf[n as usize..];
+            continue;
+        }
+        let err = std::io::Error::last_os_error();
+        if err.kind() != std::io::ErrorKind::Interrupted {
+            return Err(err);
+        }
+    }
+    Ok(())
+}
 
 /// A spawned child process inside a PTY.
 pub struct PtyChild {
@@ -104,10 +138,12 @@ pub fn spawn_proxy(mut pty_child: PtyChild) -> Result<i32> {
     let master_writer = Arc::new(std::sync::Mutex::new(master_writer));
 
     // PTY → stdout
+    // Use direct write(2) on STDOUT_FILENO to avoid Rust's stdout buffering
+    // and locking, which can interact badly with raw-mode terminals.
     let reader_handle = {
         let reader = Arc::clone(&master_reader);
         thread::spawn(move || {
-            let mut stdout = std::io::stdout().lock();
+            use std::io::Read as _;
             let mut buf = [0u8; 4096];
             loop {
                 let mut r = reader.lock().unwrap();
@@ -115,10 +151,9 @@ pub fn spawn_proxy(mut pty_child: PtyChild) -> Result<i32> {
                     Ok(0) => break,
                     Ok(n) => {
                         drop(r);
-                        if stdout.write_all(&buf[..n]).is_err() {
+                        if write_all_fd(libc::STDOUT_FILENO, &buf[..n]).is_err() {
                             break;
                         }
-                        let _ = stdout.flush();
                     }
                     Err(_) => break,
                 }
@@ -127,14 +162,17 @@ pub fn spawn_proxy(mut pty_child: PtyChild) -> Result<i32> {
     };
 
     // stdin → PTY
+    // Use direct read(2) on STDIN_FILENO instead of std::io::stdin().lock().
+    // The latter goes through a buffered StdinRaw + a process-global mutex
+    // which does not play well with raw-mode terminals: keystrokes can sit
+    // in the BufReader's internal buffer or block indefinitely behind the
+    // global stdin lock when other Rust I/O is active.
     let writer_handle = {
         let writer = Arc::clone(&master_writer);
         thread::spawn(move || {
-            let stdin = std::io::stdin();
-            let mut stdin = stdin.lock();
             let mut buf = [0u8; 4096];
             loop {
-                match stdin.read(&mut buf) {
+                match read_fd(libc::STDIN_FILENO, &mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
                         let mut w = writer.lock().unwrap();
