@@ -28,9 +28,7 @@
     "targets": "all"
   },
   "identifier": "io.knitli.tend",
-  "plugins": {
-    "notification": {}
-  },
+  "plugins": {},
   "productName": "tend",
   "version": "0.1.0"
 }

@@ -11,7 +11,7 @@ pn = "pnpm"
 node = "24"
 pnpm = "latest"
 "npm:@tauri-apps/cli" = "latest"
-rust = "1.89"
+rust = "nightly"
 typos = "latest"
 
 [prepare]
