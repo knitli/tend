@@ -33,6 +33,11 @@ impl AlertService {
         let now = Utc::now();
         let now_str = now.to_rfc3339();
 
+        // Use a transaction to serialize the check-then-insert/update so
+        // concurrent raises for the same (session, kind) cannot create
+        // duplicate open alert rows.
+        let mut tx = db.pool().begin().await?;
+
         // Check for an existing open alert of the same kind on this session.
         let existing = sqlx::query(
             r#"
@@ -43,7 +48,7 @@ impl AlertService {
         )
         .bind(session_id.get())
         .bind(kind.as_str())
-        .fetch_optional(db.pool())
+        .fetch_optional(&mut *tx)
         .await?;
 
         let alert_id = if let Some(row) = existing {
@@ -58,7 +63,7 @@ impl AlertService {
             .bind(&now_str)
             .bind(reason)
             .bind(id)
-            .execute(db.pool())
+            .execute(&mut *tx)
             .await?;
             AlertId::new(id)
         } else {
@@ -74,10 +79,12 @@ impl AlertService {
             .bind(kind.as_str())
             .bind(reason)
             .bind(&now_str)
-            .execute(db.pool())
+            .execute(&mut *tx)
             .await?;
             AlertId::new(result.last_insert_rowid())
         };
+
+        tx.commit().await?;
 
         info!(%session_id, %alert_id, "alert raised (kind={:?})", kind);
 

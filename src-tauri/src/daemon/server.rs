@@ -55,12 +55,26 @@ unsafe fn libc_getuid() -> u32 {
 }
 
 /// Handle returned by [`spawn_daemon`]. Holds the listener task so the caller
-/// can await or abort it.
+/// can await or abort it. Removes the socket file on drop.
 pub struct DaemonHandle {
     /// Path the listener was bound to.
     pub socket_path: PathBuf,
     /// Background accept-loop task.
     pub task: JoinHandle<()>,
+}
+
+impl Drop for DaemonHandle {
+    fn drop(&mut self) {
+        if let Err(e) = std::fs::remove_file(&self.socket_path) {
+            // ENOENT is fine — socket may already be gone.
+            if e.kind() != std::io::ErrorKind::NotFound {
+                warn!(
+                    "failed to clean up daemon socket at {}: {e}",
+                    self.socket_path.display()
+                );
+            }
+        }
+    }
 }
 
 /// Bind the daemon socket and spawn an accept loop.
@@ -107,9 +121,11 @@ pub async fn spawn_daemon(
 }
 
 async fn accept_loop(listener: UnixListener, state: Arc<WorkbenchState>) {
+    let mut consecutive_errors: u32 = 0;
     loop {
         match listener.accept().await {
             Ok((stream, _addr)) => {
+                consecutive_errors = 0;
                 let state = Arc::clone(&state);
                 tokio::spawn(async move {
                     if let Err(e) = serve_connection(stream, state).await {
@@ -118,8 +134,18 @@ async fn accept_loop(listener: UnixListener, state: Arc<WorkbenchState>) {
                 });
             }
             Err(e) => {
-                error!("daemon accept failed: {e}");
-                return;
+                consecutive_errors = consecutive_errors.saturating_add(1);
+                if consecutive_errors >= 10 {
+                    error!(
+                        "daemon accept failed {consecutive_errors} times in a row, giving up: {e}"
+                    );
+                    return;
+                }
+                let backoff = std::time::Duration::from_millis(100 * u64::from(consecutive_errors));
+                warn!(
+                    "daemon accept failed ({consecutive_errors}/10), retrying in {backoff:?}: {e}"
+                );
+                tokio::time::sleep(backoff).await;
             }
         }
     }

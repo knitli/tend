@@ -23,7 +23,8 @@ use crate::db::Database;
 use crate::error::WorkbenchResult;
 use crate::session::recovery::reconcile_and_reattach;
 use crate::state::WorkbenchState;
-use tracing::info;
+use std::time::Duration;
+use tracing::{info, warn};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 /// Initialize structured logging. Uses env-filter controlled by `AGENTUI_LOG`
@@ -59,7 +60,7 @@ pub fn run() {
     let bootstrap: WorkbenchResult<(WorkbenchState, daemon::DaemonHandle)> = rt.block_on(async {
         info!("opening workbench database at default XDG path");
         let db = Database::open_default().await?;
-        let state = WorkbenchState::new(db);
+        let mut state = WorkbenchState::new(db);
 
         // Crash recovery (T025): single merged pass. Must run BEFORE Tauri's
         // frontend is ready to call `session_list`.
@@ -81,19 +82,20 @@ pub fn run() {
         // Session reaper — listens for child-exit events and updates the DB.
         session::reaper::spawn_reaper(state.clone());
 
+        // C1: Initialize the workspace debouncer (100 ms coalescing).
+        // Must be called inside the runtime block so tokio::spawn succeeds.
+        state.init_debouncer();
+
         Ok((state, daemon_handle))
     });
 
-    let (mut state, _daemon_handle) = match bootstrap {
+    let (state, _daemon_handle) = match bootstrap {
         Ok(pair) => pair,
         Err(e) => {
             eprintln!("tend-workbench bootstrap failed: {e}");
             std::process::exit(1);
         }
     };
-
-    // C1: Initialize the workspace debouncer (100 ms coalescing).
-    state.init_debouncer();
 
     let state_clone = state.clone();
     let shutdown_state = state.clone();
@@ -166,13 +168,22 @@ pub fn run() {
             if let tauri::RunEvent::ExitRequested { .. } = &event
                 && let Some(ref debouncer) = shutdown_state.workspace_debouncer
             {
-                // Block the exit until the flush completes.
                 let debouncer = debouncer.clone();
                 let rt = tokio::runtime::Handle::try_current();
-                if let Ok(handle) = rt {
-                    handle.block_on(debouncer.flush());
+                match rt {
+                    Ok(handle) => {
+                        let result = handle.block_on(async {
+                            tokio::time::timeout(Duration::from_secs(5), debouncer.flush()).await
+                        });
+                        match result {
+                            Ok(()) => info!("workspace debouncer flushed on exit"),
+                            Err(_) => warn!("workspace debouncer flush timed out after 5s"),
+                        }
+                    }
+                    Err(_) => {
+                        warn!("no tokio runtime available at exit, workspace flush skipped");
+                    }
                 }
-                info!("workspace debouncer flushed on exit");
             }
         });
 }

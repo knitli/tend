@@ -108,7 +108,9 @@ impl CompanionService {
 
     /// Forcibly respawn a companion terminal, killing the existing one if alive.
     ///
-    /// Also serialized per session_id.
+    /// Also serialized per session_id. If spawning the replacement fails, the
+    /// old companion is already dead — the error is propagated so the frontend
+    /// can surface it rather than seeing a stale `NotFound`.
     pub async fn respawn(
         state: &WorkbenchState,
         session_id: SessionId,
@@ -116,24 +118,8 @@ impl CompanionService {
         let lock = state.companion_lock(session_id).await;
         let _guard = lock.lock().await;
 
-        // Kill existing companion if alive.
-        let handle = { state.live_companions.write().await.remove(&session_id) };
-        if let Some(h) = handle {
-            let _ = h.kill();
-        }
-
-        // Mark existing row as ended.
-        let now = Utc::now().to_rfc3339();
-        sqlx::query(
-            "UPDATE companion_terminals SET ended_at = ?1, pid = NULL \
-             WHERE session_id = ?2 AND ended_at IS NULL",
-        )
-        .bind(&now)
-        .bind(session_id.get())
-        .execute(state.db.pool())
-        .await?;
-
-        // Look up session cwd.
+        // Validate the session is still alive before tearing down the old
+        // companion — avoids killing a working companion for a dead session.
         let session_row =
             sqlx::query("SELECT working_directory, status FROM sessions WHERE id = ?1")
                 .bind(session_id.get())
@@ -153,6 +139,23 @@ impl CompanionService {
 
         let working_dir: String = session_row.try_get("working_directory")?;
         let cwd = PathBuf::from(&working_dir);
+
+        // Kill existing companion if alive.
+        let handle = { state.live_companions.write().await.remove(&session_id) };
+        if let Some(h) = handle {
+            let _ = h.kill();
+        }
+
+        // Mark existing row as ended.
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            "UPDATE companion_terminals SET ended_at = ?1, pid = NULL \
+             WHERE session_id = ?2 AND ended_at IS NULL",
+        )
+        .bind(&now)
+        .bind(session_id.get())
+        .execute(state.db.pool())
+        .await?;
 
         // Check if there's an existing row to reuse (the one we just ended).
         let existing_id: Option<i64> =
