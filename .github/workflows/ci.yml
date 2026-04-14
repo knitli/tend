@@ -172,6 +172,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Clean stale bundle outputs from cache
+        run: rm -rf target/release/bundle
+
       - name: Sync version from tag
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -241,8 +244,10 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
-          draft: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
           body: ${{ steps.changelog.outputs.content }}
+          fail_on_unmatched_files: true
           files: |
             artifacts/tend-deb/*.deb
             artifacts/tend-rpm/*.rpm
