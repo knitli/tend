@@ -64,6 +64,25 @@
     event.stopPropagation();
     await projectsStore.unarchive(projectId);
   }
+
+  let copiedProjectId = $state<number | null>(null);
+  let copyTimer: ReturnType<typeof setTimeout> | null = null;
+
+  async function handleCopyRunCommand(
+    event: MouseEvent,
+    project: Project,
+  ): Promise<void> {
+    event.stopPropagation();
+    const command = `tend run --project "${project.canonical_path}" -- claude`;
+    try {
+      await navigator.clipboard.writeText(command);
+      copiedProjectId = project.id;
+      if (copyTimer) clearTimeout(copyTimer);
+      copyTimer = setTimeout(() => { copiedProjectId = null; }, 1500);
+    } catch {
+      // Clipboard API unavailable; fail silently.
+    }
+  }
 </script>
 
 <aside class="sidebar" role="navigation" aria-label="Projects">
@@ -142,6 +161,19 @@
               </span>
             </div>
             <div class="project-actions">
+              {#if !project.archived_at}
+                <button
+                  class="btn-icon btn-sm"
+                  class:copied={copiedProjectId === project.id}
+                  title={copiedProjectId === project.id
+                    ? 'Copied!'
+                    : `Copy: tend run --project "${project.canonical_path}" -- claude`}
+                  aria-label="Copy tend run command for {project.display_name}"
+                  onclick={(e) => handleCopyRunCommand(e, project)}
+                >
+                  {copiedProjectId === project.id ? '✓' : '⧉'}
+                </button>
+              {/if}
               {#if project.archived_at}
                 <button
                   class="btn-icon btn-sm"
@@ -227,6 +259,10 @@
   .btn-icon:hover {
     background: var(--color-surface-hover, #1e2028);
     color: var(--color-text, #e6e8ef);
+  }
+
+  .btn-icon.copied {
+    color: var(--color-accent, #60a5fa);
   }
 
   .btn-sm {

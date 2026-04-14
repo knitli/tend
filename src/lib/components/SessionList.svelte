@@ -91,6 +91,35 @@
   function handleActivate(session: SessionSummary): void {
     onActivateSession?.(session);
   }
+
+  /** Project used for the empty-state copy hint: selected one if any,
+   *  otherwise the first active project. */
+  const hintProject = $derived.by(() => {
+    if (selectedProjectId !== null && selectedProjectId !== undefined) {
+      return projectsStore.byId(selectedProjectId) ?? null;
+    }
+    return projectsStore.activeProjects[0] ?? null;
+  });
+
+  const hintCommand = $derived(
+    hintProject
+      ? `tend run --project "${hintProject.canonical_path}" -- claude`
+      : 'tend run -- claude',
+  );
+
+  let copied = $state(false);
+  let copyTimer: ReturnType<typeof setTimeout> | null = null;
+
+  async function copyHint(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(hintCommand);
+      copied = true;
+      if (copyTimer) clearTimeout(copyTimer);
+      copyTimer = setTimeout(() => { copied = false; }, 1500);
+    } catch {
+      // Clipboard API may be unavailable (non-secure context); fail silently.
+    }
+  }
 </script>
 
 <div class="session-list" role="region" aria-label="Sessions">
@@ -116,9 +145,33 @@
     {#if sessionsStore.loading}
       <p class="empty-state">Loading sessions...</p>
     {:else if filteredSessions.length === 0}
-      <p class="empty-state">
-        {debouncedFilter ? 'No sessions match your filter.' : 'No active sessions.'}
-      </p>
+      {#if debouncedFilter}
+        <p class="empty-state">No sessions match your filter.</p>
+      {:else}
+        <div class="empty-state empty-state-hint">
+          <p class="hint-lead">No active sessions yet.</p>
+          <p class="hint-body">
+            Sessions are started from the CLI. Run this in a terminal:
+          </p>
+          <div class="hint-command">
+            <code>{hintCommand}</code>
+            <button
+              type="button"
+              class="btn-copy"
+              onclick={copyHint}
+              title="Copy command"
+              aria-label="Copy command"
+            >
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+          <p class="hint-foot">
+            Replace <code>claude</code> with the agent you want to run
+            (<code>codex</code>, <code>aider</code>, a script, etc.).
+            It will appear here once it starts.
+          </p>
+        </div>
+      {/if}
     {:else}
       {#each groupedSessions as [projectId, sessions] (projectId)}
         <div class="project-group">
@@ -198,6 +251,72 @@
     color: var(--color-text-muted, #8b8fa3);
     font-size: 0.8125rem;
     text-align: center;
+  }
+
+  .empty-state-hint {
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3, 0.75rem);
+  }
+
+  .hint-lead {
+    margin: 0;
+    color: var(--color-text, #e6e8ef);
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .hint-body,
+  .hint-foot {
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .hint-foot code {
+    background: var(--color-surface-raised, #15171c);
+    padding: 0 4px;
+    border-radius: 3px;
+    font-size: 0.75rem;
+  }
+
+  .hint-command {
+    display: flex;
+    align-items: stretch;
+    gap: var(--space-2, 0.5rem);
+    background: var(--color-surface-raised, #15171c);
+    border: 1px solid var(--color-border, #2a2d35);
+    border-radius: var(--radius-sm, 4px);
+    padding: var(--space-2, 0.5rem);
+  }
+
+  .hint-command code {
+    flex: 1;
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: 0.75rem;
+    color: var(--color-text, #e6e8ef);
+    white-space: nowrap;
+    overflow-x: auto;
+    align-self: center;
+  }
+
+  .btn-copy {
+    padding: var(--space-1, 0.25rem) var(--space-3, 0.75rem);
+    border: 1px solid var(--color-border, #2a2d35);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--color-surface, #0f1115);
+    color: var(--color-text-muted, #8b8fa3);
+    font-size: 0.75rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 150ms, color 150ms, border-color 150ms;
+    flex-shrink: 0;
+  }
+
+  .btn-copy:hover {
+    background: var(--color-surface-hover, #1e2028);
+    color: var(--color-text, #e6e8ef);
+    border-color: var(--color-accent, #60a5fa);
   }
 
   .project-group {
