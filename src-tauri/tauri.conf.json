@@ -22,6 +22,9 @@
   },
   "bundle": {
     "active": true,
+    "externalBin": [
+      "../target/release/tend"
+    ],
     "icon": [
       "icons/icon.png"
     ],

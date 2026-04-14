@@ -175,6 +175,13 @@ jobs:
       - name: Clean stale bundle outputs from cache
         run: rm -rf target/release/bundle
 
+      - name: Build tend CLI sidecar
+        run: |
+          TARGET=$(rustc -vV | awk '/^host:/ { print $2 }')
+          echo "Building tend-cli for $TARGET"
+          cargo build --release -p tend-cli --bin tend
+          cp -f target/release/tend "target/release/tend-$TARGET"
+
       - name: Sync version from tag
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
