@@ -12,6 +12,7 @@
   import SpawnSessionDialog from '$lib/components/SpawnSessionDialog.svelte';
   import LayoutSwitcher from '$lib/components/LayoutSwitcher.svelte';
   import HamburgerButton from '$lib/components/HamburgerButton.svelte';
+  import CommandPalette from '$lib/components/CommandPalette.svelte';
   import { projectsStore } from '$lib/stores/projects.svelte';
   import { sessionsStore } from '$lib/stores/sessions.svelte';
   import { sessionSetVisible } from '$lib/api/sessions';
@@ -29,6 +30,8 @@
   let overviewOpen = $state(false);
   let spawnDialogOpen = $state(false);
   let spawnDialogProject = $state<Project | null>(null);
+  /** P4-E: Ctrl+K / Cmd+K quick-switch palette visibility. */
+  let paletteOpen = $state(false);
 
   /** P3-A: sidebar collapse state. Hydrated from `workspace.ui.sidebar_collapsed`
    *  on mount (see onMount below) and persisted on every toggle. */
@@ -240,6 +243,30 @@
     addSlot(session.id);
   }
 
+  /** P4-E: palette activation. If the session is already mounted in a slot
+   *  we just re-focus/flash it via the existing single-session path. If it
+   *  isn't, we *append* a new slot (addSlot) rather than replace — the
+   *  palette is a navigation tool, so losing an already-open pane to swap
+   *  in another one would be surprising. `addSlot` itself no-ops when the
+   *  session is already mounted (it still updates active + re-flashes), so
+   *  the two branches effectively fall through to the same "activate"
+   *  behaviour once a slot exists. The branching exists only to avoid
+   *  growing the slot set when the session is already there. */
+  function handlePaletteActivate(sessionId: number): void {
+    const session = sessionsStore.byId(sessionId);
+    if (!session) {
+      paletteOpen = false;
+      return;
+    }
+    const existing = slots.findIndex((s) => s.session_id === sessionId);
+    if (existing !== -1) {
+      handleActivateSession(session);
+    } else {
+      addSlot(sessionId);
+    }
+    paletteOpen = false;
+  }
+
   function handleWindowKeydown(event: KeyboardEvent): void {
     if (
       event.key === '/' &&
@@ -250,6 +277,24 @@
     ) {
       event.preventDefault();
       sessionListRef?.focusFilter();
+      return;
+    }
+
+    // P4-E: Ctrl+K (or Cmd+K on mac) opens the quick-switch palette. Guarded
+    // by isEditableTarget so typing in a text input doesn't steal the shortcut
+    // — but xterm.js also sits inside an editable helper-textarea, so this
+    // means the palette cannot be opened while the terminal has focus (users
+    // must click outside the terminal first). That's the documented trade-off
+    // shared with the `/` filter shortcut above.
+    if (
+      event.key === 'k' &&
+      (event.ctrlKey || event.metaKey) &&
+      !event.altKey &&
+      !event.shiftKey &&
+      !isEditableTarget(event.target)
+    ) {
+      event.preventDefault();
+      paletteOpen = true;
       return;
     }
 
@@ -659,6 +704,12 @@
 </div>
 
 <SettingsDialog open={settingsOpen} onclose={() => settingsOpen = false} />
+
+<CommandPalette
+  open={paletteOpen}
+  onClose={() => (paletteOpen = false)}
+  onActivate={handlePaletteActivate}
+/>
 
 <SpawnSessionDialog
   open={spawnDialogOpen}
