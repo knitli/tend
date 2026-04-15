@@ -16,13 +16,12 @@
   import MainTabs, { type TabId } from '$lib/components/MainTabs.svelte';
   import { projectsStore } from '$lib/stores/projects.svelte';
   import { sessionsStore } from '$lib/stores/sessions.svelte';
-  import { sessionSetVisible } from '$lib/api/sessions';
-  import { scratchpadStore } from '$lib/stores/scratchpad.svelte';
+  import { sessionSetVisible, sessionSpawn } from '$lib/api/sessions';
   import { workspaceStore } from '$lib/stores/workspace.svelte';
   import { isEditableTarget } from '$lib/util/isEditableTarget';
   import type { Project } from '$lib/api/projects';
   import type { SessionSummary } from '$lib/api/sessions';
-  import type { PaneSlot } from '$lib/types/pane';
+  import type { GhostSessionData, PaneSlot } from '$lib/types/pane';
   import { getProjectColor } from '$lib/util/projectColor';
 
   let selectedProjectId = $state<number | null>(null);
@@ -199,6 +198,103 @@
    *  so layouts survive restarts. Debounced by workspaceStore. */
   function persistSlots(): void {
     workspaceStore.setUi('workspace_pane_slots', slots);
+  }
+
+  /** Phase 5: keep each live slot's `ghost_data` snapshot current. Runs on
+   *  every reactive read of `slots`, `sessionsStore.sessions`, and
+   *  `projectsStore.projects`. Writes are diff-guarded: only mutates when
+   *  the computed snapshot differs from what's stored, so the effect does
+   *  NOT self-trigger (no loop). When a live session later transitions to
+   *  ended/error or gets pruned, the most-recent snapshot is already on
+   *  disk, so the ghost pane has full restart context. */
+  $effect(() => {
+    // Depend explicitly on the session list so status changes on any
+    // tracked slot re-run this effect.
+    void sessionsStore.sessions;
+    void projectsStore.projects;
+    let changed = false;
+    const updated = slots.map((slot) => {
+      const session = sessionsStore.byId(slot.session_id);
+      if (!session) return slot; // ghost stays as-is
+      const project = projectsStore.byId(session.project_id) ?? null;
+      // Defensively filter non-string command entries (shouldn't happen with
+      // a well-behaved backend, but metadata is typed as `Record<string,
+      // unknown>` so nothing enforces it at the IPC boundary).
+      const rawCommand = session.metadata?.command;
+      const command = Array.isArray(rawCommand)
+        ? rawCommand.filter((c: unknown): c is string => typeof c === 'string')
+        : [];
+      const nextGhost: GhostSessionData = {
+        project_id: session.project_id,
+        label: session.label,
+        command,
+        project_color: getProjectColor(project),
+      };
+      const current = slot.ghost_data;
+      const diff =
+        !current ||
+        current.project_id !== nextGhost.project_id ||
+        current.label !== nextGhost.label ||
+        current.project_color !== nextGhost.project_color ||
+        current.command.length !== nextGhost.command.length ||
+        current.command.some((c, i) => c !== nextGhost.command[i]);
+      if (diff) {
+        changed = true;
+        return { ...slot, ghost_data: nextGhost };
+      }
+      return slot;
+    });
+    if (changed) {
+      slots = updated;
+      persistSlots();
+    }
+  });
+
+  /** Phase 5: restart a ghost slot. Called by PaneSlot's ▶ Restart button,
+   *  plumbed through PaneWorkspace's `onRestartSlot` prop. Returns the new
+   *  session id on success; re-throws on failure so PaneSlot's `handleRestart`
+   *  can surface the specific error (e.g. "project archived") rather than a
+   *  generic "Failed to restart". */
+  async function restartGhostSlot(oldSessionId: number): Promise<number | null> {
+    const slot = slots.find((s) => s.session_id === oldSessionId);
+    const ghost = slot?.ghost_data;
+    if (!slot || !ghost || ghost.command.length === 0) return null;
+    const result = await sessionSpawn({
+      projectId: ghost.project_id,
+      command: ghost.command,
+      label: ghost.label,
+    });
+    const newSession = result.session;
+    // Insert into the store immediately so the ghost flips to live without
+    // waiting for the `session:spawned` event round-trip. Mirrors the
+    // pattern in SpawnSessionDialog's onSpawned handler.
+    sessionsStore.add({
+      ...newSession,
+      activity_summary: null,
+      alert: null,
+      reattached_mirror: false,
+    });
+    // Replace only session_id and preserve the full slot object (ghost_data
+    // and any future fields) until the snapshot effect refreshes derived data.
+    slots = slots.map((s) =>
+      s.session_id === oldSessionId
+        ? {
+            ...s,
+            session_id: newSession.id,
+          }
+        : s,
+    );
+    persistSlots();
+    // Deliberate: we steal activeSessionId for the newly-restarted session.
+    // The user just initiated the restart, so landing them in that terminal
+    // matches intent — even if a live leftmost slot was active before. The
+    // previous activeSessionId was already the ghost that was just replaced
+    // in the common case (restart is triggered from the ghost itself).
+    activeSessionId = newSession.id;
+    highlightSessionId = newSession.id;
+    highlightToken += 1;
+    workspaceStore.update({ focused_session_id: newSession.id });
+    return newSession.id;
   }
 
   function handleSlotClose(sessionId: number): void {
@@ -474,30 +570,49 @@
         sessionsStore.hydrate(),
       ]);
 
-      // 3. Phase 4-B/C: rehydrate the pane-workspace slot list. Order of
-      //    operations matters — sessions must be hydrated first so we can
-      //    filter out slot ids that reference pruned sessions (ghost-slot
-      //    behaviour is Phase 5; Phase 4 just drops them silently).
+      // 3. Phase 4-B/C + Phase 5: rehydrate the pane-workspace slot list.
+      //    Phase 4 silently dropped slots whose session_id was no longer in
+      //    the store; Phase 5 keeps them and renders them as ghost slots so
+      //    the user can restart the stored command. Only slots whose shape
+      //    is structurally invalid (missing session_id, etc.) are dropped.
       const rawSlots = ws.ui?.workspace_pane_slots;
       if (Array.isArray(rawSlots)) {
-        const filtered: PaneSlot[] = [];
+        const kept: PaneSlot[] = [];
         for (const entry of rawSlots) {
           if (
             entry &&
             typeof entry === 'object' &&
-            typeof (entry as PaneSlot).session_id === 'number' &&
-            sessionsStore.byId((entry as PaneSlot).session_id) !== undefined
+            typeof (entry as PaneSlot).session_id === 'number'
           ) {
             const e = entry as PaneSlot;
-            filtered.push({
+            const ghost = e.ghost_data;
+            const validGhost =
+              ghost &&
+              typeof ghost === 'object' &&
+              typeof ghost.project_id === 'number' &&
+              typeof ghost.label === 'string' &&
+              Array.isArray(ghost.command) &&
+              ghost.command.every((c: unknown) => typeof c === 'string')
+                ? {
+                    project_id: ghost.project_id,
+                    label: ghost.label,
+                    command: ghost.command,
+                    project_color:
+                      typeof ghost.project_color === 'string'
+                        ? ghost.project_color
+                        : null,
+                  }
+                : undefined;
+            kept.push({
               session_id: e.session_id,
               split_percent: typeof e.split_percent === 'number' ? e.split_percent : 65,
-              order: typeof e.order === 'number' ? e.order : filtered.length,
+              order: typeof e.order === 'number' ? e.order : kept.length,
+              ...(validGhost ? { ghost_data: validGhost } : {}),
             });
           }
         }
-        filtered.sort((a, b) => a.order - b.order);
-        slots = filtered.map((s, i) => ({ ...s, order: i }));
+        kept.sort((a, b) => a.order - b.order);
+        slots = kept.map((s, i) => ({ ...s, order: i }));
       }
 
       // Fallback: if no stored slots but there IS a focused session,
@@ -506,16 +621,36 @@
         slots = [{ session_id: activeSessionId, split_percent: 65, order: 0 }];
       }
 
-      // If slots were filtered down to empty but activeSessionId was set,
-      // clear it so the empty state renders cleanly.
+      // Promote to active the first slot whose session is actually live
+      // (not a ghost). If the only slots are ghosts, leave activeSessionId
+      // null so there's no live target for highlight/flash/SessionList. A
+      // ghost's Restart button is the user's path back.
       if (slots.length === 0) {
         activeSessionId = null;
-      } else if (
-        activeSessionId === null ||
-        !slots.some((s) => s.session_id === activeSessionId)
-      ) {
-        // Promote the first slot to active so SessionList highlights it.
-        activeSessionId = slots[0].session_id;
+      } else {
+        const firstLive = slots.find(
+          (s) => sessionsStore.byId(s.session_id) !== undefined,
+        );
+        if (firstLive) {
+          if (
+            activeSessionId === null ||
+            !slots.some(
+              (s) =>
+                s.session_id === activeSessionId &&
+                sessionsStore.byId(s.session_id) !== undefined,
+            )
+          ) {
+            activeSessionId = firstLive.session_id;
+          }
+        } else {
+          activeSessionId = null;
+          if (focusMode !== 'none') {
+            focusMode = 'none';
+            focusSessionIds = [];
+            workspaceStore.setUi('focus_mode', focusMode);
+            workspaceStore.setUi('focus_mode_session_ids', focusSessionIds);
+          }
+        }
       }
 
       const rawSizes = ws.ui?.workspace_pane_sizes;
@@ -795,6 +930,7 @@
       onResize={handleSlotResize}
       {onDropSession}
       {onReorderSlots}
+      onRestartSlot={restartGhostSlot}
     />
   {:else}
     <div class="empty-content">

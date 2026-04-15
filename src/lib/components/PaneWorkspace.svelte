@@ -61,6 +61,13 @@
      *  the pane header (HTML5 native drag) or the `‹` / `›` keyboard
      *  buttons. Receives the full new slot array in its final order. */
     onReorderSlots?: (next: PaneSlotType[]) => void;
+    /** Phase 5: restart a ghost slot. Receives the slot's session_id (which
+     *  references a session that no longer exists in the store); the parent
+     *  looks up the slot's `ghost_data`, calls `sessionSpawn`, and updates
+     *  the slot's `session_id` to the new one. Resolves with the new id on
+     *  success, may resolve with null for a generic failure, and may
+     *  throw/reject with a specific error so PaneSlot can surface it. */
+    onRestartSlot?: (slotSessionId: number) => Promise<number | null>;
   }
 
   let {
@@ -73,6 +80,7 @@
     onResize,
     onDropSession,
     onReorderSlots,
+    onRestartSlot,
   }: Props = $props();
 
   /** P4-D: id of the slot currently being dragged for reorder. We carry
@@ -348,10 +356,19 @@
       const absoluteIndex = maxVisibleSlots + i;
       const session = sessionsStore.byId(slot.session_id) ?? null;
       const project = session ? projectsStore.byId(session.project_id) ?? null : null;
-      const color = getProjectColor(project) ?? undefined;
+      // Phase 5 review fix R1: for ghost slots (no live session), fall back
+      // to `slot.ghost_data` so the popover shows the real project colour,
+      // name, and session label instead of generic "Project / Session {id}".
+      const ghost = slot.ghost_data;
+      let color: string | undefined;
+      let projectName: string;
+      let sessionLabel: string;
       let statusLabel = '';
       let statusClass = '';
       if (session) {
+        color = getProjectColor(project) ?? undefined;
+        projectName = project?.display_name ?? 'Project';
+        sessionLabel = session.label;
         switch (session.status) {
           case 'working': statusLabel = 'Working'; break;
           case 'idle': statusLabel = 'Idle'; break;
@@ -361,12 +378,25 @@
           default: statusLabel = session.status;
         }
         statusClass = `status-${session.status.replaceAll('_', '-')}`;
+      } else if (ghost) {
+        color = ghost.project_color ?? undefined;
+        const ghostProject = projectsStore.byId(ghost.project_id) ?? null;
+        projectName = ghostProject?.display_name ?? `Project #${ghost.project_id}`;
+        sessionLabel = ghost.label;
+        statusLabel = 'Ended';
+        statusClass = 'status-ended';
+      } else {
+        color = undefined;
+        projectName = 'Project';
+        sessionLabel = `Session #${slot.session_id}`;
+        statusLabel = 'Ended';
+        statusClass = 'status-ended';
       }
       return {
         slot,
         absoluteIndex,
-        projectName: project?.display_name ?? 'Project',
-        sessionLabel: session?.label ?? `Session ${slot.session_id}`,
+        projectName,
+        sessionLabel,
         statusLabel,
         statusClass,
         color,
@@ -510,6 +540,10 @@
             sessionId={slot.session_id}
             highlighted={highlightedSessionId === slot.session_id}
             {highlightToken}
+            ghostData={slot.ghost_data}
+            onRestart={onRestartSlot
+              ? () => onRestartSlot(slot.session_id)
+              : undefined}
             onClose={() => onSlotClose(slot.session_id)}
             onFocus={() => onSlotFocus(slot.session_id)}
             onMoveLeft={onReorderSlots && slots.length > 1 ? () => handleMoveLeft(slot.session_id) : undefined}

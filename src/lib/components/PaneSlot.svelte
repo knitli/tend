@@ -19,9 +19,11 @@
 -->
 <script lang="ts">
   import SplitView from '$lib/components/SplitView.svelte';
+  import SpinnerIcon from '$lib/components/SpinnerIcon.svelte';
   import { projectsStore } from '$lib/stores/projects.svelte';
   import { sessionsStore } from '$lib/stores/sessions.svelte';
   import { getProjectColor } from '$lib/util/projectColor';
+  import type { GhostSessionData } from '$lib/types/pane';
 
   interface Props {
     sessionId: number;
@@ -70,6 +72,17 @@
      *  - 'after'  → right-edge bar (dragged pane lands after this slot)
      *  - null     → no indicator */
     dropIndicator?: 'before' | 'after' | null;
+    /** Phase 5: snapshot of the session's relaunch args captured while it was
+     *  alive. When the session is no longer in `sessionsStore` (pruned after
+     *  a workbench restart, or never-live-this-session), the slot falls into
+     *  ghost mode and renders this data + a ▶ Restart button. */
+    ghostData?: GhostSessionData;
+    /** Phase 5: restart a ghost slot. The parent re-runs the stored command
+     *  via `sessionSpawn` and updates the slot's `session_id` to the new
+     *  session on success. Returns the new id on success, may return `null`
+     *  for a handled failure, and may throw/reject to surface a specific
+     *  error message. */
+    onRestart?: () => Promise<number | null>;
   }
 
   let {
@@ -89,7 +102,30 @@
     onReorderDragLeave,
     isBeingDragged = false,
     dropIndicator = null,
+    ghostData,
+    onRestart,
   }: Props = $props();
+
+  /** Phase 5: local restart UI state. */
+  let restarting = $state(false);
+  let restartError = $state<string | null>(null);
+
+  async function handleRestart(): Promise<void> {
+    if (!onRestart || restarting) return;
+    restarting = true;
+    restartError = null;
+    try {
+      const newId = await onRestart();
+      if (newId === null) {
+        restartError = 'Failed to restart';
+      }
+    } catch (err) {
+      restartError = err instanceof Error ? err.message : String(err);
+    } finally {
+      restarting = false;
+    }
+  }
+
 
   function handleDragOver(event: DragEvent): void {
     if (!onReorderDragOver) return;
@@ -121,7 +157,34 @@
 
   const session = $derived(sessionsStore.byId(sessionId) ?? null);
   const project = $derived(session ? projectsStore.byId(session.project_id) ?? null : null);
-  const projectColor = $derived(getProjectColor(project));
+
+  /** Phase 5: ghost mode iff there's no live session in the store. A live
+   *  but ended/error session still renders its final output — only pruned /
+   *  never-hydrated sessions get replaced by a ghost UI. */
+  const isGhost = $derived(session === null);
+
+  /** Phase 5: ghost project colour falls back to the snapshot, then accent. */
+  const projectColor = $derived(
+    isGhost
+      ? (ghostData?.project_color ?? null)
+      : getProjectColor(project),
+  );
+
+  /** Phase 5: ghost display name — snapshot's project name if available, else
+   *  the snapshot's project_id, else "Project" as an ultimate fallback. */
+  const ghostProjectName = $derived.by<string>(() => {
+    if (!isGhost) return '';
+    const snap = ghostData;
+    if (!snap) return 'Project';
+    const p = projectsStore.byId(snap.project_id);
+    return p?.display_name ?? `Project #${snap.project_id}`;
+  });
+
+  const ghostLabel = $derived(ghostData?.label ?? `Session #${sessionId}`);
+  const ghostCommand = $derived(ghostData?.command ?? []);
+  const canRestart = $derived(
+    isGhost && ghostCommand.length > 0 && onRestart !== undefined,
+  );
 
   const statusLabel = $derived.by(() => {
     if (!session) return '';
@@ -242,22 +305,105 @@
       <SplitView sessionId={session.id} {session} highlightToken={effectiveToken} />
     </div>
   {:else}
-    <header class="pane-slot-header pane-slot-header-missing">
-      <span class="pane-slot-title">
-        <strong>Session not found</strong>
+    <!-- Phase 5: ghost slot. The session is not in the store (pruned /
+         never-hydrated), but the slot's ghost_data carries a snapshot of
+         the project + label + command. If a command is recorded, a ▶
+         Restart button re-runs it via `sessionSpawn` through the parent.
+         Phase 5 review N3: ghost header gets the same drag handle and ‹/›
+         move buttons as live slots so reorder is symmetric — you can drag
+         a ghost pane just like a live one. -->
+    <header class="pane-slot-header pane-slot-header-ghost">
+      <!-- Drag handle + keyboard move buttons: same wiring as the live header.
+           A ghost slot still has a position in the workspace array and must be
+           reorderable so the user can arrange the layout before restarting. -->
+      <span
+        class="pane-slot-drag-handle"
+        data-drag-handle
+        draggable={onReorderDragStart ? 'true' : 'false'}
+        ondragstart={onReorderDragStart}
+        ondragend={onReorderDragEnd}
+        aria-hidden="true"
+        title={onReorderDragStart ? 'Drag to reorder pane' : 'Only one pane open'}
+      >⠿</span>
+      {#if onMoveLeft}
+        <button
+          type="button"
+          class="pane-slot-btn pane-slot-move-btn"
+          onclick={onMoveLeft}
+          disabled={!canMoveLeft}
+          title="Move pane left"
+          aria-label="Move pane left"
+        >
+          ‹
+        </button>
+      {/if}
+      {#if onMoveRight}
+        <button
+          type="button"
+          class="pane-slot-btn pane-slot-move-btn"
+          onclick={onMoveRight}
+          disabled={!canMoveRight}
+          title="Move pane right"
+          aria-label="Move pane right"
+        >
+          ›
+        </button>
+      {/if}
+      <span class="pane-slot-dot" aria-hidden="true"></span>
+      <span class="pane-slot-title" title={`${ghostProjectName} · ${ghostLabel}`}>
+        <strong class="pane-slot-project">{ghostProjectName}</strong>
+        <span class="pane-slot-separator" aria-hidden="true">·</span>
+        <span class="pane-slot-label">{ghostLabel}</span>
       </span>
+      <span class="badge status-ended">Ended</span>
       <button
         type="button"
         class="pane-slot-btn pane-slot-close-btn"
         onclick={onClose}
-        title="Close this pane"
-        aria-label="Close this pane"
+        title="Remove this pane"
+        aria-label="Remove this pane"
       >
         ×
       </button>
     </header>
-    <div class="pane-slot-body pane-slot-missing-body">
-      <p class="muted">This session is no longer available.</p>
+    <div class="pane-slot-body pane-slot-ghost-body">
+      {#if ghostCommand.length > 0}
+        <p class="muted">Session ended. Click restart to re-run the command.</p>
+        <div class="ghost-command" role="group" aria-label="Stored command">
+          <code>{ghostCommand.join(' ')}</code>
+        </div>
+      {:else}
+        <p class="muted">Session ended. No command recorded — nothing to restart.</p>
+      {/if}
+      {#if restartError}
+        <p class="ghost-error" role="alert">{restartError}</p>
+      {/if}
+      <div class="ghost-actions">
+        <button
+          type="button"
+          class="ghost-restart-btn"
+          onclick={handleRestart}
+          disabled={!canRestart || restarting}
+          aria-label="Restart session"
+          title={canRestart ? 'Restart the stored command' : 'No command recorded'}
+        >
+          {#if restarting}
+            <SpinnerIcon size={14} label="Restarting" />
+            <span>Restarting…</span>
+          {:else}
+            <span aria-hidden="true">▶</span>
+            <span>Restart</span>
+          {/if}
+        </button>
+        <button
+          type="button"
+          class="ghost-remove-btn"
+          onclick={onClose}
+          aria-label="Remove pane"
+        >
+          Remove
+        </button>
+      </div>
     </div>
   {/if}
 </div>
@@ -498,20 +644,110 @@
     overflow: hidden;
   }
 
-  .pane-slot-missing-body {
-    align-items: center;
+  /* Phase 5: ghost slot body. Muted, with room for command block + actions. */
+  .pane-slot-ghost-body {
+    align-items: stretch;
     justify-content: center;
+    gap: var(--space-3, 0.75rem);
     padding: var(--space-4, 1rem);
+    /* Subtle diagonal hatch to mark "dormant" state without being loud. */
+    background:
+      repeating-linear-gradient(
+        45deg,
+        transparent 0 8px,
+        color-mix(in srgb, var(--color-text-muted, #8b8fa3) 4%, transparent) 8px 16px
+      );
   }
 
-  .pane-slot-header-missing {
-    border-left-color: var(--color-border, #2a2d35);
-    background: var(--color-surface, #0f1115);
+  .pane-slot-header-ghost {
+    /* Keep the project colour strip so ghosts still carry their identity,
+       but mute the header background so it reads as past-tense. */
+    background: var(--color-surface-raised, #15171c);
+    opacity: 0.85;
+  }
+
+  .pane-slot-header-ghost .pane-slot-title {
+    color: var(--color-text-muted, #8b8fa3);
+  }
+
+  .ghost-command {
+    display: block;
+    margin: 0 auto;
+    max-width: 90%;
+    padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
+    background: var(--color-surface-raised, #15171c);
+    border: 1px solid var(--color-border, #2a2d35);
+    border-radius: var(--radius-sm, 4px);
+    overflow-x: auto;
+  }
+
+  .ghost-command code {
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: 0.75rem;
+    color: var(--color-text, #e6e8ef);
+    white-space: nowrap;
+  }
+
+  .ghost-actions {
+    display: flex;
+    justify-content: center;
+    gap: var(--space-2, 0.5rem);
+  }
+
+  .ghost-restart-btn,
+  .ghost-remove-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: var(--space-2, 0.5rem) var(--space-4, 1rem);
+    border: 1px solid var(--color-border, #2a2d35);
+    border-radius: var(--radius-sm, 4px);
+    background: transparent;
+    color: var(--color-text, #e6e8ef);
+    font-size: 0.8125rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 150ms, color 150ms, border-color 150ms;
+  }
+
+  .ghost-restart-btn {
+    border-color: var(--color-accent, #60a5fa);
+    color: var(--color-accent, #60a5fa);
+  }
+
+  .ghost-restart-btn:hover:not(:disabled),
+  .ghost-restart-btn:focus-visible:not(:disabled) {
+    background: var(--color-accent, #60a5fa);
+    color: var(--color-surface, #0f1115);
+  }
+
+  .ghost-restart-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .ghost-remove-btn {
+    color: var(--color-text-muted, #8b8fa3);
+  }
+
+  .ghost-remove-btn:hover,
+  .ghost-remove-btn:focus-visible {
+    background: var(--color-surface-hover, #1e2028);
+    color: var(--color-text, #e6e8ef);
+  }
+
+  .ghost-error {
+    margin: 0;
+    padding: var(--space-2, 0.5rem);
+    text-align: center;
+    color: var(--color-error, #f87171);
+    font-size: 0.75rem;
   }
 
   .muted {
     margin: 0;
     color: var(--color-text-muted, #8b8fa3);
     font-size: 0.875rem;
+    text-align: center;
   }
 </style>

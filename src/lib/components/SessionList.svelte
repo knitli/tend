@@ -7,11 +7,7 @@
   import { getProjectColor as resolveProjectColor } from '$lib/util/projectColor';
   import SessionRow from '$lib/components/SessionRow.svelte';
   import type { SessionSummary } from '$lib/api/sessions';
-  import {
-    dndzone,
-    SHADOW_PLACEHOLDER_ITEM_ID,
-    type DndEvent,
-  } from 'svelte-dnd-action';
+  import { dndzone, SHADOW_PLACEHOLDER_ITEM_ID, type DndEvent } from 'svelte-dnd-action';
 
   interface Props {
     selectedProjectId?: number | null;
@@ -348,22 +344,24 @@
             onfinalize={makeFinalizeHandler(projectId)}
           >
             {#each groupItems as item (item.id)}
-              {@const session = typeof item.sessionId === 'number'
-                ? sessionById.get(item.sessionId)
-                : undefined}
-              {#if session}
-                <SessionRow
-                  {session}
-                  projectName={selectedProjectId !== null ? '' : getProjectName(session.project_id)}
-                  missing={missingSessions.has(session.id)}
-                  active={activeSessionIds.has(session.id)}
-                  anyActive={activeSessionIds.size > 0}
-                  {projectColor}
-                  onActivate={handleActivate}
-                  {onOpenInSlot}
-                />
-              {:else if item.id === SHADOW_PLACEHOLDER_ITEM_ID}
-                <div class="dnd-shadow" data-item-id={item.id} aria-hidden="true"></div>
+              {#if item.id === SHADOW_PLACEHOLDER_ITEM_ID}
+                <div class="dnd-shadow" aria-hidden="true"></div>
+              {:else}
+                {@const session = typeof item.sessionId === 'number'
+                  ? sessionById.get(item.sessionId)
+                  : undefined}
+                {#if session}
+                  <SessionRow
+                    {session}
+                    projectName={selectedProjectId !== null ? '' : getProjectName(session.project_id)}
+                    missing={missingSessions.has(session.id)}
+                    active={activeSessionIds.has(session.id)}
+                    anyActive={activeSessionIds.size > 0}
+                    {projectColor}
+                    onActivate={handleActivate}
+                    {onOpenInSlot}
+                  />
+                {/if}
               {/if}
             {/each}
           </div>
