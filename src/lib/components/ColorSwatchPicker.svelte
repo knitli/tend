@@ -130,7 +130,6 @@
   aria-label="Pick project colour"
   tabindex="-1"
   bind:this={rootEl}
-  onkeydown={handleKeydown}
 >
   {#if ready}
     <hex-color-picker bind:this={pickerEl} color={value}></hex-color-picker>
