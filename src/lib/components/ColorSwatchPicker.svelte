@@ -88,9 +88,15 @@
       document.addEventListener('click', handleDocumentClick, true);
     });
 
+    // Attach Escape listener at the document level so it fires regardless of
+    // where focus currently sits (focus typically stays on the swatch button
+    // that opened the picker, not on the popover element itself).
+    document.addEventListener('keydown', handleKeydown, true);
+
     return () => {
       cancelAnimationFrame(raf);
       document.removeEventListener('click', handleDocumentClick, true);
+      document.removeEventListener('keydown', handleKeydown, true);
     };
   });
 
@@ -98,9 +104,12 @@
   // and the module has been imported. Re-attaches if `pickerEl` changes.
   $effect(() => {
     if (!ready || !pickerEl) return;
-    pickerEl.addEventListener('color-changed', handleColorChanged);
+    // Capture the current element so the cleanup closure removes from the
+    // same node even if `pickerEl` is reassigned before cleanup runs.
+    const el = pickerEl;
+    el.addEventListener('color-changed', handleColorChanged);
     return () => {
-      pickerEl?.removeEventListener('color-changed', handleColorChanged);
+      el.removeEventListener('color-changed', handleColorChanged);
     };
   });
 
@@ -121,7 +130,6 @@
   aria-label="Pick project colour"
   tabindex="-1"
   bind:this={rootEl}
-  onkeydown={handleKeydown}
 >
   {#if ready}
     <hex-color-picker bind:this={pickerEl} color={value}></hex-color-picker>
