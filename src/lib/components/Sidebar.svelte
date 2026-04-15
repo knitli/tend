@@ -42,9 +42,14 @@
   function openPicker(event: MouseEvent, projectId: number): void {
     event.stopPropagation();
     if (pickerProjectId === projectId) {
-      // Let the document-click-capture handler drive the close path so the
-      // ignoreEl check has a single source of truth.
+      // Re-clicking the open swatch explicitly toggles it closed.
+      closePicker();
       return;
+    }
+    // Flush any in-flight debounced write for the previously-open project
+    // before switching, so rapid project switching can't drop colour updates.
+    if (pendingColorProject !== null) {
+      flushPendingColor();
     }
     pickerProjectId = projectId;
     pickerSwatchEl = event.currentTarget as HTMLButtonElement;
@@ -219,15 +224,14 @@
     {:else}
       <ul role="listbox" aria-label="Projects">
         {#each displayedProjects as project (project.id)}
+          {@const projectColor = getProjectColor(project)}
           <li
             role="option"
             aria-selected={selectedProjectId === project.id}
             class="project-item"
             class:selected={selectedProjectId === project.id}
             class:archived={project.archived_at !== null}
-            style={getProjectColor(project)
-              ? `--project-color: ${getProjectColor(project)}`
-              : ''}
+            style={projectColor ? `--project-color: ${projectColor}` : ''}
             tabindex="0"
             onclick={() => handleSelectProject(project)}
             onkeydown={(e) => handleKeydown(e, project)}
@@ -250,7 +254,7 @@
               ></button>
               {#if pickerProjectId === project.id}
                 <ColorSwatchPicker
-                  value={pendingColor[project.id] ?? getProjectColor(project) ?? '#60a5fa'}
+                  value={pendingColor[project.id] ?? projectColor ?? '#60a5fa'}
                   ignoreEl={pickerSwatchEl}
                   onChange={(hex) => handleColorChange(project, hex)}
                   onClose={closePicker}
