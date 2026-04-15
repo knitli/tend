@@ -8,9 +8,11 @@
   import { sessionAcknowledgeAlert } from '$lib/api/notifications';
   import type { SessionSummary } from '$lib/api/sessions';
 
-  const { onActivateSession } = $props<{
+  interface Props {
     onActivateSession?: (session: SessionSummary) => void;
-  }>();
+  }
+
+  let { onActivateSession }: Props = $props();
 
   const alerts = $derived(sessionsStore.sessionsWithAlerts);
 

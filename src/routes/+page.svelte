@@ -25,11 +25,16 @@
   let overviewOpen = $state(false);
   let spawnDialogOpen = $state(false);
   let spawnDialogProject = $state<Project | null>(null);
-  /** P1-B: transient highlight id used to flash the active pane border after
-   *  activating a session (AlertBar "Go to" or direct click). Cleared after
-   *  1500 ms. Phase 4 will expand this to support multiple slots. */
+  /** P1-B: monotonic token that increments on every session activation. Passed
+   *  to SplitView so it can re-trigger the 1.5 s border flash even when the
+   *  user clicks an already-active session row (setting the same boolean
+   *  `highlighted=true` twice wouldn't restart the CSS animation). Phase 4
+   *  will expand this to support one token per slot. */
+  let highlightToken = $state(0);
+  /** Session id that was most recently activated. Only the pane rendering
+   *  this session receives a non-zero token (so flashes don't bleed across
+   *  slots once Phase 4 lands). */
   let highlightSessionId = $state<number | null>(null);
-  let highlightTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** P1-A: derived Set of session ids currently visible in a pane. Phase 1 is
    *  always the single active session; Phase 4 expands to the full slot set. */
@@ -67,15 +72,12 @@
     // T130: persist active session change.
     workspaceStore.update({ focused_session_id: session.id });
 
-    // P1-B: flash the pane border for 1.5 s to confirm activation.
+    // P1-B: Re-trigger the pane border flash. Incrementing the token — rather
+    // than setting a boolean — ensures that clicking an already-active row
+    // restarts the CSS animation (assigning the same boolean twice would not).
+    // The SplitView keys its flash on this token, so a new value = new flash.
     highlightSessionId = session.id;
-    if (highlightTimer !== null) {
-      clearTimeout(highlightTimer);
-    }
-    highlightTimer = setTimeout(() => {
-      highlightSessionId = null;
-      highlightTimer = null;
-    }, 1500);
+    highlightToken += 1;
   }
 
   function handleWindowKeydown(event: KeyboardEvent): void {
@@ -139,10 +141,6 @@
     return () => {
       cleanup?.();
       closeCleanup?.();
-      if (highlightTimer !== null) {
-        clearTimeout(highlightTimer);
-        highlightTimer = null;
-      }
       // Best-effort flush on unmount (fire-and-forget for non-Tauri contexts).
       workspaceStore.flush();
     };
@@ -210,7 +208,7 @@
           <SplitView
             sessionId={activeSessionId}
             session={activeSession}
-            highlighted={highlightSessionId === activeSessionId}
+            highlightToken={highlightSessionId === activeSessionId ? highlightToken : 0}
           />
         {/key}
       {:else}
@@ -357,7 +355,7 @@
   .readonly-banner {
     padding: 2px 8px;
     border-radius: var(--radius-sm, 4px);
-    background: var(--color-warning-bg, #713f12);
+    background: var(--color-warning-bg, #3d2e00);
     color: var(--color-warning, #fbbf24);
     font-size: 0.6875rem;
     font-weight: 600;

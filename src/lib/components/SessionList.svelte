@@ -34,7 +34,11 @@
     filterInputEl?.select();
   }
 
-  /** P1-B: handle AlertBar "Go to" → scroll a session row into view. */
+  /** P1-B: handle AlertBar "Go to" → scroll a session row into view.
+   *  TODO(phase-4): when the Workspace tab mounts a second SessionList, scope
+   *  this listener to the list container (or add instance disambiguation to
+   *  the event payload) so both lists don't scroll independently and fight
+   *  over `document.querySelector`. */
   $effect(() => {
     function handleScrollTo(event: Event): void {
       const detail = (event as CustomEvent<{ sessionId: number }>).detail;

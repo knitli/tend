@@ -230,7 +230,11 @@
     );
   }
 
-  .session-row.active .session-label-row::before {
+  /* Spec §8.1: dot sits on the row root (inside the outer gutter), not
+     nested inside the label flex row. Placing it on `.session-row::before`
+     makes it the first flex child, so the existing row `gap` separates it
+     from the `.session-main` column. */
+  .session-row.active::before {
     content: '';
     display: inline-block;
     width: 6px;
@@ -311,7 +315,7 @@
   }
 
   .status-needs-input {
-    background: var(--color-warning-bg, #713f12);
+    background: var(--color-warning-bg, #3d2e00);
     color: var(--color-warning, #fbbf24);
   }
 
@@ -326,7 +330,7 @@
   }
 
   .badge-alert {
-    background: var(--color-warning-bg, #713f12);
+    background: var(--color-warning-bg, #3d2e00);
     color: var(--color-warning, #fbbf24);
     font-weight: 700;
   }

@@ -182,7 +182,10 @@
     <div class="layout-dropdown" role="menu" tabindex="-1" onkeydown={handleDropdownKeydown}>
       <div class="layout-header">
         <span class="layout-header-label">Layouts</span>
-        {#if refreshing}
+        <!-- Suppress the header spinner when the list is empty: the empty-state
+             renders its own spinner, and showing both simultaneously reads as
+             two loading indicators for the same operation. -->
+        {#if refreshing && layouts.length > 0}
           <SpinnerIcon />
         {/if}
       </div>
