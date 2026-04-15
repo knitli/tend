@@ -64,24 +64,6 @@
    *  `single` on the first id in focusSessionIds. */
   let focusMode = $state<'none' | 'single' | 'split-two'>('none');
   let focusSessionIds = $state<number[]>([]);
-  /** P1-B: monotonic token that increments on every session activation. Passed
-   *  to SplitView so it can re-trigger the 1.5 s border flash even when the
-   *  user clicks an already-active session row (setting the same boolean
-   *  `highlighted=true` twice wouldn't restart the CSS animation). Phase 4
-   *  will expand this to support one token per slot. */
-  let highlightToken = $state(0);
-  /** Session id that was most recently activated. Only the pane rendering
-   *  this session receives a non-zero token (so flashes don't bleed across
-   *  slots once Phase 4 lands). */
-  let highlightSessionId = $state<number | null>(null);
-
-  /** P1-A: derived Set of session ids currently visible in a pane. Phase 1 is
-   *  always the single active session; Phase 4 expands to the full slot set. */
-  const activeSessionIds = $derived<Set<number>>(
-    activeSessionId !== null ? new Set([activeSessionId]) : new Set(),
-  );
-
-  let sessionListRef = $state<{ focusFilter: () => void } | undefined>();
 
   function openSpawnDialog(project: Project | null = null): void {
     spawnDialogProject = project;
