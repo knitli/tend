@@ -4,9 +4,8 @@ use crate::db::Database;
 use crate::model::{
     Alert, AlertClearedBy, AlertId, CompanionId, CompanionTerminal, ProjectId, Session, SessionId,
 };
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::AtomicI64;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, RwLock as StdRwLock};
 use tokio::sync::{Mutex, RwLock, broadcast};
 
 // Re-export so existing callers can use `crate::state::LiveSessionHandle`.
@@ -140,17 +139,22 @@ pub struct WorkbenchState {
     /// agents see the same PATH the user has in their terminal. Populated once
     /// during bootstrap; empty until then.
     pub shell_env: Arc<HashMap<String, String>>,
-    /// Currently focused session id, or 0 for "none" (overview open, no
-    /// session selected). The event bridge reads this on every PTY chunk to
-    /// decide whether to forward Output/CompanionOutput to the webview. Most
-    /// agent UIs emit output at ~20 Hz; with N sessions running, bridging all
-    /// of it through base64 + JSON + Tauri IPC when only one pane can show it
-    /// is wasted CPU. Raw bytes are still captured in the per-session replay
-    /// buffer so switching focus catches up immediately via session_read_backlog.
+    /// Set of session ids whose raw PTY output should be forwarded to the
+    /// webview. Empty set means "no session active" (overview / empty state).
+    /// The event bridge reads this on every PTY chunk to decide whether to
+    /// forward Output/CompanionOutput events. Most agent UIs emit output at
+    /// ~20 Hz; with N sessions running, bridging all of it through base64 +
+    /// JSON + Tauri IPC for panes that aren't mounted is wasted CPU. Raw
+    /// bytes are still captured in the per-session replay buffer so newly-
+    /// visible panes catch up via `session_read_backlog`.
     ///
-    /// `AtomicI64` gives a lock-free load on the hot path. Session ids are
-    /// SQLite rowids (≥ 1), so 0 is an unambiguous sentinel for "no focus".
-    pub focused_session_id: Arc<AtomicI64>,
+    /// Phase 4 generalised this from a single `AtomicI64` to a set so the
+    /// multi-pane workspace can mark multiple sessions visible simultaneously.
+    /// `std::sync::RwLock` is used (not the tokio variant) because the hot
+    /// path is a sync `HashSet::contains` — async acquisition would add a
+    /// yield point per PTY chunk for no benefit on a set of ≤ dozens of ids.
+    /// Writes (focus/visible changes) are rare (user-driven) and brief.
+    pub visible_session_ids: Arc<StdRwLock<HashSet<i64>>>,
 }
 
 impl WorkbenchState {
@@ -165,7 +169,7 @@ impl WorkbenchState {
             event_bus,
             workspace_debouncer: None,
             shell_env: Arc::new(HashMap::new()),
-            focused_session_id: Arc::new(AtomicI64::new(0)),
+            visible_session_ids: Arc::new(StdRwLock::new(HashSet::new())),
         }
     }
 
@@ -180,6 +184,26 @@ impl WorkbenchState {
     /// bootstrap, before Tauri starts accepting commands.
     pub fn set_shell_env(&mut self, env: HashMap<String, String>) {
         self.shell_env = Arc::new(env);
+    }
+
+    /// Replace the set of visible sessions. Passing an empty iterator clears
+    /// the set (overview / empty-state). Used by `session_set_visible` and
+    /// the `session_set_focus` shim.
+    pub fn set_visible_sessions<I: IntoIterator<Item = i64>>(&self, ids: I) {
+        let mut g = self
+            .visible_session_ids
+            .write()
+            .expect("visible_session_ids lock poisoned");
+        g.clear();
+        g.extend(ids);
+    }
+
+    /// Snapshot the current visible-sessions set. For tests / introspection.
+    pub fn visible_sessions_snapshot(&self) -> HashSet<i64> {
+        self.visible_session_ids
+            .read()
+            .expect("visible_session_ids lock poisoned")
+            .clone()
     }
 
     /// Get or create a per-session mutex for companion operations.

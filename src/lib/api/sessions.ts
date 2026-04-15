@@ -131,19 +131,41 @@ export async function sessionSpawn(opts: {
 }
 
 /**
- * Set the currently-focused session. Only the focused session's raw PTY
- * bytes (`session:event` / `companion:output`) are forwarded to the
- * frontend; everything else (spawned/ended/alerts/status) flows regardless.
- * Pass `null` when no session is active (overview open, empty state).
+ * Set the currently-focused session. Only visible sessions' raw PTY bytes
+ * (`session:event` / `companion:output`) are forwarded to the frontend;
+ * everything else (spawned/ended/alerts/status) flows regardless. Pass
+ * `null` when no session is active (overview open, empty state).
+ *
+ * Since Phase 4-A this is a thin shim over {@link sessionSetVisible}:
+ * `sessionId` of `N` marks `{N}` visible; `null` clears the set. The
+ * single-pane flow (`+page.svelte`'s `$effect` on `activeSessionId`) keeps
+ * using this wrapper; the multi-pane workspace should call
+ * {@link sessionSetVisible} directly.
  *
  * Replay buffers on the backend continue to capture bytes for all sessions,
- * so switching focus catches up the new pane via `sessionReadBacklog`.
+ * so newly-visible panes catch up via `sessionReadBacklog`.
  */
 export async function sessionSetFocus(opts: {
 	sessionId: number | null;
 }): Promise<void> {
 	await invoke<Record<string, never>>("session_set_focus", {
 		args: { session_id: opts.sessionId },
+	});
+}
+
+/**
+ * Set the set of sessions whose raw PTY output
+ * (`session:event` / `companion:output`) should be forwarded to the webview.
+ * Non-visible sessions still have their bytes captured in the backend replay
+ * buffer — panes that become visible catch up via {@link sessionReadBacklog}.
+ *
+ * Pass an empty array (`[]`) when no pane is mounted (overview / empty state).
+ */
+export async function sessionSetVisible(opts: {
+	sessionIds: number[];
+}): Promise<void> {
+	await invoke<Record<string, never>>("session_set_visible", {
+		args: { session_ids: opts.sessionIds },
 	});
 }
 
