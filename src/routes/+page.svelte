@@ -93,10 +93,8 @@
    *  The `activeSessionId` scalar is retained as a compatibility shim:
    *  - spawn dialog / session-row click set it and we mirror into the
    *    slot set via `handleActivateSession`;
-   *  - the backend `sessionSetFocus` $effect below still tracks it so the
-   *    single-pane event-forwarding path keeps working during Phase 4-B/C
-   *    (PaneWorkspace additionally calls `sessionSetVisible` with every
-   *    slot id, so no session is silenced).
+   *  - focus-mode and no-slot paths still derive visibility from it in the
+   *    `sessionSetVisible` effect below when PaneWorkspace is not mounted.
    */
   let slots = $state<PaneSlot[]>([]);
   /** Persisted per-pane size percentages (paneforge onLayoutChange). */

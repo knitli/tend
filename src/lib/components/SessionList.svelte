@@ -18,9 +18,9 @@
     onActivateSession?: (session: SessionSummary) => void;
     onSpawnSession?: () => void;
     /** P4-D: keyboard-accessible fallback for the drag-to-pane gesture. When
-     *  set, each SessionRow renders a `⊞` button that calls this with the
-     *  session so a non-mouse user can add it to a pane slot. Defaults to
-     *  the same behaviour as `onActivateSession` when omitted. */
+     *  provided, each SessionRow renders a `⊞` button that calls this with the
+     *  session so a non-mouse user can add it to a pane slot. When omitted,
+     *  no `⊞` button is rendered. */
     onOpenInSlot?: (session: SessionSummary) => void;
   }
 
@@ -309,6 +309,7 @@
       {#each groupedSessions as [projectId, sessions] (projectId)}
         {@const projectColor = getProjectColor(projectId)}
         {@const groupItems = dndItemsForProject(projectId)}
+        {@const sessionById = new Map(sessions.map((session) => [session.id, session]))}
         <div
           class="project-group"
           style={projectColor ? `--project-color: ${projectColor}` : ''}
@@ -328,7 +329,7 @@
             onfinalize={makeFinalizeHandler(projectId)}
           >
             {#each groupItems as item (item.id)}
-              {@const session = sessions.find((s) => s.id === item.sessionId)}
+              {@const session = sessionById.get(item.sessionId)}
               {#if session}
                 <SessionRow
                   {session}

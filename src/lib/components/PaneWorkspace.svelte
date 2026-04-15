@@ -127,9 +127,10 @@
 
   /** How many slots comfortably fit at MIN_PANE_WIDTH_PX. Always at least 1
    *  (even in a window so narrow that `floor(w / 520) == 0` we still show
-   *  one pane rather than an empty workspace). */
+   *  one pane rather than an empty workspace). Before first measurement,
+   *  default to 1 so we don't briefly mount all panes. */
   const maxVisibleSlots = $derived.by(() => {
-    if (containerWidth <= 0) return Math.max(1, slots.length);
+    if (containerWidth <= 0) return 1;
     return Math.max(1, Math.floor(containerWidth / MIN_PANE_WIDTH_PX));
   });
 
@@ -166,7 +167,13 @@
   // aren't rendered, so forwarding their PTY bytes across IPC is pure
   // waste. Bringing an overflow slot into view re-runs this effect and
   // replay-backlog handles the catch-up, so no data is lost.
-  const visibleKey = $derived(visibleSlots.map((s) => s.session_id).join(','));
+  const visibleKey = $derived(
+    visibleSlots
+      .map((s) => s.session_id)
+      .slice()
+      .sort((a, b) => a - b)
+      .join(','),
+  );
   $effect(() => {
     // Reading `visibleKey` registers the dep; the `untrack` below keeps the
     // one-id-per-slot read out of the tracking graph so we don't loop.
@@ -357,10 +364,9 @@
     document.removeEventListener('click', handleOverflowDocumentClick, true);
   });
 
-  /** paneforge keys panes by `order` to preserve identity when the list
-   *  mutates. We use session_id as the stable key plus index-based order. */
-  function paneKey(slot: PaneSlotType, index: number): string {
-    return `${slot.session_id}-${index}`;
+  /** Stable key so panes keep identity when reordered or clipped by overflow. */
+  function paneKey(slot: PaneSlotType): string {
+    return String(slot.session_id);
   }
 </script>
 
@@ -384,9 +390,9 @@
       class="pane-workspace-group"
       onLayoutChange={handleLayoutChange}
     >
-      {#each visibleSlots as slot, i (paneKey(slot, i))}
+      {#each visibleSlots as slot, i (paneKey(slot))}
         <Pane
-          order={i}
+          order={slot.order}
           minSize={minSizePercent}
           defaultSize={paneSizes && paneSizes[i] !== undefined && paneSizes.length === visibleSlots.length
             ? paneSizes[i]
