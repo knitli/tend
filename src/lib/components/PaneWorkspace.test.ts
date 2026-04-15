@@ -165,6 +165,142 @@ describe("PaneWorkspace", () => {
 		}
 	});
 
+	// P4-G: the overflow popover is in-component; its visibility is driven by
+	// `overflowCount > 0`. These tests force a narrow container via the
+	// prototype `clientWidth` getter so the onMount read sees < 520 px × N,
+	// then exercise the trigger button + popover + bring-into-view swap.
+	function withNarrowContainer(width: number, run: () => void): void {
+		const descriptor = Object.getOwnPropertyDescriptor(
+			HTMLElement.prototype,
+			"clientWidth",
+		);
+		Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+			configurable: true,
+			get: () => width,
+		});
+		try {
+			run();
+		} finally {
+			if (descriptor) {
+				Object.defineProperty(HTMLElement.prototype, "clientWidth", descriptor);
+			} else {
+				// @ts-expect-error — no original descriptor to restore
+				delete HTMLElement.prototype.clientWidth;
+			}
+		}
+	}
+
+	it("renders the [+N more] overflow trigger when overflowCount > 0", () => {
+		withNarrowContainer(700, () => {
+			const target = document.createElement("div");
+			document.body.append(target);
+
+			component = mount(PaneWorkspace, {
+				target,
+				props: {
+					slots: [makeSlot(1, 0), makeSlot(2, 1), makeSlot(3, 2)],
+					onSlotClose: vi.fn(),
+					onSlotFocus: vi.fn(),
+					onReorderSlots: vi.fn(),
+				},
+			});
+
+			flushSync();
+			const trigger = target.querySelector<HTMLButtonElement>(
+				".pane-overflow-trigger",
+			);
+			expect(trigger).not.toBeNull();
+			// Overflow = 3 - floor(700/520) = 3 - 1 = 2.
+			expect(trigger!.textContent?.trim()).toBe("+2 more");
+			expect(trigger!.getAttribute("aria-label")).toBe(
+				"2 sessions don't fit — click to choose",
+			);
+			expect(trigger!.getAttribute("aria-expanded")).toBe("false");
+		});
+	});
+
+	it("opens the overflow popover on trigger click and lists hidden slots", () => {
+		withNarrowContainer(700, () => {
+			const target = document.createElement("div");
+			document.body.append(target);
+
+			component = mount(PaneWorkspace, {
+				target,
+				props: {
+					slots: [makeSlot(1, 0), makeSlot(2, 1), makeSlot(3, 2)],
+					onSlotClose: vi.fn(),
+					onSlotFocus: vi.fn(),
+					onReorderSlots: vi.fn(),
+				},
+			});
+
+			flushSync();
+			const trigger = target.querySelector<HTMLButtonElement>(
+				".pane-overflow-trigger",
+			);
+			trigger!.click();
+			flushSync();
+
+			const popover = target.querySelector<HTMLElement>(
+				".pane-overflow-popover",
+			);
+			expect(popover).not.toBeNull();
+			expect(trigger!.getAttribute("aria-expanded")).toBe("true");
+			const items = popover!.querySelectorAll<HTMLButtonElement>(
+				".pane-overflow-item",
+			);
+			// Slots 2 and 3 are hidden (max visible = 1, slot 1 is visible).
+			expect(items.length).toBe(2);
+			expect(items[0]!.textContent).toContain("session-2");
+			expect(items[1]!.textContent).toContain("session-3");
+		});
+	});
+
+	it("swaps a hidden slot with the rightmost visible slot via onReorderSlots", () => {
+		withNarrowContainer(700, () => {
+			const target = document.createElement("div");
+			document.body.append(target);
+			const onReorderSlots = vi.fn();
+
+			component = mount(PaneWorkspace, {
+				target,
+				props: {
+					slots: [makeSlot(1, 0), makeSlot(2, 1), makeSlot(3, 2)],
+					onSlotClose: vi.fn(),
+					onSlotFocus: vi.fn(),
+					onReorderSlots,
+				},
+			});
+
+			flushSync();
+			// Open popover.
+			target
+				.querySelector<HTMLButtonElement>(".pane-overflow-trigger")!
+				.click();
+			flushSync();
+
+			// Click the second hidden entry (absolute index 2 — session 3).
+			const items = target.querySelectorAll<HTMLButtonElement>(
+				".pane-overflow-item",
+			);
+			items[1]!.click();
+			flushSync();
+
+			expect(onReorderSlots).toHaveBeenCalledTimes(1);
+			// maxVisibleSlots = 1 → rightmost visible index = 0. Swap slot 0
+			// (session 1) with slot 2 (session 3). Expected order: 3, 2, 1.
+			const next = onReorderSlots.mock.calls[0]![0] as PaneSlot[];
+			expect(next.map((s) => s.session_id)).toEqual([3, 2, 1]);
+			// All `order` fields should be re-numbered to their new indices.
+			expect(next.map((s) => s.order)).toEqual([0, 1, 2]);
+
+			// Popover should be closed after the swap.
+			expect(
+				target.querySelector(".pane-overflow-popover"),
+			).toBeNull();
+		});
+	});
+
 	it("reports overflowCount > 0 when the container is too narrow for all slots", () => {
 		// Force a narrow container via the prototype `clientWidth` getter so
 		// PaneWorkspace's `onMount` read (before any ResizeObserver fires)
