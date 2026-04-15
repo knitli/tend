@@ -115,7 +115,7 @@ describe("PaneSlot", () => {
 		expect(onFocus).not.toHaveBeenCalled();
 	});
 
-	it("renders a placeholder (and does not crash) for a missing session id", () => {
+	it("renders a minimal ghost (does not crash) for a missing session id", () => {
 		const target = document.createElement("div");
 		document.body.append(target);
 		component = mount(PaneSlot, {
@@ -127,22 +127,99 @@ describe("PaneSlot", () => {
 			},
 		});
 
-		// The placeholder header text is "Session not found".
-		const header = target.querySelector<HTMLElement>(
-			".pane-slot-header-missing",
+		// Phase 5: missing session renders the ghost header instead of live.
+		const ghostHeader = target.querySelector<HTMLElement>(
+			".pane-slot-header-ghost",
 		);
-		expect(header).not.toBeNull();
-		expect(header!.textContent).toContain("Session not found");
+		expect(ghostHeader).not.toBeNull();
 
-		// Only the × close button should be present — no focus/drag-handle
-		// controls because there's no session to focus on.
+		// Ghost label falls back to `Session #<id>` when no ghost_data.
+		expect(ghostHeader!.textContent).toContain("Session #999999");
+
+		// Remove (×) button is present.
 		const closeBtn = target.querySelector<HTMLButtonElement>(
 			".pane-slot-close-btn",
 		);
 		expect(closeBtn).not.toBeNull();
+
+		// No focus button in ghost mode — there's no live session to focus on.
 		const focusBtn = target.querySelector<HTMLButtonElement>(
 			".pane-slot-focus-btn",
 		);
 		expect(focusBtn).toBeNull();
+
+		// Restart button is present but disabled — no command recorded.
+		const restartBtn = target.querySelector<HTMLButtonElement>(
+			".ghost-restart-btn",
+		);
+		expect(restartBtn).not.toBeNull();
+		expect(restartBtn!.disabled).toBe(true);
+	});
+
+	it("enables the Restart button when ghostData has a command", () => {
+		const onRestart = vi.fn(async () => 42);
+		const target = document.createElement("div");
+		document.body.append(target);
+		component = mount(PaneSlot, {
+			target,
+			props: {
+				sessionId: 999_998,
+				onFocus: vi.fn(),
+				onClose: vi.fn(),
+				ghostData: {
+					project_id: 7,
+					label: "feature-branch",
+					command: ["claude", "--dangerous"],
+					project_color: "#60a5fa",
+				},
+				onRestart,
+			},
+		});
+
+		// Label + project name come from ghostData.
+		const label = target.querySelector<HTMLElement>(".pane-slot-label");
+		expect(label!.textContent?.trim()).toBe("feature-branch");
+
+		// Command block shows the stored command.
+		const codeEl = target.querySelector<HTMLElement>(".ghost-command code");
+		expect(codeEl).not.toBeNull();
+		expect(codeEl!.textContent).toBe("claude --dangerous");
+
+		// Restart button is enabled and clickable.
+		const restartBtn = target.querySelector<HTMLButtonElement>(
+			".ghost-restart-btn",
+		);
+		expect(restartBtn).not.toBeNull();
+		expect(restartBtn!.disabled).toBe(false);
+	});
+
+	it("invokes onRestart when the Restart button is clicked", async () => {
+		const onRestart = vi.fn(async () => 101);
+		const target = document.createElement("div");
+		document.body.append(target);
+		component = mount(PaneSlot, {
+			target,
+			props: {
+				sessionId: 999_997,
+				onFocus: vi.fn(),
+				onClose: vi.fn(),
+				ghostData: {
+					project_id: 7,
+					label: "feature-branch",
+					command: ["claude"],
+					project_color: null,
+				},
+				onRestart,
+			},
+		});
+
+		const restartBtn = target.querySelector<HTMLButtonElement>(
+			".ghost-restart-btn",
+		);
+		restartBtn!.click();
+		// The click handler is async; flush microtasks.
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(onRestart).toHaveBeenCalledTimes(1);
 	});
 });

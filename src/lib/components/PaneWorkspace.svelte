@@ -61,6 +61,12 @@
      *  the pane header (HTML5 native drag) or the `‹` / `›` keyboard
      *  buttons. Receives the full new slot array in its final order. */
     onReorderSlots?: (next: PaneSlotType[]) => void;
+    /** Phase 5: restart a ghost slot. Receives the slot's session_id (which
+     *  references a session that no longer exists in the store); the parent
+     *  looks up the slot's `ghost_data`, calls `sessionSpawn`, and updates
+     *  the slot's `session_id` to the new one. Returns the new id or null
+     *  on failure so PaneSlot can clear its loading/error state. */
+    onRestartSlot?: (slotSessionId: number) => Promise<number | null>;
   }
 
   let {
@@ -73,6 +79,7 @@
     onResize,
     onDropSession,
     onReorderSlots,
+    onRestartSlot,
   }: Props = $props();
 
   /** P4-D: id of the slot currently being dragged for reorder. We carry
@@ -397,6 +404,10 @@
             sessionId={slot.session_id}
             highlighted={highlightedSessionId === slot.session_id}
             {highlightToken}
+            ghostData={slot.ghost_data}
+            onRestart={onRestartSlot
+              ? () => onRestartSlot(slot.session_id)
+              : undefined}
             onClose={() => onSlotClose(slot.session_id)}
             onFocus={() => onSlotFocus(slot.session_id)}
             onMoveLeft={onReorderSlots && slots.length > 1 ? () => handleMoveLeft(slot.session_id) : undefined}
