@@ -18,6 +18,7 @@
   import { isEditableTarget } from '$lib/util/isEditableTarget';
   import type { Project } from '$lib/api/projects';
   import type { SessionSummary } from '$lib/api/sessions';
+  import { getProjectColor } from '$lib/util/projectColor';
 
   let selectedProjectId = $state<number | null>(null);
   let activeSessionId = $state<number | null>(null);
@@ -57,8 +58,7 @@
    *  both the header tint and Phase 1's flash overlay use the same colour. */
   const activeProjectColor = $derived.by<string | null>(() => {
     if (!activeSession) return null;
-    const color = projectsStore.byId(activeSession.project_id)?.settings?.color;
-    return typeof color === 'string' ? color : null;
+    return getProjectColor(projectsStore.byId(activeSession.project_id));
   });
 
   // Mirror activeSessionId to the backend so its event bridge stops
@@ -208,7 +208,7 @@
       {:else if activeSession && activeSessionId !== null}
         <div
           class="active-session-header"
-          style={activeProjectColor ? `--project-color: ${activeProjectColor}` : undefined}
+          style={activeProjectColor ? `--project-color: ${activeProjectColor}` : ''}
         >
           <h2>{activeSession.label}</h2>
           <span class="session-status">{activeSession.status}</span>
@@ -222,7 +222,7 @@
                CSS cascade) both pick up the same per-project colour. -->
           <div
             class="split-view-wrapper"
-            style={activeProjectColor ? `--project-color: ${activeProjectColor}` : undefined}
+            style={activeProjectColor ? `--project-color: ${activeProjectColor}` : ''}
           >
             <SplitView
               sessionId={activeSessionId}
@@ -371,10 +371,12 @@
     );
   }
 
-  /* Pass-through wrapper for the project-colour CSS variable. The SplitView
-     reads `--project-color` from its closest ancestor (the Phase 1 flash
-     overlay + any future companion-pane tinting) — putting it on a neutral
-     wrapper keeps SplitView itself layout-agnostic. */
+  /* Layout carrier for the SplitView: `flex: 1; min-height: 0;
+     overflow: hidden;` give the split its bounding box inside the content
+     panel. This wrapper ALSO threads `--project-color` via its inline
+     `style` attribute, so the Phase 1 flash overlay and any future
+     companion-pane tinting can read the per-project colour from the
+     closest ancestor while SplitView itself stays layout-agnostic. */
   .split-view-wrapper {
     display: flex;
     flex-direction: column;

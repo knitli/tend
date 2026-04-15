@@ -4,6 +4,7 @@
   import { sessionsStore } from '$lib/stores/sessions.svelte';
   import { projectsStore } from '$lib/stores/projects.svelte';
   import { matchesSessionFilter } from '$lib/util/filterSession';
+  import { getProjectColor as resolveProjectColor } from '$lib/util/projectColor';
   import SessionRow from '$lib/components/SessionRow.svelte';
   import type { SessionSummary } from '$lib/api/sessions';
 
@@ -126,11 +127,12 @@
   }
 
   /** Phase 2-C: look up the project's palette colour for heading/row tinting.
-   *  Returns `null` when absent so the component can fall back to the global
-   *  `--color-accent` via CSS `var()`. */
+   *  Returns `null` when absent (or invalid) so the component can fall back
+   *  to the global `--color-accent` via CSS `var()`. Delegates hex validation
+   *  to the shared helper so a malformed DB value never reaches an inline
+   *  `style="--project-color: ..."` (CSS var values skip Svelte escaping). */
   function getProjectColor(projectId: number): string | null {
-    const color = projectsStore.byId(projectId)?.settings?.color;
-    return typeof color === 'string' ? color : null;
+    return resolveProjectColor(projectsStore.byId(projectId));
   }
 
   function handleActivate(session: SessionSummary): void {
@@ -238,7 +240,7 @@
         {@const projectColor = getProjectColor(projectId)}
         <div
           class="project-group"
-          style={projectColor ? `--project-color: ${projectColor}` : undefined}
+          style={projectColor ? `--project-color: ${projectColor}` : ''}
         >
           <h3 class="group-heading">{getProjectName(projectId)}</h3>
           {#each sessions as session (session.id)}

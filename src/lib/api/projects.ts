@@ -26,6 +26,25 @@ export interface ProjectSettings {
 	readonly [key: string]: unknown;
 }
 
+// ---------- Validators ----------
+
+/**
+ * Narrow a freeform DB/JSON value to a validated `#rrggbb` hex colour.
+ *
+ * `project.settings.color` is freeform JSON loaded straight from SQLite and
+ * later interpolated into `style="--project-color: {value}"` inline styles.
+ * CSS custom-property values are NOT subject to Svelte's attribute-text
+ * escaping, so a malformed value (hand-edited DB, future import flow, bug)
+ * could produce CSS injection. `vanilla-colorful` is safe at write time, but
+ * consumers should always re-validate at the DOM boundary.
+ *
+ * Accepts: `#60a5fa`, `#FFF000`. Rejects everything else (named colours,
+ * 3-digit shorthand, surrounding whitespace, trailing garbage, non-strings).
+ */
+export function isValidHexColor(value: unknown): value is string {
+	return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
+}
+
 // ---------- Commands ----------
 
 /**

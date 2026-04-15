@@ -161,7 +161,7 @@
   class:active
   class:dimmed={!active && anyActive}
   data-session-id={session.id}
-  style={projectColor ? `--project-color: ${projectColor}` : undefined}
+  style={projectColor ? `--project-color: ${projectColor}` : ''}
   role="button"
   tabindex="0"
   aria-label={ariaLabel}

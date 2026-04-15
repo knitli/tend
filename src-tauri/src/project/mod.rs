@@ -139,7 +139,7 @@ impl ProjectService {
         // Auto-assign colour: palette[(id - 1) % 12]. Skipped if an explicit
         // colour is ever threaded through (future-proof for layout imports).
         // Subtracting 1 means id=1 → first palette entry (blue, matches accent).
-        let idx = row.0.saturating_sub(1).max(0) as usize % COLOR_PALETTE.len();
+        let idx = row.0.saturating_sub(1) as usize % COLOR_PALETTE.len();
         settings.color = Some(COLOR_PALETTE[idx].to_string());
 
         // Persist the assigned colour back to the row.

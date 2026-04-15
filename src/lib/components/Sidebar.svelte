@@ -4,6 +4,7 @@
   import { projectsStore } from '$lib/stores/projects.svelte';
   import type { Project } from '$lib/api/projects';
   import ColorSwatchPicker from '$lib/components/ColorSwatchPicker.svelte';
+  import { getProjectColor } from '$lib/util/projectColor';
 
   interface Props {
     selectedProjectId?: number | null;
@@ -20,21 +21,69 @@
   /** Phase 2-B: id of the project whose colour picker is currently open, or
    *  `null` if none. Only one picker is open at a time. */
   let pickerProjectId = $state<number | null>(null);
+  /** Phase 2 review fix (Fix 3): the swatch button that opened the currently-
+   *  active picker. Passed into `ColorSwatchPicker` as an ignore target so the
+   *  document-click-capture handler doesn't race with the swatch's own
+   *  `onclick`. Without this, re-clicking the open swatch toggled: capture
+   *  closed it (`pickerProjectId = null`), then `openPicker` reopened it. */
+  let pickerSwatchEl = $state<HTMLButtonElement | null>(null);
+
+  /** Phase 2 review fix (Fix 1): debounce drag writes.
+   *  `vanilla-colorful` fires `color-changed` on every pointer-move (60-200 Hz).
+   *  Without debouncing, each move hits `projectsStore.update` → Tauri IPC →
+   *  SQLite UPDATE and races the workspace store. We mirror the dragged colour
+   *  into `pendingColor` immediately (the picker UI stays in sync) and only
+   *  flush the write after a 200 ms trailing idle. Matches SessionList's
+   *  filter-debounce style; no shared utility by design. */
+  let pendingColor = $state<Record<number, string>>({});
+  let pendingColorTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingColorProject: Project | null = null;
 
   function openPicker(event: MouseEvent, projectId: number): void {
     event.stopPropagation();
-    pickerProjectId = pickerProjectId === projectId ? null : projectId;
+    if (pickerProjectId === projectId) {
+      // Let the document-click-capture handler drive the close path so the
+      // ignoreEl check has a single source of truth.
+      return;
+    }
+    pickerProjectId = projectId;
+    pickerSwatchEl = event.currentTarget as HTMLButtonElement;
+  }
+
+  function flushPendingColor(): void {
+    if (pendingColorTimer !== null) {
+      clearTimeout(pendingColorTimer);
+      pendingColorTimer = null;
+    }
+    const project = pendingColorProject;
+    const hex = project ? pendingColor[project.id] : undefined;
+    pendingColorProject = null;
+    if (project && typeof hex === 'string') {
+      // Fire-and-forget; the store surfaces errors via its `.error` field.
+      void projectsStore.update(project.id, {
+        settings: { ...project.settings, color: hex },
+      });
+    }
   }
 
   function closePicker(): void {
+    // Commit any in-progress drag before hiding the picker.
+    flushPendingColor();
     pickerProjectId = null;
+    pickerSwatchEl = null;
   }
 
-  async function handleColorChange(project: Project, hex: string): Promise<void> {
-    // Merge with existing settings so we don't drop retention_days etc.
-    await projectsStore.update(project.id, {
-      settings: { ...project.settings, color: hex },
-    });
+  function handleColorChange(project: Project, hex: string): void {
+    // Optimistic local view: the picker reads from `pendingColor` so its
+    // drag-handle positions reflect every tick, even while the DB write is
+    // debounced. The displayed hex text also updates immediately.
+    pendingColor = { ...pendingColor, [project.id]: hex };
+    pendingColorProject = project;
+    if (pendingColorTimer !== null) clearTimeout(pendingColorTimer);
+    pendingColorTimer = setTimeout(() => {
+      pendingColorTimer = null;
+      flushPendingColor();
+    }, 200);
   }
 
   let showArchived = $state(false);
@@ -176,7 +225,9 @@
             class="project-item"
             class:selected={selectedProjectId === project.id}
             class:archived={project.archived_at !== null}
-            style="--project-color: {project.settings?.color ?? 'var(--color-accent, #60a5fa)'}"
+            style={getProjectColor(project)
+              ? `--project-color: ${getProjectColor(project)}`
+              : ''}
             tabindex="0"
             onclick={() => handleSelectProject(project)}
             onkeydown={(e) => handleKeydown(e, project)}
@@ -199,7 +250,8 @@
               ></button>
               {#if pickerProjectId === project.id}
                 <ColorSwatchPicker
-                  value={project.settings?.color ?? '#60a5fa'}
+                  value={pendingColor[project.id] ?? getProjectColor(project) ?? '#60a5fa'}
+                  ignoreEl={pickerSwatchEl}
                   onChange={(hex) => handleColorChange(project, hex)}
                   onClose={closePicker}
                 />

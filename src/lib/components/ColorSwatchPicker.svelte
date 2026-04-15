@@ -18,7 +18,7 @@
   fire-and-forget.
 -->
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount } from 'svelte';
 
   interface Props {
     /** Current hex colour (e.g. `#60a5fa`). */
@@ -27,9 +27,15 @@
     onChange: (hex: string) => void;
     /** Called when the popover should close (Escape, click-outside). */
     onClose: () => void;
+    /** Phase 2 review fix: element (typically the opener swatch button) that
+     *  should NOT trigger the click-outside close handler. Without this, the
+     *  document-click-capture handler fires before the swatch's own onclick,
+     *  so re-clicking the opener closed+reopened the picker instead of
+     *  toggling it shut. */
+    ignoreEl?: HTMLElement | null;
   }
 
-  let { value, onChange, onClose }: Props = $props();
+  let { value, onChange, onClose, ignoreEl = null }: Props = $props();
 
   let rootEl: HTMLDivElement | undefined = $state();
   let pickerEl: HTMLElement | undefined = $state();
@@ -48,9 +54,11 @@
   }
 
   function handleDocumentClick(event: MouseEvent): void {
-    if (rootEl && !rootEl.contains(event.target as Node)) {
-      onClose();
-    }
+    const target = event.target as Node | null;
+    if (!rootEl || !target) return;
+    if (rootEl.contains(target)) return;
+    if (ignoreEl && ignoreEl.contains(target)) return;
+    onClose();
   }
 
   function handleKeydown(event: KeyboardEvent): void {
@@ -82,14 +90,8 @@
 
     return () => {
       cancelAnimationFrame(raf);
+      document.removeEventListener('click', handleDocumentClick, true);
     };
-  });
-
-  onDestroy(() => {
-    document.removeEventListener('click', handleDocumentClick, true);
-    if (pickerEl) {
-      pickerEl.removeEventListener('color-changed', handleColorChanged);
-    }
   });
 
   // Attach the `color-changed` listener once the custom element is rendered
