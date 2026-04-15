@@ -221,12 +221,17 @@
       const session = sessionsStore.byId(slot.session_id);
       if (!session) return slot; // ghost stays as-is
       const project = projectsStore.byId(session.project_id) ?? null;
+      // Defensively filter non-string command entries (shouldn't happen with
+      // a well-behaved backend, but metadata is typed as `Record<string,
+      // unknown>` so nothing enforces it at the IPC boundary).
+      const rawCommand = session.metadata?.command;
+      const command = Array.isArray(rawCommand)
+        ? rawCommand.filter((c: unknown): c is string => typeof c === 'string')
+        : [];
       const nextGhost: GhostSessionData = {
         project_id: session.project_id,
         label: session.label,
-        command: Array.isArray(session.metadata?.command)
-          ? [...session.metadata.command]
-          : [],
+        command,
         project_color: getProjectColor(project),
       };
       const current = slot.ghost_data;
@@ -251,48 +256,50 @@
 
   /** Phase 5: restart a ghost slot. Called by PaneSlot's ▶ Restart button,
    *  plumbed through PaneWorkspace's `onRestartSlot` prop. Returns the new
-   *  session id on success or `null` on failure so the pane can clear its
-   *  loading state and optionally surface the error. */
+   *  session id on success; re-throws on failure so PaneSlot's `handleRestart`
+   *  can surface the specific error (e.g. "project archived") rather than a
+   *  generic "Failed to restart". */
   async function restartGhostSlot(oldSessionId: number): Promise<number | null> {
     const slot = slots.find((s) => s.session_id === oldSessionId);
     const ghost = slot?.ghost_data;
     if (!slot || !ghost || ghost.command.length === 0) return null;
-    try {
-      const result = await sessionSpawn({
-        projectId: ghost.project_id,
-        command: ghost.command,
-        label: ghost.label,
-      });
-      const newSession = result.session;
-      // Insert into the store immediately so the ghost flips to live without
-      // waiting for the `session:spawned` event round-trip. Mirrors the
-      // pattern in SpawnSessionDialog's onSpawned handler.
-      sessionsStore.add({
-        ...newSession,
-        activity_summary: null,
-        alert: null,
-        reattached_mirror: false,
-      });
-      // Replace the slot's session_id. ghost_data will be re-snapshotted by
-      // the effect above on the next reactive tick.
-      slots = slots.map((s) =>
-        s.session_id === oldSessionId
-          ? {
-              session_id: newSession.id,
-              split_percent: s.split_percent,
-              order: s.order,
-            }
-          : s,
-      );
-      persistSlots();
-      activeSessionId = newSession.id;
-      highlightSessionId = newSession.id;
-      highlightToken += 1;
-      workspaceStore.update({ focused_session_id: newSession.id });
-      return newSession.id;
-    } catch {
-      return null;
-    }
+    const result = await sessionSpawn({
+      projectId: ghost.project_id,
+      command: ghost.command,
+      label: ghost.label,
+    });
+    const newSession = result.session;
+    // Insert into the store immediately so the ghost flips to live without
+    // waiting for the `session:spawned` event round-trip. Mirrors the
+    // pattern in SpawnSessionDialog's onSpawned handler.
+    sessionsStore.add({
+      ...newSession,
+      activity_summary: null,
+      alert: null,
+      reattached_mirror: false,
+    });
+    // Replace the slot's session_id. ghost_data will be re-snapshotted by
+    // the effect above on the next reactive tick.
+    slots = slots.map((s) =>
+      s.session_id === oldSessionId
+        ? {
+            session_id: newSession.id,
+            split_percent: s.split_percent,
+            order: s.order,
+          }
+        : s,
+    );
+    persistSlots();
+    // Deliberate: we steal activeSessionId for the newly-restarted session.
+    // The user just initiated the restart, so landing them in that terminal
+    // matches intent — even if a live leftmost slot was active before. The
+    // previous activeSessionId was already the ghost that was just replaced
+    // in the common case (restart is triggered from the ghost itself).
+    activeSessionId = newSession.id;
+    highlightSessionId = newSession.id;
+    highlightToken += 1;
+    workspaceStore.update({ focused_session_id: newSession.id });
+    return newSession.id;
   }
 
   function handleSlotClose(sessionId: number): void {

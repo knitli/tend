@@ -241,10 +241,19 @@
       const absoluteIndex = maxVisibleSlots + i;
       const session = sessionsStore.byId(slot.session_id) ?? null;
       const project = session ? projectsStore.byId(session.project_id) ?? null : null;
-      const color = getProjectColor(project) ?? undefined;
+      // Phase 5 review fix R1: for ghost slots (no live session), fall back
+      // to `slot.ghost_data` so the popover shows the real project colour,
+      // name, and session label instead of generic "Project / Session {id}".
+      const ghost = slot.ghost_data;
+      let color: string | undefined;
+      let projectName: string;
+      let sessionLabel: string;
       let statusLabel = '';
       let statusClass = '';
       if (session) {
+        color = getProjectColor(project) ?? undefined;
+        projectName = project?.display_name ?? 'Project';
+        sessionLabel = session.label;
         switch (session.status) {
           case 'working': statusLabel = 'Working'; break;
           case 'idle': statusLabel = 'Idle'; break;
@@ -254,12 +263,25 @@
           default: statusLabel = session.status;
         }
         statusClass = `status-${session.status.replaceAll('_', '-')}`;
+      } else if (ghost) {
+        color = ghost.project_color ?? undefined;
+        const ghostProject = projectsStore.byId(ghost.project_id) ?? null;
+        projectName = ghostProject?.display_name ?? `Project #${ghost.project_id}`;
+        sessionLabel = ghost.label;
+        statusLabel = 'Ended';
+        statusClass = 'status-ended';
+      } else {
+        color = undefined;
+        projectName = 'Project';
+        sessionLabel = `Session #${slot.session_id}`;
+        statusLabel = 'Ended';
+        statusClass = 'status-ended';
       }
       return {
         slot,
         absoluteIndex,
-        projectName: project?.display_name ?? 'Project',
-        sessionLabel: session?.label ?? `Session ${slot.session_id}`,
+        projectName,
+        sessionLabel,
         statusLabel,
         statusClass,
         color,
