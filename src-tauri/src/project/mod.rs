@@ -35,6 +35,24 @@ pub(crate) fn expand_tilde(input: &str) -> PathBuf {
     PathBuf::from(input)
 }
 
+/// Adaptive-UI spec §1.2 palette: 12 perceptually-distinct colours used for the
+/// per-project colour auto-assignment on register. Kept in sync with
+/// `specs/002-adaptive-ui/spec.md §1.2` and the frontend ColorSwatchPicker.
+pub const COLOR_PALETTE: [&str; 12] = [
+    "#60a5fa", // blue
+    "#a78bfa", // violet
+    "#34d399", // emerald
+    "#fb923c", // orange
+    "#f472b6", // pink
+    "#38bdf8", // sky
+    "#facc15", // yellow
+    "#4ade80", // green
+    "#c084fc", // purple
+    "#f87171", // red
+    "#2dd4bf", // teal
+    "#e879f9", // fuchsia
+];
+
 /// Project service — stateless, operates on the shared DB.
 pub struct ProjectService;
 
@@ -96,6 +114,18 @@ impl ProjectService {
         let now = Utc::now();
         let now_str = now.to_rfc3339();
 
+        // Adaptive-UI spec §1 — auto-assign a palette colour. Chosen deterministically
+        // from the monotonic surrogate id modulo 12; this is simple, stable per-DB,
+        // and does not require a separate count query. See spec.md §1.2 for the
+        // palette definition.
+        let mut settings = ProjectSettings::default();
+
+        // Use an explicit transaction so that if the settings UPDATE fails,
+        // the INSERT is rolled back and the caller gets a clean error with no
+        // partially-initialized row.
+        let mut tx = db.pool().begin().await?;
+
+        // Insert first so we have the id to derive the palette index from.
         let row: (i64,) = sqlx::query_as(
             r#"
             INSERT INTO projects (canonical_path, display_name, added_at, settings_json)
@@ -106,22 +136,40 @@ impl ProjectService {
         .bind(&canonical_str)
         .bind(name)
         .bind(&now_str)
-        .fetch_one(db.pool())
+        .fetch_one(&mut *tx)
         .await?;
 
+        let project_id = ProjectId::new(row.0);
+
+        // Auto-assign colour on registration: palette[(id - 1) % 12].
+        // Subtracting 1 means id=1 → first palette entry (blue, matches accent).
+        let idx = row.0.saturating_sub(1) as usize % COLOR_PALETTE.len();
+        settings.color = Some(COLOR_PALETTE[idx].to_string());
+
+        // Persist the assigned colour back to the row.
+        let settings_json = serde_json::to_string(&settings)?;
+        sqlx::query("UPDATE projects SET settings_json = ?1 WHERE id = ?2")
+            .bind(&settings_json)
+            .bind(project_id.get())
+            .execute(&mut *tx)
+            .await?;
+
+        tx.commit().await?;
+
         let project = Project {
-            id: ProjectId::new(row.0),
+            id: project_id,
             canonical_path: canonical,
             display_name: name.to_string(),
             added_at: now,
             last_active_at: None,
             archived_at: None,
-            settings: ProjectSettings::default(),
+            settings,
         };
 
         info!(
             project_id = %project.id,
             path = %project.canonical_path.display(),
+            color = ?project.settings.color,
             "registered project"
         );
 

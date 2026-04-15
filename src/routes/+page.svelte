@@ -18,6 +18,7 @@
   import { isEditableTarget } from '$lib/util/isEditableTarget';
   import type { Project } from '$lib/api/projects';
   import type { SessionSummary } from '$lib/api/sessions';
+  import { getProjectColor } from '$lib/util/projectColor';
 
   let selectedProjectId = $state<number | null>(null);
   let activeSessionId = $state<number | null>(null);
@@ -51,6 +52,14 @@
   /** Session ids that were missing after workspace/layout restore. */
   let missingSessions = $state<Set<number>>(new Set());
   const activeSession = $derived(activeSessionId !== null ? sessionsStore.byId(activeSessionId) ?? null : null);
+
+  /** Phase 2-D: project colour of the active session's project, threaded as
+   *  `--project-color` on the active-session-header + SplitView wrapper so
+   *  both the header tint and Phase 1's flash overlay use the same colour. */
+  const activeProjectColor = $derived.by<string | null>(() => {
+    if (!activeSession) return null;
+    return getProjectColor(projectsStore.byId(activeSession.project_id));
+  });
 
   // Mirror activeSessionId to the backend so its event bridge stops
   // forwarding PTY output for sessions no pane can render. Overview /
@@ -197,7 +206,10 @@
       {#if overviewOpen}
         <CrossProjectOverview />
       {:else if activeSession && activeSessionId !== null}
-        <div class="active-session-header">
+        <div
+          class="active-session-header"
+          style={activeProjectColor ? `--project-color: ${activeProjectColor}` : ''}
+        >
           <h2>{activeSession.label}</h2>
           <span class="session-status">{activeSession.status}</span>
           {#if activeSession.ownership === 'wrapper' || activeSession.reattached_mirror}
@@ -205,11 +217,19 @@
           {/if}
         </div>
         {#key `${activeSessionId}-${activeSession.reattached_mirror}`}
-          <SplitView
-            sessionId={activeSessionId}
-            session={activeSession}
-            highlightToken={highlightSessionId === activeSessionId ? highlightToken : 0}
-          />
+          <!-- Phase 2-D: thread the project colour onto the SplitView wrapper
+               so the Phase 1 flash overlay AND the companion pane header (via
+               CSS cascade) both pick up the same per-project colour. -->
+          <div
+            class="split-view-wrapper"
+            style={activeProjectColor ? `--project-color: ${activeProjectColor}` : ''}
+          >
+            <SplitView
+              sessionId={activeSessionId}
+              session={activeSession}
+              highlightToken={highlightSessionId === activeSessionId ? highlightToken : 0}
+            />
+          </div>
         {/key}
       {:else}
         <div class="empty-content">
@@ -332,12 +352,38 @@
     overflow: hidden;
   }
 
+  /* Phase 2-D: project-colour tint on the active-session header. A 4 px left
+     strip carries the full project colour as an identity accent; the header
+     background is a subtle 8% mix so the tint is visible on dark surfaces
+     without reducing text contrast. Both fall back to `--color-accent` for
+     projects without `settings.color`. */
   .active-session-header {
     display: flex;
     align-items: center;
     gap: var(--space-3, 0.75rem);
     padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
     border-bottom: 1px solid var(--color-border, #2a2d35);
+    border-left: 4px solid var(--project-color, var(--color-accent, #60a5fa));
+    background: color-mix(
+      in srgb,
+      var(--project-color, var(--color-accent, #60a5fa)) 8%,
+      var(--color-surface, #0f1115)
+    );
+  }
+
+  /* Layout carrier for the SplitView: `flex: 1; min-height: 0;
+     overflow: hidden;` give the split its bounding box inside the content
+     panel. This wrapper ALSO threads `--project-color` via its inline
+     `style` attribute, so the Phase 1 flash overlay and any future
+     companion-pane tinting can read the per-project colour from the
+     closest ancestor while SplitView itself stays layout-agnostic. */
+  .split-view-wrapper {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .active-session-header h2 {

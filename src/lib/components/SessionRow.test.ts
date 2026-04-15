@@ -100,4 +100,39 @@ describe("SessionRow active indicator", () => {
 		const row = target.querySelector<HTMLElement>(".session-row");
 		expect(row!.classList.contains("dimmed")).toBe(true);
 	});
+
+	// Phase 2-C: when a project has a settings.color, the row receives
+	// `--project-color` as an inline style so the `.active` border + dot
+	// use the real project colour rather than the global accent fallback.
+	it("applies the --project-color inline style when projectColor is set", () => {
+		const target = document.createElement("div");
+		document.body.append(target);
+		component = mount(SessionRow, {
+			target,
+			props: { session: makeSession(), projectColor: "#a78bfa" },
+		});
+
+		const row = target.querySelector<HTMLElement>(".session-row");
+		expect(row).not.toBeNull();
+		// The inline style is serialised to `--project-color: #a78bfa` on
+		// the element — check via getAttribute rather than style.getPropertyValue
+		// because JSDOM normalises CSS custom properties differently across versions.
+		expect(row!.getAttribute("style")).toContain("--project-color");
+		expect(row!.getAttribute("style")).toContain("#a78bfa");
+	});
+
+	it("omits the inline style when projectColor is null", () => {
+		const target = document.createElement("div");
+		document.body.append(target);
+		component = mount(SessionRow, {
+			target,
+			props: { session: makeSession(), projectColor: null },
+		});
+
+		const row = target.querySelector<HTMLElement>(".session-row");
+		// No inline style attribute → the component falls back to the
+		// global `--color-accent` via CSS `var()` default.
+		const style = row!.getAttribute("style");
+		expect(style === null || !style.includes("--project-color")).toBe(true);
+	});
 });

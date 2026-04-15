@@ -147,7 +147,13 @@ describe("SessionList scroll-to event wiring", () => {
 
 	it("calls scrollIntoView on the matching row when the event fires", () => {
 		// Spy on Element.prototype so any element's scrollIntoView is captured,
-		// regardless of which actual row node the listener picks.
+		// regardless of which actual row node the listener picks. jsdom does
+		// not implement scrollIntoView natively, so we also need to ensure it
+		// exists on the prototype.
+		if (typeof Element.prototype.scrollIntoView !== "function") {
+			// eslint-disable-next-line @typescript-eslint/no-empty-function
+			(Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {};
+		}
 		const spy = vi.spyOn(Element.prototype, "scrollIntoView");
 
 		const target = document.createElement("div");
@@ -173,6 +179,9 @@ describe("SessionList scroll-to event wiring", () => {
 	});
 
 	it("does nothing when the target session id is not in the list", () => {
+		if (typeof Element.prototype.scrollIntoView !== "function") {
+			(Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {};
+		}
 		const spy = vi.spyOn(Element.prototype, "scrollIntoView");
 
 		const target = document.createElement("div");

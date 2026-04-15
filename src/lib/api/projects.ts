@@ -17,7 +17,32 @@ export interface Project {
 
 export interface ProjectSettings {
 	readonly retention_days?: number;
+	/**
+	 * Spec §1 adaptive-ui: per-project display colour (hex string, e.g. `#60a5fa`).
+	 * Auto-assigned from a 12-colour palette on `project_register` when absent.
+	 * May be overridden by the user via the Sidebar colour picker.
+	 */
+	readonly color?: string;
 	readonly [key: string]: unknown;
+}
+
+// ---------- Validators ----------
+
+/**
+ * Narrow a freeform DB/JSON value to a validated `#rrggbb` hex colour.
+ *
+ * `project.settings.color` is freeform JSON loaded straight from SQLite and
+ * later interpolated into `style="--project-color: {value}"` inline styles.
+ * CSS custom-property values are NOT subject to Svelte's attribute-text
+ * escaping, so a malformed value (hand-edited DB, future import flow, bug)
+ * could produce CSS injection. `vanilla-colorful` is safe at write time, but
+ * consumers should always re-validate at the DOM boundary.
+ *
+ * Accepts: `#60a5fa`, `#FFF000`. Rejects everything else (named colours,
+ * 3-digit shorthand, surrounding whitespace, trailing garbage, non-strings).
+ */
+export function isValidHexColor(value: unknown): value is string {
+	return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
 }
 
 // ---------- Commands ----------

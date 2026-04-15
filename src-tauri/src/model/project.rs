@@ -30,6 +30,11 @@ pub struct ProjectSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retention_days: Option<u32>,
 
+    /// Spec §1 adaptive-ui: per-project display colour (hex string, e.g. `#60a5fa`).
+    /// Auto-assigned from a 12-colour palette on `project_register` when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+
     /// Additional arbitrary settings (forward-compat escape hatch).
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty", flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
