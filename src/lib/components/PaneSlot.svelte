@@ -35,11 +35,13 @@
     highlighted?: boolean;
     highlightToken?: number;
     /** P4-D: keyboard-accessible slot reorder. When provided, the drag-handle
-     *  area reveals `‹` / `›` buttons that shift this pane one slot left or
-     *  right. Either may be `undefined` (for the leftmost / rightmost slot);
-     *  the button is then disabled. This is the non-drag path — native HTML5
-     *  drag on the `data-drag-handle` element fires `onReorderDragStart` /
-     *  `onReorderDragOver` / `onReorderDrop` which the parent coordinates. */
+     *  area renders `‹` / `›` buttons that shift this pane one slot left or
+     *  right. Both are provided together or both are omitted (single-pane or
+     *  reordering disabled); `canMoveLeft`/`canMoveRight` gate the disabled
+     *  state so edge slots show a disabled button rather than hiding it. This
+     *  is the non-drag path — native HTML5 drag on the `data-drag-handle`
+     *  element fires `onReorderDragStart` / `onReorderDragOver` /
+     *  `onReorderDrop` which the parent coordinates. */
     onMoveLeft?: () => void;
     onMoveRight?: () => void;
     canMoveLeft?: boolean;
@@ -248,7 +250,7 @@
         aria-hidden="true"
         title={onReorderDragStart ? 'Drag to reorder pane' : 'Only one pane open'}
       >⠿</span>
-      {#if onMoveLeft}
+      {#if onMoveLeft !== undefined || onMoveRight !== undefined}
         <button
           type="button"
           class="pane-slot-btn pane-slot-move-btn"
@@ -259,8 +261,6 @@
         >
           ‹
         </button>
-      {/if}
-      {#if onMoveRight}
         <button
           type="button"
           class="pane-slot-btn pane-slot-move-btn"
@@ -325,7 +325,7 @@
         aria-hidden="true"
         title={onReorderDragStart ? 'Drag to reorder pane' : 'Only one pane open'}
       >⠿</span>
-      {#if onMoveLeft}
+      {#if onMoveLeft !== undefined || onMoveRight !== undefined}
         <button
           type="button"
           class="pane-slot-btn pane-slot-move-btn"
@@ -336,8 +336,6 @@
         >
           ‹
         </button>
-      {/if}
-      {#if onMoveRight}
         <button
           type="button"
           class="pane-slot-btn pane-slot-move-btn"
