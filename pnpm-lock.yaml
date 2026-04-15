@@ -38,6 +38,9 @@ importers:
       paneforge:
         specifier: ^1.0.2
         version: 1.0.2(svelte@5.55.3)
+      svelte-dnd-action:
+        specifier: ^0.9.69
+        version: 0.9.69(svelte@5.55.3)
       vanilla-colorful:
         specifier: ^0.7.2
         version: 0.7.2
@@ -964,6 +967,11 @@ packages:
       svelte: ^4.0.0 || ^5.0.0-next.0
       typescript: '>=5.0.0'
 
+  svelte-dnd-action@0.9.69:
+    resolution: {integrity: sha512-NAmSOH7htJoYraTQvr+q5whlIuVoq88vEuHr4NcFgscDRUxfWPPxgie2OoxepBCQCikrXZV4pqV86aun60wVyw==}
+    peerDependencies:
+      svelte: '>=3.23.0 || ^5.0.0-next.0'
+
   svelte-toolbelt@0.10.6:
     resolution: {integrity: sha512-YWuX+RE+CnWYx09yseAe4ZVMM7e7GRFZM6OYWpBKOb++s+SQ8RBIMMe+Bs/CznBMc0QPLjr+vDBxTAkozXsFXQ==}
     engines: {node: '>=18', pnpm: '>=8.7.0'}
@@ -1884,6 +1892,10 @@ snapshots:
       typescript: 6.0.2
     transitivePeerDependencies:
       - picomatch
+
+  svelte-dnd-action@0.9.69(svelte@5.55.3):
+    dependencies:
+      svelte: 5.55.3
 
   svelte-toolbelt@0.10.6(svelte@5.55.3):
     dependencies:

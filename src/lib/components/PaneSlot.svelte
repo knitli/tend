@@ -32,9 +32,65 @@
      *  restart the animation even when `highlighted` stays true. */
     highlighted?: boolean;
     highlightToken?: number;
+    /** P4-D: keyboard-accessible slot reorder. When provided, the drag-handle
+     *  area reveals `‹` / `›` buttons that shift this pane one slot left or
+     *  right. Either may be `undefined` (for the leftmost / rightmost slot);
+     *  the button is then disabled. This is the non-drag path — native HTML5
+     *  drag on the `data-drag-handle` element fires `onReorderDragStart` /
+     *  `onReorderDragOver` / `onReorderDrop` which the parent coordinates. */
+    onMoveLeft?: () => void;
+    onMoveRight?: () => void;
+    canMoveLeft?: boolean;
+    canMoveRight?: boolean;
+    /** P4-D: native drag wiring for pane-slot reorder. The parent
+     *  (PaneWorkspace) provides these so the handle initiates a drag that
+     *  peer slots accept as `application/x-tend-pane-slot`. */
+    onReorderDragStart?: (event: DragEvent) => void;
+    onReorderDragOver?: (event: DragEvent) => void;
+    onReorderDrop?: (event: DragEvent) => void;
   }
 
-  let { sessionId, onFocus, onClose, highlighted = false, highlightToken = 0 }: Props = $props();
+  let {
+    sessionId,
+    onFocus,
+    onClose,
+    highlighted = false,
+    highlightToken = 0,
+    onMoveLeft,
+    onMoveRight,
+    canMoveLeft = false,
+    canMoveRight = false,
+    onReorderDragStart,
+    onReorderDragOver,
+    onReorderDrop,
+  }: Props = $props();
+
+  let isDragOver = $state(false);
+
+  function handleDragOver(event: DragEvent): void {
+    if (!onReorderDragOver) return;
+    // Only accept pane-slot drags (not session-source). We rely on the
+    // dataTransfer types check rather than the payload (which is
+    // unreadable during dragover in most browsers).
+    if (!event.dataTransfer) return;
+    if (!event.dataTransfer.types.includes('application/x-tend-pane-slot')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    isDragOver = true;
+    onReorderDragOver(event);
+  }
+
+  function handleDragLeave(): void {
+    isDragOver = false;
+  }
+
+  function handleDrop(event: DragEvent): void {
+    if (!onReorderDrop) return;
+    if (!event.dataTransfer?.types.includes('application/x-tend-pane-slot')) return;
+    event.preventDefault();
+    isDragOver = false;
+    onReorderDrop(event);
+  }
 
   const session = $derived(sessionsStore.byId(sessionId) ?? null);
   const project = $derived(session ? projectsStore.byId(session.project_id) ?? null : null);
@@ -75,20 +131,54 @@
 <div
   class="pane-slot"
   class:highlighted
+  class:drag-over={isDragOver}
   style={projectColor ? `--project-color: ${projectColor}` : ''}
   data-session-id={sessionId}
+  role="region"
+  aria-label={`Pane for session ${sessionId}`}
+  ondragover={handleDragOver}
+  ondragleave={handleDragLeave}
+  ondrop={handleDrop}
 >
   {#if session}
     <header class="pane-slot-header">
-      <!-- Inert drag handle — Phase 4-D (DnD) will attach listeners to this
-           element via the `data-drag-handle` selector. Phase 4-B/C renders
-           it purely for layout / visual affordance. -->
+      <!-- P4-D: drag handle for slot reorder. Native HTML5 drag — starts a
+           drag with a custom dataTransfer type so peer slots recognise it
+           and the SessionList's session-source dnd zone ignores it. Also
+           renders inline `‹` / `›` move buttons for keyboard-accessible
+           reorder (the non-drag path). -->
       <span
         class="pane-slot-drag-handle"
         data-drag-handle
+        draggable={onReorderDragStart ? 'true' : 'false'}
+        ondragstart={onReorderDragStart}
         aria-hidden="true"
-        title="Drag to reorder (coming in Phase 4-D)"
+        title={onReorderDragStart ? 'Drag to reorder pane' : 'Only one pane open'}
       >⠿</span>
+      {#if onMoveLeft}
+        <button
+          type="button"
+          class="pane-slot-btn pane-slot-move-btn"
+          onclick={onMoveLeft}
+          disabled={!canMoveLeft}
+          title="Move pane left"
+          aria-label="Move pane left"
+        >
+          ‹
+        </button>
+      {/if}
+      {#if onMoveRight}
+        <button
+          type="button"
+          class="pane-slot-btn pane-slot-move-btn"
+          onclick={onMoveRight}
+          disabled={!canMoveRight}
+          title="Move pane right"
+          aria-label="Move pane right"
+        >
+          ›
+        </button>
+      {/if}
       <span class="pane-slot-dot" aria-hidden="true"></span>
       <span class="pane-slot-title" title={`${project?.display_name ?? 'Project'} · ${session.label}`}>
         <strong class="pane-slot-project">{project?.display_name ?? 'Project'}</strong>
@@ -184,6 +274,28 @@
 
   .pane-slot-drag-handle:hover {
     opacity: 0.9;
+  }
+
+  .pane-slot-drag-handle[draggable="true"]:active {
+    cursor: grabbing;
+  }
+
+  .pane-slot-move-btn {
+    width: 18px;
+    height: 18px;
+    font-size: 0.8125rem;
+    padding: 0;
+  }
+
+  .pane-slot-move-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  /* P4-D: visual feedback when a pane-slot drag is hovering this slot. */
+  .pane-slot.drag-over {
+    outline: 2px dashed var(--color-accent, #60a5fa);
+    outline-offset: -4px;
   }
 
   .pane-slot-dot {

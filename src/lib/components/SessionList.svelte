@@ -7,6 +7,7 @@
   import { getProjectColor as resolveProjectColor } from '$lib/util/projectColor';
   import SessionRow from '$lib/components/SessionRow.svelte';
   import type { SessionSummary } from '$lib/api/sessions';
+  import { dndzone, type DndEvent } from 'svelte-dnd-action';
 
   interface Props {
     selectedProjectId?: number | null;
@@ -16,6 +17,11 @@
     activeSessionIds?: Set<number>;
     onActivateSession?: (session: SessionSummary) => void;
     onSpawnSession?: () => void;
+    /** P4-D: keyboard-accessible fallback for the drag-to-pane gesture. When
+     *  set, each SessionRow renders a `⊞` button that calls this with the
+     *  session so a non-mouse user can add it to a pane slot. Defaults to
+     *  the same behaviour as `onActivateSession` when omitted. */
+    onOpenInSlot?: (session: SessionSummary) => void;
   }
 
   let {
@@ -24,7 +30,17 @@
     activeSessionIds = new Set(),
     onActivateSession,
     onSpawnSession,
+    onOpenInSlot,
   }: Props = $props();
+
+  /** P4-D: svelte-dnd-action item shape. Each item needs a string `id` key
+   *  (we use `dnd-session-<id>`) plus the payload our drop target cares
+   *  about — the session id. Grouping is preserved by rendering one
+   *  `use:dndzone` per project group (nested zones), all sharing the
+   *  `type: 'session-source'` so the AddSlotZone accepts them equally.
+   *  Each zone is source-only (`dropFromOthersDisabled: true`) so drags
+   *  from one group cannot reparent into another. */
+  type DnDSessionItem = { id: string; sessionId: number };
 
   let filterInputEl: HTMLInputElement | undefined = $state();
 
@@ -121,6 +137,57 @@
 
     return entries;
   });
+
+  /** P4-D: build per-group DnD item arrays keyed by project id. Each array
+   *  is a stable reference for svelte-dnd-action's `items` prop. The
+   *  corresponding `dndGroupItems` $state reflects transient consider-phase
+   *  mutations; we restore it to the canonical groupedSessions slice on
+   *  finalize so the list never actually reorders. */
+  const groupedDndItems = $derived.by(() => {
+    const map = new Map<number, DnDSessionItem[]>();
+    for (const [projectId, sessions] of groupedSessions) {
+      map.set(projectId, sessions.map((s) => ({ id: `dnd-session-${s.id}`, sessionId: s.id })));
+    }
+    return map;
+  });
+
+  /** Per-group mutable items the zone writes back during a drag. Keyed by
+   *  project id. */
+  let dndGroupItems = $state<Map<number, DnDSessionItem[]>>(new Map());
+  $effect(() => {
+    // Rebuild the mutable map from the canonical derived whenever the
+    // grouping changes (new session arrived, filter changed, etc).
+    const fresh = new Map<number, DnDSessionItem[]>();
+    for (const [projectId, items] of groupedDndItems) {
+      fresh.set(projectId, items.slice());
+    }
+    dndGroupItems = fresh;
+  });
+
+  function dndItemsForProject(projectId: number): DnDSessionItem[] {
+    return dndGroupItems.get(projectId) ?? [];
+  }
+
+  function makeConsiderHandler(projectId: number) {
+    return (e: CustomEvent<DndEvent<DnDSessionItem>>) => {
+      const next = new Map(dndGroupItems);
+      next.set(projectId, e.detail.items);
+      dndGroupItems = next;
+    };
+  }
+
+  function makeFinalizeHandler(projectId: number) {
+    return (_e: CustomEvent<DndEvent<DnDSessionItem>>) => {
+      // Source-only zones: restore canonical items regardless of outcome.
+      // If the drop landed in a sibling zone, that zone handles the side
+      // effect (e.g. addSlot). If the drop landed here or outside, the
+      // list order must be preserved.
+      const canonical = groupedDndItems.get(projectId) ?? [];
+      const next = new Map(dndGroupItems);
+      next.set(projectId, canonical.slice());
+      dndGroupItems = next;
+    };
+  }
 
   function getProjectName(projectId: number): string {
     return projectsStore.byId(projectId)?.display_name ?? `Project ${projectId}`;
@@ -238,22 +305,41 @@
     {:else}
       {#each groupedSessions as [projectId, sessions] (projectId)}
         {@const projectColor = getProjectColor(projectId)}
+        {@const groupItems = dndItemsForProject(projectId)}
         <div
           class="project-group"
           style={projectColor ? `--project-color: ${projectColor}` : ''}
         >
           <h3 class="group-heading">{getProjectName(projectId)}</h3>
-          {#each sessions as session (session.id)}
-            <SessionRow
-              {session}
-              projectName={selectedProjectId !== null ? '' : getProjectName(session.project_id)}
-              missing={missingSessions.has(session.id)}
-              active={activeSessionIds.has(session.id)}
-              anyActive={activeSessionIds.size > 0}
-              {projectColor}
-              onActivate={handleActivate}
-            />
-          {/each}
+          <div
+            class="project-group-items"
+            use:dndzone={{
+              items: groupItems,
+              type: 'session-source',
+              dropFromOthersDisabled: true,
+              flipDurationMs: 0,
+              morphDisabled: true,
+              dropTargetStyle: {},
+            }}
+            onconsider={makeConsiderHandler(projectId)}
+            onfinalize={makeFinalizeHandler(projectId)}
+          >
+            {#each groupItems as item (item.id)}
+              {@const session = sessions.find((s) => s.id === item.sessionId)}
+              {#if session}
+                <SessionRow
+                  {session}
+                  projectName={selectedProjectId !== null ? '' : getProjectName(session.project_id)}
+                  missing={missingSessions.has(session.id)}
+                  active={activeSessionIds.has(session.id)}
+                  anyActive={activeSessionIds.size > 0}
+                  {projectColor}
+                  onActivate={handleActivate}
+                  {onOpenInSlot}
+                />
+              {/if}
+            {/each}
+          </div>
         </div>
       {/each}
     {/if}
@@ -411,6 +497,14 @@
 
   .project-group {
     border-bottom: 1px solid var(--color-border, #2a2d35);
+  }
+
+  /* P4-D: svelte-dnd-action uses the direct children of the zone as
+     draggables. Keeping the items container as a plain flex column so
+     the row divider lines inside SessionRow still align edge-to-edge. */
+  .project-group-items {
+    display: flex;
+    flex-direction: column;
   }
 
   /* Phase 2-C: group headings carry a 2 px left-strip in the project colour

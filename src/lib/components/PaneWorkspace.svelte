@@ -27,6 +27,7 @@
   import { onDestroy, onMount, untrack } from 'svelte';
   import { PaneGroup, Pane, PaneResizer } from 'paneforge';
   import PaneSlot from '$lib/components/PaneSlot.svelte';
+  import AddSlotZone from '$lib/components/AddSlotZone.svelte';
   import { sessionSetVisible } from '$lib/api/sessions';
   import type { PaneSlot as PaneSlotType } from '$lib/types/pane';
 
@@ -48,6 +49,15 @@
     onSlotClose: (sessionId: number) => void;
     onSlotFocus: (sessionId: number) => void;
     onResize?: (sizes: number[]) => void;
+    /** P4-D: fired when a session is dropped onto the trailing AddSlotZone
+     *  (or when the `⊞` SessionRow button is clicked in +page.svelte).
+     *  The parent is responsible for the actual `slots` mutation — this
+     *  component stays controlled. */
+    onDropSession?: (sessionId: number) => void;
+    /** P4-D: fired when the user reorders panes via the drag handle on
+     *  the pane header (HTML5 native drag) or the `‹` / `›` keyboard
+     *  buttons. Receives the full new slot array in its final order. */
+    onReorderSlots?: (next: PaneSlotType[]) => void;
   }
 
   let {
@@ -58,7 +68,56 @@
     onSlotClose,
     onSlotFocus,
     onResize,
+    onDropSession,
+    onReorderSlots,
   }: Props = $props();
+
+  /** P4-D: id of the slot currently being dragged for reorder. We carry
+   *  this via component state rather than round-tripping through the
+   *  DataTransfer payload (which is often unreadable outside `drop`). */
+  let reorderDragSessionId = $state<number | null>(null);
+
+  function reorderSlots(fromSessionId: number, toSessionId: number): void {
+    if (fromSessionId === toSessionId) return;
+    const fromIdx = slots.findIndex((s) => s.session_id === fromSessionId);
+    const toIdx = slots.findIndex((s) => s.session_id === toSessionId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const next = slots.slice();
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    onReorderSlots?.(next.map((s, i) => ({ ...s, order: i })));
+  }
+
+  function handleMoveLeft(sessionId: number): void {
+    const idx = slots.findIndex((s) => s.session_id === sessionId);
+    if (idx <= 0) return;
+    const next = slots.slice();
+    [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+    onReorderSlots?.(next.map((s, i) => ({ ...s, order: i })));
+  }
+
+  function handleMoveRight(sessionId: number): void {
+    const idx = slots.findIndex((s) => s.session_id === sessionId);
+    if (idx === -1 || idx >= slots.length - 1) return;
+    const next = slots.slice();
+    [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+    onReorderSlots?.(next.map((s, i) => ({ ...s, order: i })));
+  }
+
+  function handleReorderDragStart(sessionId: number, event: DragEvent): void {
+    if (!event.dataTransfer) return;
+    reorderDragSessionId = sessionId;
+    // Custom MIME type so AddSlotZone / session-source zones don't pick
+    // this drag up, and peer slots recognise it in ondragover.
+    event.dataTransfer.setData('application/x-tend-pane-slot', String(sessionId));
+    event.dataTransfer.effectAllowed = 'move';
+  }
+
+  function handleReorderDrop(targetSessionId: number): void {
+    if (reorderDragSessionId === null) return;
+    reorderSlots(reorderDragSessionId, targetSessionId);
+    reorderDragSessionId = null;
+  }
 
   let containerEl: HTMLDivElement | undefined = $state();
   let containerWidth = $state(0);
@@ -150,6 +209,9 @@
     <div class="pane-workspace-empty">
       <p class="muted">No sessions open. Pick one from the list to get started.</p>
     </div>
+    {#if onDropSession}
+      <AddSlotZone onDrop={onDropSession} />
+    {/if}
   {:else}
     <PaneGroup
       direction="horizontal"
@@ -171,6 +233,19 @@
             {highlightToken}
             onClose={() => onSlotClose(slot.session_id)}
             onFocus={() => onSlotFocus(slot.session_id)}
+            onMoveLeft={onReorderSlots && slots.length > 1 ? () => handleMoveLeft(slot.session_id) : undefined}
+            onMoveRight={onReorderSlots && slots.length > 1 ? () => handleMoveRight(slot.session_id) : undefined}
+            canMoveLeft={i > 0}
+            canMoveRight={i < slots.length - 1}
+            onReorderDragStart={onReorderSlots && slots.length > 1
+              ? (e) => handleReorderDragStart(slot.session_id, e)
+              : undefined}
+            onReorderDrop={onReorderSlots && slots.length > 1
+              ? () => handleReorderDrop(slot.session_id)
+              : undefined}
+            onReorderDragOver={onReorderSlots && slots.length > 1
+              ? () => {}
+              : undefined}
           />
         </Pane>
         {#if i < visibleSlots.length - 1}
@@ -178,6 +253,9 @@
         {/if}
       {/each}
     </PaneGroup>
+    {#if onDropSession}
+      <AddSlotZone onDrop={onDropSession} />
+    {/if}
   {/if}
 </div>
 

@@ -206,6 +206,40 @@
     workspaceStore.setUi('workspace_pane_sizes', sizes);
   }
 
+  /** P4-D: append a session to the pane workspace as a new slot. If the
+   *  session is already mounted we just re-flash it (no layout change).
+   *  This is invoked by:
+   *    - the AddSlotZone drop target (drag from SessionList),
+   *    - the `⊞` keyboard-accessible button on SessionRow. */
+  function addSlot(sessionId: number): void {
+    const existingIdx = slots.findIndex((s) => s.session_id === sessionId);
+    if (existingIdx === -1) {
+      slots = [
+        ...slots,
+        { session_id: sessionId, split_percent: 65, order: slots.length },
+      ];
+      persistSlots();
+    }
+    activeSessionId = sessionId;
+    overviewOpen = false;
+    workspaceStore.update({ focused_session_id: sessionId });
+    highlightSessionId = sessionId;
+    highlightToken += 1;
+  }
+
+  function onDropSession(sessionId: number): void {
+    addSlot(sessionId);
+  }
+
+  function onReorderSlots(next: PaneSlot[]): void {
+    slots = next;
+    persistSlots();
+  }
+
+  function onOpenInSlot(session: SessionSummary): void {
+    addSlot(session.id);
+  }
+
   function handleWindowKeydown(event: KeyboardEvent): void {
     if (
       event.key === '/' &&
@@ -535,6 +569,7 @@
           {missingSessions}
           {activeSessionIds}
           onActivateSession={handleActivateSession}
+          {onOpenInSlot}
           onSpawnSession={() => openSpawnDialog(
             selectedProjectId !== null
               ? projectsStore.byId(selectedProjectId) ?? null
@@ -602,6 +637,8 @@
             onSlotClose={handleSlotClose}
             onSlotFocus={handleSlotFocus}
             onResize={handleSlotResize}
+            {onDropSession}
+            {onReorderSlots}
           />
         {:else}
           <div class="empty-content">
