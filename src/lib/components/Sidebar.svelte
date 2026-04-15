@@ -433,7 +433,9 @@
 
   .project-actions {
     flex-shrink: 0;
-    opacity: 0;
+    display: flex;
+    gap: 2px;
+    opacity: 0.55;
     transition: opacity 150ms;
   }
 

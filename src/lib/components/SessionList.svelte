@@ -145,6 +145,20 @@
       />
       Ended
     </label>
+    {#if onSpawnSession}
+      <button
+        type="button"
+        class="new-session-btn"
+        onclick={() => onSpawnSession?.()}
+        disabled={projectsStore.activeProjects.length === 0}
+        title={projectsStore.activeProjects.length === 0
+          ? 'Add a project first'
+          : 'Start a new session'}
+        aria-label="Start a new session"
+      >
+        + New
+      </button>
+    {/if}
   </div>
 
   <div class="session-list-body">
@@ -252,6 +266,29 @@
 
   .toggle-label input[type="checkbox"] {
     accent-color: var(--color-accent, #60a5fa);
+  }
+
+  .new-session-btn {
+    padding: var(--space-1, 0.25rem) var(--space-3, 0.75rem);
+    border: 1px solid var(--color-accent, #60a5fa);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--color-accent, #60a5fa);
+    color: var(--color-surface, #0f1115);
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 120ms;
+  }
+
+  .new-session-btn:hover:not(:disabled) {
+    background: var(--color-accent-hover, #93c5fd);
+  }
+
+  .new-session-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   .session-list-body {
