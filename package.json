@@ -31,6 +31,11 @@
     "node": "^24.0.0"
   },
   "name": "tend",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
   "private": true,
   "scripts": {
     "build": "vite build",
@@ -41,11 +46,6 @@
     "tauri": "tauri",
     "test": "vitest run -c ./vitest.config.ts",
     "test:watch": "vitest"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
   },
   "type": "module",
   "version": "0.1.0",
