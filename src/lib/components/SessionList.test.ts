@@ -114,8 +114,17 @@ function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
 let component: ReturnType<typeof mount> | null = null;
 
 describe("SessionList scroll-to event wiring", () => {
+	// Track whether we installed scrollIntoView ourselves so we can clean it
+	// up properly. jsdom does not implement scrollIntoView natively.
+	let addedScrollIntoView = false;
+
 	beforeEach(() => {
 		sessionsStore.add(makeSession({ id: 123 }));
+		if (typeof Element.prototype.scrollIntoView !== "function") {
+			// eslint-disable-next-line @typescript-eslint/no-empty-function
+			(Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {};
+			addedScrollIntoView = true;
+		}
 	});
 
 	afterEach(() => {
@@ -126,17 +135,15 @@ describe("SessionList scroll-to event wiring", () => {
 		sessionsStore.remove(123);
 		document.body.innerHTML = "";
 		vi.restoreAllMocks();
+		if (addedScrollIntoView) {
+			delete (Element.prototype as unknown as Record<string, unknown>).scrollIntoView;
+			addedScrollIntoView = false;
+		}
 	});
 
 	it("calls scrollIntoView on the matching row when the event fires", () => {
 		// Spy on Element.prototype so any element's scrollIntoView is captured,
-		// regardless of which actual row node the listener picks. jsdom does
-		// not implement scrollIntoView natively, so we also need to ensure it
-		// exists on the prototype.
-		if (typeof Element.prototype.scrollIntoView !== "function") {
-			// eslint-disable-next-line @typescript-eslint/no-empty-function
-			(Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {};
-		}
+		// regardless of which actual row node the listener picks.
 		const spy = vi.spyOn(Element.prototype, "scrollIntoView");
 
 		const target = document.createElement("div");
@@ -162,9 +169,6 @@ describe("SessionList scroll-to event wiring", () => {
 	});
 
 	it("does nothing when the target session id is not in the list", () => {
-		if (typeof Element.prototype.scrollIntoView !== "function") {
-			(Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {};
-		}
 		const spy = vi.spyOn(Element.prototype, "scrollIntoView");
 
 		const target = document.createElement("div");

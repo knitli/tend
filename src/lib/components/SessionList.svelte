@@ -44,7 +44,10 @@
       const detail = (event as CustomEvent<{ sessionId: number }>).detail;
       if (!detail) return;
       const el = document.querySelector(`[data-session-id="${detail.sessionId}"]`);
-      el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      const behavior = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+        ? 'auto'
+        : 'smooth';
+      el?.scrollIntoView({ behavior, block: 'nearest' });
     }
     window.addEventListener('tend:session-scroll-to', handleScrollTo);
     return () => {
