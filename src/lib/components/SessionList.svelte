@@ -170,21 +170,14 @@
       {:else}
         <div class="empty-state empty-state-hint">
           <p class="hint-lead">No active sessions yet.</p>
-          {#if onSpawnSession && projectsStore.activeProjects.length > 0}
-            <button
-              type="button"
-              class="btn-primary-block"
-              onclick={() => onSpawnSession?.()}
-            >
-              Start a session
-            </button>
-            <p class="hint-divider">or run from a terminal:</p>
-          {:else if projectsStore.activeProjects.length === 0}
+          {#if projectsStore.activeProjects.length === 0}
             <p class="hint-body">
               Add a project in the sidebar first.
             </p>
           {:else}
-            <p class="hint-body">Run this in a terminal:</p>
+            <p class="hint-body">
+              Use <strong>+ New</strong> above, or run from a terminal:
+            </p>
           {/if}
           <div class="hint-command">
             <code>{hintCommand}</code>
@@ -323,29 +316,9 @@
     line-height: 1.5;
   }
 
-  .hint-divider {
-    margin: 0;
-    font-size: 0.75rem;
-    color: var(--color-text-muted, #8b8fa3);
-    text-align: center;
-  }
-
-  .btn-primary-block {
-    width: 100%;
-    padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
-    border: none;
-    border-radius: var(--radius-sm, 4px);
-    background: var(--color-accent, #60a5fa);
-    color: var(--color-surface, #0f1115);
-    font-size: 0.8125rem;
-    font-weight: 500;
-    font-family: inherit;
-    cursor: pointer;
-    transition: background 120ms;
-  }
-
-  .btn-primary-block:hover {
-    background: var(--color-accent-hover, #93c5fd);
+  .hint-body strong {
+    color: var(--color-text, #e6e8ef);
+    font-weight: 600;
   }
 
   .hint-command {

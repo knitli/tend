@@ -179,10 +179,22 @@
   lockedProject={spawnDialogProject}
   onClose={() => (spawnDialogOpen = false)}
   onSpawned={(session) => {
+    // Insert the session into the store immediately. The `session:spawned`
+    // event will also fire and reconcile via hydrate, but doing it here
+    // means the SessionList + SplitView render without waiting on the
+    // event round-trip (which can race the dialog close).
+    sessionsStore.add({
+      ...session,
+      activity_summary: null,
+      alert: null,
+      reattached_mirror: false,
+    });
     // Activate the new session so the user lands directly in its terminal.
     activeSessionId = session.id;
     overviewOpen = false;
     workspaceStore.update({ focused_session_id: session.id });
+    // Reconcile with the backend's full record (timestamps, metadata).
+    sessionsStore.hydrate({ includeEnded: false }).catch(() => {});
   }}
 />
 
