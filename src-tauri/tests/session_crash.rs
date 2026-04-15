@@ -33,6 +33,11 @@ async fn session_child_exit_marks_ended() {
         // Register a project for the session.
         let project_id = common::seed_project(&state, "crash-test").await;
 
+        // Subscribe BEFORE spawning. `/bin/true` exits essentially
+        // immediately, and a late subscriber misses the Ended event because
+        // tokio::broadcast does not replay for new subscribers.
+        let mut rx = state.event_bus.subscribe();
+
         // Attempt to spawn a local session with an immediate-exit command.
         // `/bin/true` exits with code 0 immediately.
         let env = BTreeMap::new();
@@ -57,9 +62,6 @@ async fn session_child_exit_marks_ended() {
                 );
 
                 let session_id = session.id;
-
-                // Subscribe to the event bus to observe the Ended event.
-                let mut rx = state.event_bus.subscribe();
 
                 // Wait for the Ended event with a timeout.
                 let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
@@ -129,6 +131,9 @@ async fn session_killed_child_marks_ended_with_signal() {
         let tmp_dir = tempfile::tempdir().expect("create temp dir");
         let project_id = common::seed_project(&state, "kill-test").await;
 
+        // Subscribe BEFORE spawning — see companion test for rationale.
+        let mut rx = state.event_bus.subscribe();
+
         // `/bin/false` exits with code 1 immediately.
         let env = BTreeMap::new();
         let result = SessionService::spawn_local(
@@ -146,9 +151,6 @@ async fn session_killed_child_marks_ended_with_signal() {
         match result {
             Ok((session, _handle)) => {
                 let session_id = session.id;
-
-                // Wait for the Ended event with a timeout.
-                let mut rx = state.event_bus.subscribe();
                 let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
                 loop {
                     let remaining = deadline - tokio::time::Instant::now();
