@@ -168,10 +168,7 @@ mod tests {
         // Values can legitimately contain `=` (e.g., LS_COLORS).
         let input = b"LS_COLORS=di=01;34:ln=01;36\0";
         let env = parse_env_dump(input);
-        assert_eq!(
-            env.get("LS_COLORS"),
-            Some(&"di=01;34:ln=01;36".to_string())
-        );
+        assert_eq!(env.get("LS_COLORS"), Some(&"di=01;34:ln=01;36".to_string()));
     }
 
     #[test]
