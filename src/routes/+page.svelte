@@ -157,7 +157,7 @@
   function toggleSidebar(nextOpen: boolean): void {
     sidebarCollapsed = !nextOpen;
     workspaceStore.setUi('sidebar_collapsed', sidebarCollapsed);
-    // Closing the sidebar also cancels any in-flight peek.
+    // Opening the sidebar also cancels any in-flight peek.
     if (sidebarCollapsed === false) {
       sidebarPeeking = false;
       if (peekLeaveTimer !== null) {
@@ -306,8 +306,8 @@
     {selectedProjectId}
     onSelectProject={handleSelectProject}
     onSpawnSession={(project) => openSpawnDialog(project)}
-    open={!sidebarCollapsed || sidebarPeeking}
-    peeking={sidebarCollapsed && sidebarPeeking}
+    open={focusMode === 'none' && (!sidebarCollapsed || sidebarPeeking)}
+    peeking={focusMode === 'none' && sidebarCollapsed && sidebarPeeking}
     contentId="sidebar-collapsible-content"
     onPeekEnter={onPeekEnter}
     onPeekLeave={onPeekLeave}
@@ -353,7 +353,11 @@
     </div>
 
     <div class="main-panel-body">
-      <div class="session-panel">
+      <div
+        class="session-panel"
+        aria-hidden={focusMode !== 'none'}
+        inert={focusMode !== 'none' ? true : undefined}
+      >
         <div class="session-panel-header">
           <button
             class="overview-btn"

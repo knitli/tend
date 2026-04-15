@@ -195,6 +195,8 @@
       role="navigation"
       aria-label="Projects"
       aria-hidden={!open && !peeking}
+      inert={!open && !peeking ? true : undefined}
+      style:pointer-events={!open && !peeking ? 'none' : undefined}
       onmouseenter={onPeekEnter}
       onmouseleave={onPeekLeave}
     >
