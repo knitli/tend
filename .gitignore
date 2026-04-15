@@ -49,3 +49,5 @@ bun.lock
 
 # Iterative UI debugging screenshots (scripts/snap.sh)
 tmp/
+
+.mise/prepare-state.toml
