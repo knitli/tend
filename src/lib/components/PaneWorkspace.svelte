@@ -170,7 +170,6 @@
   const visibleKey = $derived(
     visibleSlots
       .map((s) => s.session_id)
-      .slice()
       .sort((a, b) => a - b)
       .join(','),
   );
