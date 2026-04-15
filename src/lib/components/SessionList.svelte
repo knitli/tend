@@ -344,7 +344,9 @@
             onfinalize={makeFinalizeHandler(projectId)}
           >
             {#each groupItems as item (item.id)}
-              {@const session = sessionById.get(item.sessionId)}
+              {@const session = typeof item.sessionId === 'number'
+                ? sessionById.get(item.sessionId)
+                : undefined}
               {#if session}
                 <SessionRow
                   {session}
@@ -524,6 +526,10 @@
   .project-group-items {
     display: flex;
     flex-direction: column;
+  }
+
+  .dnd-shadow {
+    display: none;
   }
 
   /* Phase 2-C: group headings carry a 2 px left-strip in the project colour

@@ -143,7 +143,7 @@ describe("PaneSlot", () => {
 		expect(onReorderDragEnd).toHaveBeenCalledTimes(1);
 	});
 
-	it("renders a minimal ghost (does not crash) for a missing session id", () => {
+	it("renders a placeholder (and does not crash) for a missing session id", () => {
 		const target = document.createElement("div");
 		document.body.append(target);
 		component = mount(PaneSlot, {

@@ -183,6 +183,7 @@
   const canRestart = $derived(
     isGhost && ghostCommand.length > 0 && onRestart !== undefined,
   );
+  const projectColor = $derived(getProjectColor(project));
 
   const statusLabel = $derived.by(() => {
     if (!session) return '';
