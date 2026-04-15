@@ -33,7 +33,7 @@ describe("HamburgerButton", () => {
 		expect(btn).not.toBeNull();
 		expect(btn!.getAttribute("aria-expanded")).toBe("true");
 		expect(btn!.getAttribute("aria-controls")).toBe("my-region");
-		expect(btn!.getAttribute("aria-label")).toBe("Toggle projects sidebar");
+		expect(btn!.getAttribute("aria-label")).toBe("Collapse projects sidebar");
 	});
 
 	it("renders with aria-expanded=false when closed", () => {
@@ -50,6 +50,7 @@ describe("HamburgerButton", () => {
 
 		const btn = target.querySelector<HTMLButtonElement>("button.hamburger");
 		expect(btn!.getAttribute("aria-expanded")).toBe("false");
+		expect(btn!.getAttribute("aria-label")).toBe("Expand projects sidebar");
 	});
 
 	it("calls onToggle(!open) when clicked", () => {

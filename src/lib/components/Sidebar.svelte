@@ -21,6 +21,12 @@
      *  hover-peek. The sidebar element takes `position: absolute` over the
      *  content area so it does not compress the content while peeking. */
     peeking?: boolean;
+    /** P3-A (review fix): hover handlers bound directly to the `<aside>` so
+     *  the cursor crossing from the left-edge hotzone onto the peeked sidebar
+     *  body keeps the peek alive. A separate "peek-zone" div was occluded by
+     *  the sidebar overlay (z-index) and its events never fired in practice. */
+    onPeekEnter?: () => void;
+    onPeekLeave?: () => void;
   }
 
   let {
@@ -30,6 +36,8 @@
     open = true,
     contentId = 'sidebar-collapsible-content',
     peeking = false,
+    onPeekEnter,
+    onPeekLeave,
   }: Props = $props();
 
   /** Phase 2-B: id of the project whose colour picker is currently open, or
@@ -181,7 +189,15 @@
     class="sidebar-collapsible"
     data-peeking={peeking ? 'true' : 'false'}
   >
-    <aside class="sidebar" role="navigation" aria-label="Projects" aria-hidden={!open && !peeking}>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <aside
+      class="sidebar"
+      role="navigation"
+      aria-label="Projects"
+      aria-hidden={!open && !peeking}
+      onmouseenter={onPeekEnter}
+      onmouseleave={onPeekLeave}
+    >
   <header class="sidebar-header">
 
     <h2>Projects</h2>

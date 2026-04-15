@@ -33,7 +33,7 @@
 <button
   type="button"
   class="hamburger"
-  aria-label="Toggle projects sidebar"
+  aria-label={open ? 'Collapse projects sidebar' : 'Expand projects sidebar'}
   aria-expanded={open}
   aria-controls={controlsId}
   onclick={() => onToggle(!open)}
