@@ -40,8 +40,8 @@
     if (token === 0) return;
     // Step 1: remove the class (or leave it off on the first run).
     flashing = false;
-    // Step 2: force a reflow + re-add the class on the next animation frame
-    // so the animation plays from the start.
+    // Step 2: re-add the class on the next animation frame so the CSS
+    // animation plays from the start.
     const raf = requestAnimationFrame(() => {
       flashing = true;
     });
