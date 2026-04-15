@@ -28,6 +28,7 @@ pub fn spawn_session_tasks(
     actor: LiveSessionActor,
     state: &WorkbenchState,
     activity: std::sync::Arc<tokio::sync::Mutex<crate::session::activity::ActivitySummary>>,
+    replay: std::sync::Arc<tokio::sync::Mutex<crate::session::replay::ReplayBuffer>>,
 ) -> SessionTaskHandles {
     let LiveSessionActor {
         session_id,
@@ -55,6 +56,7 @@ pub fn spawn_session_tasks(
     let reader_output_tx = output_tx;
     let reader_event_bus = event_bus.clone();
     let reader_activity = activity;
+    let reader_replay = replay;
     tokio::spawn(async move {
         while let Some(chunk) = output_rx.recv().await {
             let _ = reader_output_tx.send(chunk.clone());
@@ -63,6 +65,9 @@ pub fn spawn_session_tasks(
                 bytes: chunk.clone(),
             });
             let _ = activity_tx.send(());
+            // Record into the raw-byte replay buffer so a late-attaching UI
+            // can restore initial screen state.
+            reader_replay.lock().await.push(&chunk);
             // T135: Feed output into the per-session activity summary ring buffer.
             reader_activity.lock().await.record_chunk(&chunk);
             // Feed raw bytes to the heuristic detector.

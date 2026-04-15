@@ -122,6 +122,22 @@ export async function sessionSpawn(opts: {
 }
 
 /**
+ * Fetch the raw-byte replay backlog for a session. Returns the last N bytes
+ * (see `REPLAY_CAP` on the backend) emitted by the PTY so a late-attaching
+ * pane can restore screen state without waiting for the agent to redraw.
+ *
+ * Bytes are returned base64-encoded. For wrapper-owned or ended sessions the
+ * backlog is empty.
+ */
+export async function sessionReadBacklog(opts: {
+	sessionId: number;
+}): Promise<{ bytes: string }> {
+	return invoke<{ bytes: string }>("session_read_backlog", {
+		args: { session_id: opts.sessionId },
+	});
+}
+
+/**
  * Send input bytes to a workbench-owned session's PTY stdin.
  */
 export async function sessionSendInput(opts: {

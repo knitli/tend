@@ -252,9 +252,14 @@ impl SessionService {
             error_reason: None,
         };
 
-        // Start supervisor tasks. Pass the activity handle so the reader
-        // task feeds output into the ring buffer (T135).
-        let _task_handles = supervisor::spawn_session_tasks(actor, state, handle.activity.clone());
+        // Start supervisor tasks. Pass the activity + replay handles so the
+        // reader task feeds output into both ring buffers.
+        let _task_handles = supervisor::spawn_session_tasks(
+            actor,
+            state,
+            handle.activity.clone(),
+            handle.replay.clone(),
+        );
 
         // Emit session:spawned with the full session record.
         let _ = state.event_bus.send(SessionEventEnvelope::Spawned {

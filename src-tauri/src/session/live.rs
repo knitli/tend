@@ -7,6 +7,7 @@ use crate::error::{ErrorCode, WorkbenchError, WorkbenchResult};
 use crate::model::{SessionId, SessionStatus};
 use crate::session::activity::ActivitySummary;
 use crate::session::pty::{OutputRx, Pty};
+use crate::session::replay::ReplayBuffer;
 use crate::session::status::StatusUpdate;
 use portable_pty::PtySize;
 use std::collections::BTreeMap;
@@ -41,6 +42,9 @@ pub struct LiveSessionHandle {
     pub is_mirror: bool,
     /// Per-session activity summary (T135). Shared with the reader task.
     pub activity: Arc<Mutex<ActivitySummary>>,
+    /// Bounded raw-byte replay buffer so late-attaching UIs can restore the
+    /// initial screen without depending on the agent to redraw.
+    pub replay: Arc<Mutex<ReplayBuffer>>,
 }
 
 impl LiveSessionHandle {
@@ -59,6 +63,7 @@ impl LiveSessionHandle {
             ipc_status_tx: Arc::new(Mutex::new(None)),
             is_mirror: false,
             activity: Arc::new(Mutex::new(ActivitySummary::new())),
+            replay: Arc::new(Mutex::new(ReplayBuffer::new())),
         }
     }
 
@@ -72,6 +77,7 @@ impl LiveSessionHandle {
             ipc_status_tx: Arc::new(Mutex::new(None)),
             is_mirror: true,
             activity: Arc::new(Mutex::new(ActivitySummary::new())),
+            replay: Arc::new(Mutex::new(ReplayBuffer::new())),
         }
     }
 

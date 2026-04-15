@@ -59,17 +59,19 @@ async fn session_end_transitions_to_ended() {
     let status: String = row.try_get("status").expect("get");
     assert_eq!(status, "working");
 
+    // Spawn the reaper BEFORE sending the kill signal so it's subscribed
+    // to the event bus when the Ended event fires. Otherwise, under CPU
+    // pressure the supervisor can emit Ended before the reaper subscribes
+    // and the event is dropped (broadcast channels do not retain history
+    // for late subscribers).
+    tend_workbench::session::reaper::spawn_reaper(state.clone());
+
     // Send TERM signal via the handle.
     {
         let live = state.live_sessions.read().await;
         let handle = live.get(&session_id).expect("live handle");
         handle.end(KillSignal::Term).expect("end");
     }
-
-    // Wait for the reaper to process the exit. The reaper listens on the event
-    // bus, so we need to give it time to run.
-    // Spawn the reaper first — it wasn't started by mock_state.
-    tend_workbench::session::reaper::spawn_reaper(state.clone());
 
     // Poll DB until status changes or timeout.
     let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(5);

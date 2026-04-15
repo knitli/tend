@@ -9,7 +9,12 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { createTerminal, type CreatedTerminal } from '$lib/xterm/createTerminal';
-  import { sessionSendInput, sessionResize, onSessionOutput } from '$lib/api/sessions';
+  import {
+    sessionSendInput,
+    sessionResize,
+    sessionReadBacklog,
+    onSessionOutput,
+  } from '$lib/api/sessions';
   import type { SessionSummary } from '$lib/api/sessions';
   import type { UnlistenFn } from '@tauri-apps/api/event';
 
@@ -40,6 +45,15 @@
   // L4 fix: explicitly track xterm disposables.
   let disposables: { dispose(): void }[] = [];
 
+  function decodeBase64(b64: string): Uint8Array {
+    const decoded = atob(b64);
+    const bytes = new Uint8Array(decoded.length);
+    for (let i = 0; i < decoded.length; i++) {
+      bytes[i] = decoded.charCodeAt(i);
+    }
+    return bytes;
+  }
+
   onMount(async () => {
     if (!containerEl) return;
 
@@ -47,18 +61,45 @@
       cursorBlink: isInteractive,
       disableStdin: !isInteractive,
     });
+    const terminal = created.terminal;
 
-    // Subscribe to PTY output for this session.
+    // Two-phase setup to handle the race between the supervisor starting
+    // to emit PTY bytes and this component's listener being ready:
+    //
+    //   1. Subscribe first — buffer live events into a queue.
+    //   2. Fetch the backend replay backlog (bytes emitted before the
+    //      listener was registered) and write them to xterm.
+    //   3. Flush the queued live events.
+    //   4. Switch the handler to write directly to xterm.
+    //
+    // For TUIs like Claude there may be a small overlap between the tail
+    // of the backlog and the head of the live queue; duplicate ANSI
+    // sequences replayed twice are a no-op for the terminal.
+    const liveQueue: Uint8Array[] = [];
+    let replayed = false;
+
     unlisten = await onSessionOutput((payload) => {
       if (payload.session_id !== session.id) return;
-      // Decode base64 bytes.
-      const decoded = atob(payload.bytes);
-      const bytes = new Uint8Array(decoded.length);
-      for (let i = 0; i < decoded.length; i++) {
-        bytes[i] = decoded.charCodeAt(i);
+      const bytes = decodeBase64(payload.bytes);
+      if (replayed) {
+        terminal.write(bytes);
+      } else {
+        liveQueue.push(bytes);
       }
-      created?.terminal.write(bytes);
     });
+
+    try {
+      const { bytes } = await sessionReadBacklog({ sessionId: session.id });
+      if (bytes) {
+        terminal.write(decodeBase64(bytes));
+      }
+    } catch {
+      // Backlog is best-effort; fall through to live bytes.
+    }
+
+    for (const b of liveQueue) terminal.write(b);
+    liveQueue.length = 0;
+    replayed = true;
 
     // Wire keystrokes for interactive sessions.
     if (isInteractive) {

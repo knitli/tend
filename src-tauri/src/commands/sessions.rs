@@ -146,6 +146,39 @@ pub async fn session_activate(
     }))
 }
 
+/// Args for `session_read_backlog`.
+#[derive(Deserialize)]
+pub struct SessionReadBacklogArgs {
+    /// Session id.
+    pub session_id: i64,
+}
+
+/// Return the session's raw-byte replay backlog so a late-attaching pane can
+/// restore the initial screen state instead of displaying a blank terminal
+/// while the agent re-renders incrementally.
+///
+/// The backlog is bounded (see [`crate::session::replay::REPLAY_CAP`]).
+/// For mirror / wrapper-owned sessions there is no backend PTY, so the
+/// response is empty.
+#[tauri::command]
+pub async fn session_read_backlog(
+    state: State<'_, WorkbenchState>,
+    args: SessionReadBacklogArgs,
+) -> Result<serde_json::Value, WorkbenchError> {
+    use base64::Engine;
+
+    let session_id = SessionId::new(args.session_id);
+    let snapshot = {
+        let live = state.live_sessions.read().await;
+        match live.get(&session_id) {
+            Some(handle) => handle.replay.lock().await.snapshot(),
+            None => Vec::new(),
+        }
+    };
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&snapshot);
+    Ok(serde_json::json!({ "bytes": encoded }))
+}
+
 /// Args for `session_send_input`.
 #[derive(Deserialize)]
 pub struct SessionSendInputArgs {

@@ -128,6 +128,7 @@ pub fn run() {
             commands::sessions::session_send_input,
             commands::sessions::session_resize,
             commands::sessions::session_end,
+            commands::sessions::session_read_backlog,
             commands::companions::companion_send_input,
             commands::companions::companion_resize,
             commands::companions::companion_respawn,

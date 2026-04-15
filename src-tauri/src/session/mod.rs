@@ -7,6 +7,7 @@ pub mod live;
 pub mod pty;
 pub mod reaper;
 pub mod recovery;
+pub mod replay;
 pub mod service;
 pub mod status;
 pub mod supervisor;
