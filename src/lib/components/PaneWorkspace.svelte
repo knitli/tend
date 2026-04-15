@@ -77,8 +77,22 @@
 
   /** P4-D: id of the slot currently being dragged for reorder. We carry
    *  this via component state rather than round-tripping through the
-   *  DataTransfer payload (which is often unreadable outside `drop`). */
+   *  DataTransfer payload (which is often unreadable outside `drop`).
+   *
+   *  Note on svelte-dnd-action for pane reorder: paneforge owns the direct
+   *  DOM children of PaneGroup (alternating <Pane> and <PaneResizer>), so
+   *  `use:dndzone` cannot be applied to PaneGroup — the zone would treat
+   *  resizers as draggable items alongside panes, breaking resize logic.
+   *  The pragmatic solution kept here is native HTML5 drag, improved with:
+   *    - a custom drag ghost (setDragImage) showing the slot label
+   *    - dragend cleanup so reorderDragSessionId is never left stale
+   *    - a precise edge-based drop indicator (::before/::after) instead of a
+   *      full-pane dashed outline */
   let reorderDragSessionId = $state<number | null>(null);
+
+  /** id of the slot the dragged pane is currently hovering over; drives the
+   *  drop-indicator passed into each PaneSlot. */
+  let reorderDropTargetSessionId = $state<number | null>(null);
 
   function reorderSlots(fromSessionId: number, toSessionId: number): void {
     if (fromSessionId === toSessionId) return;
@@ -110,16 +124,110 @@
   function handleReorderDragStart(sessionId: number, event: DragEvent): void {
     if (!event.dataTransfer) return;
     reorderDragSessionId = sessionId;
+    reorderDropTargetSessionId = null;
     // Custom MIME type so AddSlotZone / session-source zones don't pick
     // this drag up, and peer slots recognise it in ondragover.
     event.dataTransfer.setData('application/x-tend-pane-slot', String(sessionId));
     event.dataTransfer.effectAllowed = 'move';
+
+    // Custom drag ghost: a mini chip showing the project-colour strip, dot,
+    // project name · session label. Placed off-screen, captured by
+    // setDragImage, then removed after the next frame.
+    const sess = sessionsStore.byId(sessionId);
+    const proj = sess ? (projectsStore.byId(sess.project_id) ?? null) : null;
+    const color = getProjectColor(proj) ?? '#60a5fa';
+    const labelText = sess?.label ?? `Session ${sessionId}`;
+    const projectText = proj?.display_name ?? '';
+
+    const ghost = document.createElement('div');
+    ghost.style.cssText = [
+      'position:fixed',
+      'top:-200px',
+      'left:-200px',
+      'display:inline-flex',
+      'align-items:center',
+      'gap:6px',
+      'padding:4px 10px 4px 8px',
+      'background:#0f1115',
+      'border:1px solid #2a2d35',
+      `border-left:3px solid ${color}`,
+      'border-radius:4px',
+      'color:#e6e8ef',
+      'font:12px/1.4 inherit',
+      'box-shadow:0 2px 8px rgba(0,0,0,.4)',
+      'white-space:nowrap',
+      'z-index:-1',
+      'pointer-events:none',
+    ].join(';');
+
+    const dot = document.createElement('span');
+    dot.style.cssText = `display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0`;
+    ghost.appendChild(dot);
+
+    const titleWrap = document.createElement('span');
+    if (projectText) {
+      const projEl = document.createElement('strong');
+      projEl.textContent = projectText;
+      titleWrap.appendChild(projEl);
+      titleWrap.appendChild(document.createTextNode(' · '));
+    }
+    const labelEl = document.createElement('span');
+    labelEl.style.color = '#8b8fa3';
+    labelEl.textContent = labelText;
+    titleWrap.appendChild(labelEl);
+    ghost.appendChild(titleWrap);
+
+    document.body.appendChild(ghost);
+    event.dataTransfer.setDragImage(ghost, 20, 14);
+    requestAnimationFrame(() => ghost.remove());
+  }
+
+  /** Fired via ondragend on the drag handle — covers successful drops AND
+   *  cancels (Escape, drop outside any valid target, window focus lost).
+   *  Before this fix, reorderDragSessionId was only cleared in handleReorderDrop,
+   *  leaving a stale id that prevented the "being-dragged" class from ever
+   *  clearing on a cancelled drag. */
+  function handleReorderDragEnd(): void {
+    reorderDragSessionId = null;
+    reorderDropTargetSessionId = null;
+  }
+
+  /** Called while a drag hovers a specific slot. PaneWorkspace's closure
+   *  for each slot already captures the session id, so PaneSlot need not
+   *  forward the event. */
+  function handleReorderDragOver(targetSessionId: number): void {
+    reorderDropTargetSessionId = targetSessionId;
+  }
+
+  /** Called when the drag cursor leaves a slot's bounds without dropping.
+   *  Clears the drop indicator for that slot. */
+  function handleReorderDragLeave(): void {
+    reorderDropTargetSessionId = null;
   }
 
   function handleReorderDrop(targetSessionId: number): void {
     if (reorderDragSessionId === null) return;
     reorderSlots(reorderDragSessionId, targetSessionId);
     reorderDragSessionId = null;
+    reorderDropTargetSessionId = null;
+  }
+
+  /** Computes the drop-indicator side for a given slot.
+   *  - 'before': dragged pane will be inserted BEFORE this slot (show left bar)
+   *  - 'after':  dragged pane will be inserted AFTER this slot (show right bar)
+   *  - null:     this slot is not the current drop target
+   *
+   *  Logic: reorderSlots splices the moved item out then re-inserts at the
+   *  target index. If source index < target index the item ends up to the
+   *  right of the target (show right bar). If source > target it ends up
+   *  to the left (show left bar). */
+  function getDropIndicator(slotSessionId: number): 'before' | 'after' | null {
+    if (reorderDragSessionId === null || reorderDropTargetSessionId !== slotSessionId) return null;
+    if (reorderDragSessionId === slotSessionId) return null; // hovering the source
+    const fromIdx = slots.findIndex((s) => s.session_id === reorderDragSessionId);
+    const toIdx = slots.findIndex((s) => s.session_id === slotSessionId);
+    if (fromIdx === -1 || toIdx === -1) return null;
+    return fromIdx < toIdx ? 'after' : 'before';
   }
 
   let containerEl: HTMLDivElement | undefined = $state();
@@ -411,12 +519,20 @@
             onReorderDragStart={onReorderSlots && slots.length > 1
               ? (e) => handleReorderDragStart(slot.session_id, e)
               : undefined}
+            onReorderDragEnd={onReorderSlots && slots.length > 1
+              ? handleReorderDragEnd
+              : undefined}
+            onReorderDragOver={onReorderSlots && slots.length > 1
+              ? () => handleReorderDragOver(slot.session_id)
+              : undefined}
+            onReorderDragLeave={onReorderSlots && slots.length > 1
+              ? handleReorderDragLeave
+              : undefined}
             onReorderDrop={onReorderSlots && slots.length > 1
               ? () => handleReorderDrop(slot.session_id)
               : undefined}
-            onReorderDragOver={onReorderSlots && slots.length > 1
-              ? () => {}
-              : undefined}
+            isBeingDragged={reorderDragSessionId === slot.session_id}
+            dropIndicator={getDropIndicator(slot.session_id)}
           />
         </Pane>
         {#if i < visibleSlots.length - 1}

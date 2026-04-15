@@ -46,8 +46,30 @@
      *  (PaneWorkspace) provides these so the handle initiates a drag that
      *  peer slots accept as `application/x-tend-pane-slot`. */
     onReorderDragStart?: (event: DragEvent) => void;
-    onReorderDragOver?: (event: DragEvent) => void;
-    onReorderDrop?: (event: DragEvent) => void;
+    /** Called (no args) while the drag hovers this slot; PaneWorkspace's
+     *  closure already knows which slot is targeted, so the event is not
+     *  forwarded. Simplified from the original `(event: DragEvent) => void`
+     *  so PaneWorkspace can pass a no-arg closure without TS complaints. */
+    onReorderDragOver?: () => void;
+    /** Called (no args) when the drag is dropped onto this slot. */
+    onReorderDrop?: () => void;
+    /** Called when dragend fires on the handle — covers both a successful
+     *  drop and a cancelled drag (e.g. Escape / drop outside any target).
+     *  PaneWorkspace uses this to clear its reorderDragSessionId state so
+     *  a stale id can't interfere with the next drag. */
+    onReorderDragEnd?: () => void;
+    /** Called when the drag cursor leaves this slot's bounds. PaneWorkspace
+     *  uses this to clear the drop-indicator for this slot. */
+    onReorderDragLeave?: () => void;
+    /** True while this slot's pane is the one being dragged — dims it
+     *  visually to communicate "source slot". */
+    isBeingDragged?: boolean;
+    /** Insertion indicator driven by PaneWorkspace: which edge of this slot
+     *  will receive the dragged pane.
+     *  - 'before' → left-edge bar (dragged pane lands before this slot)
+     *  - 'after'  → right-edge bar (dragged pane lands after this slot)
+     *  - null     → no indicator */
+    dropIndicator?: 'before' | 'after' | null;
   }
 
   let {
@@ -63,9 +85,11 @@
     onReorderDragStart,
     onReorderDragOver,
     onReorderDrop,
+    onReorderDragEnd,
+    onReorderDragLeave,
+    isBeingDragged = false,
+    dropIndicator = null,
   }: Props = $props();
-
-  let isDragOver = $state(false);
 
   function handleDragOver(event: DragEvent): void {
     if (!onReorderDragOver) return;
@@ -76,20 +100,23 @@
     if (!event.dataTransfer.types.includes('application/x-tend-pane-slot')) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
-    isDragOver = true;
-    onReorderDragOver(event);
+    onReorderDragOver();
   }
 
-  function handleDragLeave(): void {
-    isDragOver = false;
+  function handleDragLeave(event: DragEvent): void {
+    // Guard: dragleave fires when the cursor enters a child element of this
+    // slot. Only forward the event when the cursor truly left our bounds
+    // (relatedTarget is null or outside this element).
+    const rel = event.relatedTarget as Node | null;
+    if (rel && (event.currentTarget as HTMLElement)?.contains(rel)) return;
+    onReorderDragLeave?.();
   }
 
   function handleDrop(event: DragEvent): void {
     if (!onReorderDrop) return;
     if (!event.dataTransfer?.types.includes('application/x-tend-pane-slot')) return;
     event.preventDefault();
-    isDragOver = false;
-    onReorderDrop(event);
+    onReorderDrop();
   }
 
   const session = $derived(sessionsStore.byId(sessionId) ?? null);
@@ -131,7 +158,9 @@
 <div
   class="pane-slot"
   class:highlighted
-  class:drag-over={isDragOver}
+  class:being-dragged={isBeingDragged}
+  class:drop-before={dropIndicator === 'before'}
+  class:drop-after={dropIndicator === 'after'}
   style={projectColor ? `--project-color: ${projectColor}` : ''}
   data-session-id={sessionId}
   role="region"
@@ -152,6 +181,7 @@
         data-drag-handle
         draggable={onReorderDragStart ? 'true' : 'false'}
         ondragstart={onReorderDragStart}
+        ondragend={onReorderDragEnd}
         aria-hidden="true"
         title={onReorderDragStart ? 'Drag to reorder pane' : 'Only one pane open'}
       >⠿</span>
@@ -242,6 +272,47 @@
     height: 100%;
     overflow: hidden;
     background: var(--color-surface, #0f1115);
+    position: relative; /* required for ::before/::after insertion indicators */
+  }
+
+  /* P4-D: source slot dimming while its handle is being dragged.
+     The dimmed look communicates "this pane is in motion" without
+     visually removing it (so the user can still see the original layout). */
+  .pane-slot.being-dragged {
+    opacity: 0.4;
+    transition: opacity 120ms;
+  }
+
+  /* P4-D: left-edge insertion indicator — "the dragged pane will be placed
+     BEFORE this slot." 3 px accent bar runs full-height on the left edge.
+     Implemented with ::before so it overlays the project-colour strip
+     without shifting any layout. */
+  .pane-slot.drop-before::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--color-accent, #60a5fa);
+    z-index: 2;
+    pointer-events: none;
+    border-radius: 2px 0 0 2px;
+  }
+
+  /* P4-D: right-edge insertion indicator — "the dragged pane will be placed
+     AFTER this slot." */
+  .pane-slot.drop-after::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--color-accent, #60a5fa);
+    z-index: 2;
+    pointer-events: none;
+    border-radius: 0 2px 2px 0;
   }
 
   .pane-slot-header {
@@ -290,12 +361,6 @@
   .pane-slot-move-btn:disabled {
     opacity: 0.3;
     cursor: not-allowed;
-  }
-
-  /* P4-D: visual feedback when a pane-slot drag is hovering this slot. */
-  .pane-slot.drag-over {
-    outline: 2px dashed var(--color-accent, #60a5fa);
-    outline-offset: -4px;
   }
 
   .pane-slot-dot {

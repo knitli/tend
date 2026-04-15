@@ -115,6 +115,34 @@ describe("PaneSlot", () => {
 		expect(onFocus).not.toHaveBeenCalled();
 	});
 
+	it("invokes onReorderDragEnd when dragend fires on the drag handle", () => {
+		const onReorderDragEnd = vi.fn();
+		const target = document.createElement("div");
+		document.body.append(target);
+		component = mount(PaneSlot, {
+			target,
+			props: {
+				sessionId: 101,
+				onFocus: vi.fn(),
+				onClose: vi.fn(),
+				// Provide onReorderDragStart so the handle renders as draggable=true
+				// (and onReorderDragEnd is therefore wired).
+				onReorderDragStart: vi.fn(),
+				onReorderDragEnd,
+			},
+		});
+
+		const handle = target.querySelector<HTMLElement>("[data-drag-handle]");
+		expect(handle).not.toBeNull();
+		// dragend covers both successful drops and cancelled drags (Escape /
+		// drop outside any valid target). PaneWorkspace relies on it to clear
+		// reorderDragSessionId so a stale id can't affect the next drag.
+		// jsdom doesn't define DragEvent; a plain Event is sufficient because
+		// the ondragend handler (onReorderDragEnd) ignores the event object.
+		handle!.dispatchEvent(new Event("dragend", { bubbles: true }));
+		expect(onReorderDragEnd).toHaveBeenCalledTimes(1);
+	});
+
 	it("renders a placeholder (and does not crash) for a missing session id", () => {
 		const target = document.createElement("div");
 		document.body.append(target);
