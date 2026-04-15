@@ -191,7 +191,7 @@ pub async fn session_set_focus(
     state: State<'_, WorkbenchState>,
     args: SessionSetFocusArgs,
 ) -> Result<serde_json::Value, WorkbenchError> {
-    state.set_visible_sessions(args.session_id.into_iter());
+    state.set_visible_sessions(args.session_id);
     Ok(serde_json::json!({}))
 }
 
