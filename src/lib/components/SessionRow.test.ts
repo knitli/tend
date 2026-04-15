@@ -136,3 +136,75 @@ describe("SessionRow active indicator", () => {
 		expect(style === null || !style.includes("--project-color")).toBe(true);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// P4-D: keyboard-accessible "open in slot" button.
+// ---------------------------------------------------------------------------
+
+describe("SessionRow onOpenInSlot button (P4-D)", () => {
+	it("does not render the ⊞ button when onOpenInSlot is undefined", () => {
+		const target = document.createElement("div");
+		document.body.append(target);
+		component = mount(SessionRow, {
+			target,
+			props: { session: makeSession() },
+		});
+
+		const btn = target.querySelector<HTMLButtonElement>(".open-in-slot-btn");
+		expect(btn).toBeNull();
+	});
+
+	it("renders the ⊞ button when onOpenInSlot is provided", () => {
+		const target = document.createElement("div");
+		document.body.append(target);
+		component = mount(SessionRow, {
+			target,
+			props: { session: makeSession(), onOpenInSlot: () => {} },
+		});
+
+		const btn = target.querySelector<HTMLButtonElement>(".open-in-slot-btn");
+		expect(btn).not.toBeNull();
+		expect(btn!.textContent?.trim()).toBe("⊞");
+	});
+
+	it("invokes onOpenInSlot with the session on click", () => {
+		const target = document.createElement("div");
+		document.body.append(target);
+		const sess = makeSession({ id: 777 });
+		const calls: number[] = [];
+		component = mount(SessionRow, {
+			target,
+			props: {
+				session: sess,
+				onOpenInSlot: (s) => {
+					calls.push(s.id);
+				},
+			},
+		});
+
+		const btn = target.querySelector<HTMLButtonElement>(".open-in-slot-btn");
+		btn!.click();
+		expect(calls).toEqual([777]);
+	});
+
+	it("stops click propagation so onActivate is not also fired", () => {
+		const target = document.createElement("div");
+		document.body.append(target);
+		const activateCalls: number[] = [];
+		const openCalls: number[] = [];
+		component = mount(SessionRow, {
+			target,
+			props: {
+				session: makeSession({ id: 42 }),
+				onActivate: (s) => activateCalls.push(s.id),
+				onOpenInSlot: (s) => openCalls.push(s.id),
+			},
+		});
+
+		const btn = target.querySelector<HTMLButtonElement>(".open-in-slot-btn");
+		btn!.click();
+		expect(openCalls).toEqual([42]);
+		// The click should not bubble up and fire the row's onActivate.
+		expect(activateCalls).toEqual([]);
+	});
+});

@@ -179,22 +179,46 @@ pub struct SessionSetFocusArgs {
     pub session_id: Option<i64>,
 }
 
-/// Set the currently-focused session. The event bridge forwards raw PTY
-/// output (`session:event` and `companion:output`) only for the focused
-/// session — non-focused sessions' bytes are still captured in the replay
-/// buffer but not serialized across Tauri IPC, saving significant CPU when
-/// multiple TUIs are running.
+/// Set the currently-focused session.
 ///
-/// Pass `null`/omit `session_id` for overview/empty states.
+/// Since Phase 4-A this is a thin shim over [`session_set_visible`]: passing
+/// `Some(id)` marks `{id}` visible, and `None`/omitted clears the set. The
+/// single-pane frontend flow (`+page.svelte`'s `$effect` on
+/// `activeSessionId`) keeps working unchanged while the multi-pane workspace
+/// can call `session_set_visible` with multiple ids.
 #[tauri::command]
 pub async fn session_set_focus(
     state: State<'_, WorkbenchState>,
     args: SessionSetFocusArgs,
 ) -> Result<serde_json::Value, WorkbenchError> {
-    use std::sync::atomic::Ordering;
-    state
-        .focused_session_id
-        .store(args.session_id.unwrap_or(0), Ordering::Release);
+    state.set_visible_sessions(args.session_id.into_iter());
+    Ok(serde_json::json!({}))
+}
+
+/// Args for `session_set_visible`.
+#[derive(Deserialize)]
+pub struct SessionSetVisibleArgs {
+    /// Session ids whose output should be forwarded to the webview. Passing
+    /// an empty vec clears the set (overview / empty state).
+    #[serde(default)]
+    pub session_ids: Vec<i64>,
+}
+
+/// Set the set of visible sessions whose raw PTY output
+/// (`session:event` and `companion:output`) is forwarded to the frontend.
+///
+/// Non-visible sessions' bytes are still captured in each session's replay
+/// buffer but not serialized across Tauri IPC — this saves significant CPU
+/// when multiple TUIs are running concurrently. Panes that become visible
+/// catch up via `session_read_backlog`.
+///
+/// Pass an empty list (`[]`) for overview / empty states.
+#[tauri::command]
+pub async fn session_set_visible(
+    state: State<'_, WorkbenchState>,
+    args: SessionSetVisibleArgs,
+) -> Result<serde_json::Value, WorkbenchError> {
+    state.set_visible_sessions(args.session_ids);
     Ok(serde_json::json!({}))
 }
 

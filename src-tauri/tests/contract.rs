@@ -23,6 +23,8 @@ mod contract {
     pub mod companion;
     pub mod session_activate;
     pub mod session_io;
+    // Phase 4-A (002-adaptive-ui)
+    pub mod session_visibility;
 
     // Phase 6 (US5 Scratchpad)
     pub mod notes;

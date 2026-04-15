@@ -42,6 +42,11 @@
      *  uses the global `--color-accent` fallback via CSS `var()`. */
     projectColor?: string | null;
     onActivate?: (session: SessionSummary) => void;
+    /** P4-D: keyboard-accessible "add to pane" button. When provided, a
+     *  small `⊞` button is rendered next to the status badge; click
+     *  invokes this callback with the session. This is the non-drag
+     *  equivalent of dropping the row onto the AddSlotZone. */
+    onOpenInSlot?: (session: SessionSummary) => void;
   }
 
   let {
@@ -52,6 +57,7 @@
     anyActive = false,
     projectColor = null,
     onActivate,
+    onOpenInSlot,
   }: Props = $props();
 
   const tick = $derived(sharedTick);
@@ -154,6 +160,14 @@
       handleClick();
     }
   }
+
+  /** P4-D: the ⊞ button uses stopPropagation so clicking it doesn't also
+   *  fire the row's onActivate (which would replace the active slot
+   *  instead of appending a new one). */
+  function handleOpenInSlot(event: MouseEvent): void {
+    event.stopPropagation();
+    onOpenInSlot?.(session);
+  }
 </script>
 
 <div
@@ -195,6 +209,18 @@
     <span class="badge {statusClass}">{statusLabel}</span>
     {#if session.alert}
       <span class="badge badge-alert badge-pulse" role="img" title={session.alert.reason ?? 'Needs input'} aria-label={session.alert.reason ?? 'Needs input'}>!</span>
+    {/if}
+    {#if onOpenInSlot}
+      <button
+        type="button"
+        class="open-in-slot-btn"
+        onclick={handleOpenInSlot}
+        onkeydown={(e) => e.stopPropagation()}
+        title="Open in pane"
+        aria-label="Open {session.label} in a new pane"
+      >
+        ⊞
+      </button>
     {/if}
     <span class="session-time">{relativeTime}</span>
   </div>
@@ -296,6 +322,36 @@
     font-size: 0.6875rem;
     color: var(--color-text-muted, #8b8fa3);
     white-space: nowrap;
+  }
+
+  /* P4-D: keyboard-accessible "add to pane" button. Visible only when
+     onOpenInSlot prop is supplied (i.e. when the row lives inside the
+     pane-workspace-capable page). Click handler uses stopPropagation so
+     activating the row's onActivate isn't fired alongside. */
+  .open-in-slot-btn {
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid var(--color-border, #2a2d35);
+    border-radius: var(--radius-sm, 4px);
+    background: transparent;
+    color: var(--color-text-muted, #8b8fa3);
+    font-size: 0.8125rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 120ms, color 120ms, border-color 120ms;
+    flex-shrink: 0;
+  }
+
+  .open-in-slot-btn:hover,
+  .open-in-slot-btn:focus-visible {
+    background: var(--color-surface-hover, #1e2028);
+    color: var(--color-text, #e6e8ef);
+    border-color: var(--color-accent, #60a5fa);
+    outline: none;
   }
 
   .badge {
