@@ -294,14 +294,13 @@
       alert: null,
       reattached_mirror: false,
     });
-    // Replace the slot's session_id. ghost_data will be re-snapshotted by
-    // the effect above on the next reactive tick.
+    // Replace only session_id and preserve the full slot object (ghost_data
+    // and any future fields) until the snapshot effect refreshes derived data.
     slots = slots.map((s) =>
       s.session_id === oldSessionId
         ? {
+            ...s,
             session_id: newSession.id,
-            split_percent: s.split_percent,
-            order: s.order,
           }
         : s,
     );
@@ -665,6 +664,12 @@
           }
         } else {
           activeSessionId = null;
+          if (focusMode !== 'none') {
+            focusMode = 'none';
+            focusSessionIds = [];
+            workspaceStore.setUi('focus_mode', focusMode);
+            workspaceStore.setUi('focus_mode_session_ids', focusSessionIds);
+          }
         }
       }
 
