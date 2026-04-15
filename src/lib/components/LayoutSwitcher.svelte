@@ -12,6 +12,7 @@
   } from '$lib/api/workspace';
   import { WorkbenchError } from '$lib/api/invoke';
   import { workspaceStore } from '$lib/stores/workspace.svelte';
+  import SpinnerIcon from '$lib/components/SpinnerIcon.svelte';
 
   interface Props {
     onMissingSessions?: (ids: number[]) => void;
@@ -23,6 +24,8 @@
   let open = $state(false);
   let saveName = $state('');
   let saving = $state(false);
+  /** P1-D: true while the layouts list is being re-fetched. */
+  let refreshing = $state(false);
   let error = $state<string | null>(null);
   let rootEl: HTMLDivElement | undefined = $state();
   let triggerEl: HTMLButtonElement | undefined = $state();
@@ -30,11 +33,14 @@
   let focusedIndex = $state(-1);
 
   async function refresh(): Promise<void> {
+    refreshing = true;
     try {
       const result = await layoutList();
       layouts = result.layouts;
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
+    } finally {
+      refreshing = false;
     }
   }
 
@@ -174,6 +180,12 @@
   {#if open}
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div class="layout-dropdown" role="menu" tabindex="-1" onkeydown={handleDropdownKeydown}>
+      <div class="layout-header">
+        <span class="layout-header-label">Layouts</span>
+        {#if refreshing}
+          <SpinnerIcon />
+        {/if}
+      </div>
       {#if error}
         <div class="layout-error" role="alert">{error}</div>
       {/if}
@@ -221,6 +233,11 @@
             </div>
           {/each}
         </div>
+      {:else if refreshing}
+        <p class="layout-empty">
+          <SpinnerIcon />
+          <span>Loading…</span>
+        </p>
       {:else}
         <p class="layout-empty">No saved layouts</p>
       {/if}
@@ -260,6 +277,22 @@
     border: 1px solid var(--color-border, #2a2d35);
     border-radius: 0.375rem;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+
+  .layout-header {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0 0.25rem 0.375rem;
+    color: var(--color-text-muted, #8b8fa3);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .layout-header-label {
+    flex: 1;
   }
 
   .layout-error {
@@ -356,5 +389,9 @@
     color: var(--color-text-muted, #8b8fa3);
     font-size: 0.75rem;
     text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
   }
 </style>

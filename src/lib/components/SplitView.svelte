@@ -20,9 +20,11 @@
     sessionId: number;
     /** Full session summary from the store — used for display. */
     session: SessionSummary;
+    /** P1-B: flash the pane border for 1.5 s when the session is (re)activated. */
+    highlighted?: boolean;
   }
 
-  let { sessionId, session }: Props = $props();
+  let { sessionId, session, highlighted = false }: Props = $props();
 
   let companion = $state<CompanionTerminal | null>(null);
   let activating = $state(true);
@@ -121,7 +123,12 @@
   }
 </script>
 
-<div class="split-view" bind:this={containerEl} class:dragging>
+<div
+  class="split-view"
+  bind:this={containerEl}
+  class:dragging
+  class:split-view-highlighted={highlighted}
+>
   {#if activating}
     <div class="loading">
       <p class="muted">Activating session...</p>
@@ -185,6 +192,30 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
+    /* P1-B: border sits transparent by default so the flash animation has a
+       surface to paint. --project-color falls back to --color-accent. */
+    border: 2px solid transparent;
+  }
+
+  /* P1-B: 1.5 s border flash animation from project colour back to transparent. */
+  .split-view-highlighted {
+    animation: flash-border 1500ms ease-out 1;
+  }
+
+  @keyframes flash-border {
+    0% {
+      border-color: var(--project-color, var(--color-accent, #60a5fa));
+    }
+    100% {
+      border-color: transparent;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .split-view-highlighted {
+      animation: none;
+      border-color: transparent;
+    }
   }
 
   .content-stack {

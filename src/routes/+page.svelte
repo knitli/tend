@@ -15,6 +15,7 @@
   import { sessionSetFocus } from '$lib/api/sessions';
   import { scratchpadStore } from '$lib/stores/scratchpad.svelte';
   import { workspaceStore } from '$lib/stores/workspace.svelte';
+  import { isEditableTarget } from '$lib/util/isEditableTarget';
   import type { Project } from '$lib/api/projects';
   import type { SessionSummary } from '$lib/api/sessions';
 
@@ -24,6 +25,19 @@
   let overviewOpen = $state(false);
   let spawnDialogOpen = $state(false);
   let spawnDialogProject = $state<Project | null>(null);
+  /** P1-B: transient highlight id used to flash the active pane border after
+   *  activating a session (AlertBar "Go to" or direct click). Cleared after
+   *  1500 ms. Phase 4 will expand this to support multiple slots. */
+  let highlightSessionId = $state<number | null>(null);
+  let highlightTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** P1-A: derived Set of session ids currently visible in a pane. Phase 1 is
+   *  always the single active session; Phase 4 expands to the full slot set. */
+  const activeSessionIds = $derived<Set<number>>(
+    activeSessionId !== null ? new Set([activeSessionId]) : new Set(),
+  );
+
+  let sessionListRef = $state<{ focusFilter: () => void } | undefined>();
 
   function openSpawnDialog(project: Project | null = null): void {
     spawnDialogProject = project;
@@ -52,6 +66,29 @@
     overviewOpen = false;
     // T130: persist active session change.
     workspaceStore.update({ focused_session_id: session.id });
+
+    // P1-B: flash the pane border for 1.5 s to confirm activation.
+    highlightSessionId = session.id;
+    if (highlightTimer !== null) {
+      clearTimeout(highlightTimer);
+    }
+    highlightTimer = setTimeout(() => {
+      highlightSessionId = null;
+      highlightTimer = null;
+    }, 1500);
+  }
+
+  function handleWindowKeydown(event: KeyboardEvent): void {
+    if (
+      event.key === '/' &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      !isEditableTarget(event.target)
+    ) {
+      event.preventDefault();
+      sessionListRef?.focusFilter();
+    }
   }
 
   onMount(() => {
@@ -102,11 +139,17 @@
     return () => {
       cleanup?.();
       closeCleanup?.();
+      if (highlightTimer !== null) {
+        clearTimeout(highlightTimer);
+        highlightTimer = null;
+      }
       // Best-effort flush on unmount (fire-and-forget for non-Tauri contexts).
       workspaceStore.flush();
     };
   });
 </script>
+
+<svelte:window onkeydown={handleWindowKeydown} />
 
 <div class="app-layout">
   <Sidebar
@@ -139,8 +182,10 @@
       </div>
       <AlertBar onActivateSession={handleActivateSession} />
       <SessionList
+        bind:this={sessionListRef}
         {selectedProjectId}
         {missingSessions}
+        {activeSessionIds}
         onActivateSession={handleActivateSession}
         onSpawnSession={() => openSpawnDialog(
           selectedProjectId !== null
@@ -162,7 +207,11 @@
           {/if}
         </div>
         {#key `${activeSessionId}-${activeSession.reattached_mirror}`}
-          <SplitView sessionId={activeSessionId} session={activeSession} />
+          <SplitView
+            sessionId={activeSessionId}
+            session={activeSession}
+            highlighted={highlightSessionId === activeSessionId}
+          />
         {/key}
       {:else}
         <div class="empty-content">

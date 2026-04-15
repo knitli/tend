@@ -34,10 +34,21 @@
     projectName?: string;
     /** True when this session was referenced by a layout restore but is no longer running. */
     missing?: boolean;
+    /** True when this session is currently visible in a pane slot (Phase 1: the activeSessionId). */
+    active?: boolean;
+    /** True when any session in the list is active — used to dim non-active rows. */
+    anyActive?: boolean;
     onActivate?: (session: SessionSummary) => void;
   }
 
-  let { session, projectName = '', missing = false, onActivate }: Props = $props();
+  let {
+    session,
+    projectName = '',
+    missing = false,
+    active = false,
+    anyActive = false,
+    onActivate,
+  }: Props = $props();
 
   const tick = $derived(sharedTick);
   onMount(() => acquireTick());
@@ -143,6 +154,9 @@
 
 <div
   class="session-row"
+  class:active
+  class:dimmed={!active && anyActive}
+  data-session-id={session.id}
   role="button"
   tabindex="0"
   aria-label={ariaLabel}
@@ -192,6 +206,7 @@
     transition: background 150ms;
     outline: none;
     border-bottom: 1px solid var(--color-border-subtle, #1e2028);
+    border-left: 2px solid transparent;
   }
 
   .session-row:hover,
@@ -202,6 +217,33 @@
   .session-row:focus-visible {
     outline: 2px solid var(--color-accent, #60a5fa);
     outline-offset: -2px;
+  }
+
+  /* P1-A: Active session indicator. --project-color falls back to --color-accent
+     when not set (Phase 2 will populate --project-color per project). */
+  .session-row.active {
+    border-left-color: var(--project-color, var(--color-accent, #60a5fa));
+    background: color-mix(
+      in srgb,
+      var(--project-color, var(--color-accent, #60a5fa)) 8%,
+      var(--color-surface, #0f1115)
+    );
+  }
+
+  .session-row.active .session-label-row::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--project-color, var(--color-accent, #60a5fa));
+    flex-shrink: 0;
+  }
+
+  /* Dim non-active rows' main text when any session is active. Badges stay
+     fully opaque because they live in .session-meta, not .session-main. */
+  .session-row.dimmed .session-main {
+    opacity: 0.7;
   }
 
   .session-main {

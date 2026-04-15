@@ -6,6 +6,7 @@
   import { overviewStore } from '$lib/stores/overview.svelte';
   import { formatAge } from '$lib/util/age';
   import { reminderSetState } from '$lib/api/scratchpad';
+  import SpinnerIcon from '$lib/components/SpinnerIcon.svelte';
 
   onMount(() => {
     overviewStore.refresh();
@@ -26,8 +27,18 @@
 <div class="overview" role="region" aria-label="Cross-project overview">
   <div class="overview-header">
     <h2>Open Reminders</h2>
-    <button class="refresh-btn" onclick={() => overviewStore.refresh()} title="Refresh">
-      Refresh
+    <button
+      class="refresh-btn"
+      onclick={() => overviewStore.refresh()}
+      disabled={overviewStore.loading}
+      title="Refresh"
+      aria-label="Refresh reminders"
+    >
+      {#if overviewStore.loading}
+        <SpinnerIcon />
+      {:else}
+        Refresh
+      {/if}
     </button>
   </div>
 
@@ -87,6 +98,9 @@
   }
 
   .refresh-btn {
+    /* Fixed min-width keeps the button size stable when swapping "Refresh"
+       for the spinner icon (avoids layout shift). */
+    min-width: 68px;
     padding: 0.25rem 0.5rem;
     border: 1px solid var(--color-border, #2a2d35);
     border-radius: 4px;
@@ -94,11 +108,20 @@
     color: var(--color-text-muted, #8b8fa3);
     cursor: pointer;
     font-size: 0.6875rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 22px;
   }
 
-  .refresh-btn:hover {
+  .refresh-btn:hover:not(:disabled) {
     background: var(--color-surface-hover, #1a1d25);
     color: var(--color-text, #e6e8ef);
+  }
+
+  .refresh-btn:disabled {
+    cursor: default;
+    opacity: 0.8;
   }
 
   .groups {
