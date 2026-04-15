@@ -38,6 +38,9 @@
     active?: boolean;
     /** True when any session in the list is active — used to dim non-active rows. */
     anyActive?: boolean;
+    /** Phase 2-C: project colour hex (e.g. `#60a5fa`). When absent the row
+     *  uses the global `--color-accent` fallback via CSS `var()`. */
+    projectColor?: string | null;
     onActivate?: (session: SessionSummary) => void;
   }
 
@@ -47,6 +50,7 @@
     missing = false,
     active = false,
     anyActive = false,
+    projectColor = null,
     onActivate,
   }: Props = $props();
 
@@ -157,6 +161,7 @@
   class:active
   class:dimmed={!active && anyActive}
   data-session-id={session.id}
+  style={projectColor ? `--project-color: ${projectColor}` : undefined}
   role="button"
   tabindex="0"
   aria-label={ariaLabel}

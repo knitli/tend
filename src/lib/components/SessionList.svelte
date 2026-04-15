@@ -125,6 +125,14 @@
     return projectsStore.byId(projectId)?.display_name ?? `Project ${projectId}`;
   }
 
+  /** Phase 2-C: look up the project's palette colour for heading/row tinting.
+   *  Returns `null` when absent so the component can fall back to the global
+   *  `--color-accent` via CSS `var()`. */
+  function getProjectColor(projectId: number): string | null {
+    const color = projectsStore.byId(projectId)?.settings?.color;
+    return typeof color === 'string' ? color : null;
+  }
+
   function handleActivate(session: SessionSummary): void {
     onActivateSession?.(session);
   }
@@ -227,7 +235,11 @@
       {/if}
     {:else}
       {#each groupedSessions as [projectId, sessions] (projectId)}
-        <div class="project-group">
+        {@const projectColor = getProjectColor(projectId)}
+        <div
+          class="project-group"
+          style={projectColor ? `--project-color: ${projectColor}` : undefined}
+        >
           <h3 class="group-heading">{getProjectName(projectId)}</h3>
           {#each sessions as session (session.id)}
             <SessionRow
@@ -236,6 +248,7 @@
               missing={missingSessions.has(session.id)}
               active={activeSessionIds.has(session.id)}
               anyActive={activeSessionIds.size > 0}
+              {projectColor}
               onActivate={handleActivate}
             />
           {/each}
@@ -398,6 +411,10 @@
     border-bottom: 1px solid var(--color-border, #2a2d35);
   }
 
+  /* Phase 2-C: group headings carry a 2 px left-strip in the project colour
+     so adjacent groups are visually distinct even before the row colours
+     kick in. Falls back to the global accent when `--project-color` is
+     unset (pre-Phase-2 projects). */
   .group-heading {
     margin: 0;
     padding: var(--space-2, 0.5rem) var(--space-4, 1rem);
@@ -410,5 +427,6 @@
     position: sticky;
     top: 0;
     z-index: 1;
+    border-left: 2px solid var(--project-color, var(--color-accent, #60a5fa));
   }
 </style>

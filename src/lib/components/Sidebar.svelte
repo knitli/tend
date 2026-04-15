@@ -3,6 +3,7 @@
 <script lang="ts">
   import { projectsStore } from '$lib/stores/projects.svelte';
   import type { Project } from '$lib/api/projects';
+  import ColorSwatchPicker from '$lib/components/ColorSwatchPicker.svelte';
 
   interface Props {
     selectedProjectId?: number | null;
@@ -15,6 +16,26 @@
     onSelectProject,
     onSpawnSession,
   }: Props = $props();
+
+  /** Phase 2-B: id of the project whose colour picker is currently open, or
+   *  `null` if none. Only one picker is open at a time. */
+  let pickerProjectId = $state<number | null>(null);
+
+  function openPicker(event: MouseEvent, projectId: number): void {
+    event.stopPropagation();
+    pickerProjectId = pickerProjectId === projectId ? null : projectId;
+  }
+
+  function closePicker(): void {
+    pickerProjectId = null;
+  }
+
+  async function handleColorChange(project: Project, hex: string): Promise<void> {
+    // Merge with existing settings so we don't drop retention_days etc.
+    await projectsStore.update(project.id, {
+      settings: { ...project.settings, color: hex },
+    });
+  }
 
   let showArchived = $state(false);
   let addingProject = $state(false);
@@ -155,6 +176,7 @@
             class="project-item"
             class:selected={selectedProjectId === project.id}
             class:archived={project.archived_at !== null}
+            style="--project-color: {project.settings?.color ?? 'var(--color-accent, #60a5fa)'}"
             tabindex="0"
             onclick={() => handleSelectProject(project)}
             onkeydown={(e) => handleKeydown(e, project)}
@@ -166,6 +188,22 @@
               </span>
             </div>
             <div class="project-actions">
+              <!-- Phase 2-B: Colour swatch. Always visible (60% opacity at
+                   rest, full opacity on hover) so the project's identity
+                   colour is readable at a glance even without hovering. -->
+              <button
+                class="color-swatch"
+                title="Change project colour"
+                aria-label="Change colour for {project.display_name}"
+                onclick={(e) => openPicker(e, project.id)}
+              ></button>
+              {#if pickerProjectId === project.id}
+                <ColorSwatchPicker
+                  value={project.settings?.color ?? '#60a5fa'}
+                  onChange={(hex) => handleColorChange(project, hex)}
+                  onClose={closePicker}
+                />
+              {/if}
               {#if !project.archived_at}
                 <button
                   class="btn-icon btn-sm"
@@ -383,6 +421,9 @@
   }
 
   .project-item {
+    /* Position relative so the absolutely-positioned ColorSwatchPicker
+       inside `.project-actions` anchors to this row. */
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -391,6 +432,9 @@
     cursor: pointer;
     transition: background 150ms;
     outline: none;
+    /* Reserve the left-border gutter for the selected-state accent so
+       non-selected items don't shift by 2 px when the selection changes. */
+    border-left: 2px solid transparent;
   }
 
   .project-item:hover,
@@ -398,9 +442,11 @@
     background: var(--color-surface-hover, #1e2028);
   }
 
+  /* Phase 2: selected projects use their project colour (falling back to the
+     global accent for pre-Phase-2 projects without `settings.color`). */
   .project-item.selected {
     background: var(--color-surface-active, #252830);
-    border-left: 2px solid var(--color-accent, #60a5fa);
+    border-left-color: var(--project-color, var(--color-accent, #60a5fa));
   }
 
   .project-item.archived {
@@ -432,16 +478,50 @@
   }
 
   .project-actions {
+    /* Position relative so the ColorSwatchPicker anchors here for a
+       properly-placed popover under the swatch button. */
+    position: relative;
     flex-shrink: 0;
     display: flex;
+    align-items: center;
     gap: 2px;
+  }
+
+  /* Non-swatch action buttons (▶, ⧉, ⊘) retain the original hover-reveal
+     pattern — they exist for power users and shouldn't clutter every row. */
+  .project-actions > .btn-icon {
     opacity: 0.55;
     transition: opacity 150ms;
   }
 
-  .project-item:hover .project-actions,
-  .project-item:focus-within .project-actions {
+  .project-item:hover .project-actions > .btn-icon,
+  .project-item:focus-within .project-actions > .btn-icon {
     opacity: 1;
+  }
+
+  /* Phase 2-B: Colour swatch. Always visible (60% opacity at rest → 100%
+     on hover) so each project's identity colour is legible even without
+     hovering. Uses `--project-color` threaded through the `.project-item`
+     inline style. */
+  .color-swatch {
+    width: 12px;
+    height: 12px;
+    padding: 0;
+    margin: 0 4px 0 0;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 50%;
+    background: var(--project-color, var(--color-accent, #60a5fa));
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 150ms, transform 150ms;
+    flex-shrink: 0;
+  }
+
+  .color-swatch:hover,
+  .color-swatch:focus-visible {
+    opacity: 1;
+    transform: scale(1.15);
+    outline: none;
   }
 
   .sidebar-footer {

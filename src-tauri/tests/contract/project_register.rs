@@ -1,7 +1,7 @@
 //! T031: `project_register` contract tests.
 
 use tend_workbench::error::ErrorCode;
-use tend_workbench::project::ProjectService;
+use tend_workbench::project::{COLOR_PALETTE, ProjectService};
 
 /// Happy path: register a real temp directory, assert the returned project
 /// has the correct canonical path and display name.
@@ -46,6 +46,66 @@ async fn register_path_not_a_directory() {
         .expect_err("should fail for a file path");
 
     assert_eq!(err.code, ErrorCode::PathNotADirectory);
+}
+
+/// Spec §1.2: `project_register` auto-assigns a palette colour to the new
+/// project. The colour is derived from `(id - 1) % 12` so the first project
+/// gets the first palette entry.
+#[tokio::test]
+async fn register_assigns_palette_colour() {
+    let state = crate::common::mock_state().await;
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let path_str = tmp.path().to_str().expect("utf-8 path");
+
+    let project = ProjectService::register(&state.db, path_str, Some("coloured"))
+        .await
+        .expect("register should succeed");
+
+    let color = project
+        .settings
+        .color
+        .as_deref()
+        .expect("auto-assigned colour");
+    // The first project (id = 1) maps to palette[0].
+    assert_eq!(color, COLOR_PALETTE[0]);
+}
+
+/// Spec §1.2: sequential project registrations cycle through the 12-colour
+/// palette. Registering three projects yields three distinct palette entries.
+#[tokio::test]
+async fn register_cycles_palette_across_projects() {
+    let state = crate::common::mock_state().await;
+
+    let mut colours = Vec::new();
+    let mut _keepalive = Vec::new();
+    for i in 0..3 {
+        let tmp = tempfile::tempdir().expect("create temp dir");
+        let path_str = tmp.path().to_str().expect("utf-8 path").to_string();
+        let project = ProjectService::register(&state.db, &path_str, Some(&format!("p{i}")))
+            .await
+            .expect("register should succeed");
+        colours.push(
+            project
+                .settings
+                .color
+                .clone()
+                .expect("auto-assigned colour"),
+        );
+        // Keep the tempdir alive so the path stays valid for the rest of the
+        // test — ProjectService::register canonicalises via std::fs::canonicalize
+        // which fails if the directory is dropped.
+        _keepalive.push(tmp);
+    }
+
+    // Three new rows → palette indices 0, 1, 2 (the in-memory DB starts empty).
+    assert_eq!(colours[0], COLOR_PALETTE[0]);
+    assert_eq!(colours[1], COLOR_PALETTE[1]);
+    assert_eq!(colours[2], COLOR_PALETTE[2]);
+
+    // All three colours are distinct (sanity: palette entries are unique).
+    assert_ne!(colours[0], colours[1]);
+    assert_ne!(colours[1], colours[2]);
+    assert_ne!(colours[0], colours[2]);
 }
 
 /// ALREADY_REGISTERED: registering the same path twice returns the correct error.

@@ -32,6 +32,9 @@ importers:
       marked:
         specifier: ^18.0.0
         version: 18.0.0
+      vanilla-colorful:
+        specifier: ^0.7.2
+        version: 0.7.2
     devDependencies:
       '@playwright/test':
         specifier: ^1.48.2
@@ -950,6 +953,9 @@ packages:
     resolution: {integrity: sha512-xXnp4kTyor2Zq+J1FfPI6Eq3ew5h6Vl0F/8d9XU5zZQf1tX9s2Su1/3PiMmUANFULpmksxkClamIZcaUqryHsQ==}
     engines: {node: '>=20.18.1'}
 
+  vanilla-colorful@0.7.2:
+    resolution: {integrity: sha512-z2YZusTFC6KnLERx1cgoIRX2CjPRP0W75N+3CC6gbvdX5Ch47rZkEMGO2Xnf+IEmi3RiFLxS18gayMA27iU7Kg==}
+
   vite@8.0.8:
     resolution: {integrity: sha512-dbU7/iLVa8KZALJyLOBOQ88nOXtNG8vxKuOT4I2mD+Ya70KPceF4IAmDsmU0h1Qsn5bPrvsY9HJstCRh3hG6Uw==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -1790,6 +1796,8 @@ snapshots:
   undici-types@7.25.0: {}
 
   undici@7.25.0: {}
+
+  vanilla-colorful@0.7.2: {}
 
   vite@8.0.8(@types/node@25.6.0)(esbuild@0.28.0):
     dependencies:

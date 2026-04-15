@@ -17,6 +17,12 @@ export interface Project {
 
 export interface ProjectSettings {
 	readonly retention_days?: number;
+	/**
+	 * Spec §1 adaptive-ui: per-project display colour (hex string, e.g. `#60a5fa`).
+	 * Auto-assigned from a 12-colour palette on `project_register` when absent.
+	 * May be overridden by the user via the Sidebar colour picker.
+	 */
+	readonly color?: string;
 	readonly [key: string]: unknown;
 }
 
