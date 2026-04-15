@@ -1,6 +1,7 @@
 <!-- T063: Project sidebar. Lists registered projects with an "Add Project"
      action and an archived toggle. Dispatches project selection events. -->
 <script lang="ts">
+  import { Collapsible } from 'bits-ui';
   import { projectsStore } from '$lib/stores/projects.svelte';
   import type { Project } from '$lib/api/projects';
   import ColorSwatchPicker from '$lib/components/ColorSwatchPicker.svelte';
@@ -10,12 +11,25 @@
     selectedProjectId?: number | null;
     onSelectProject?: (project: Project) => void;
     onSpawnSession?: (project: Project) => void;
+    /** P3-A: controlled open state driven by the parent (so the hamburger
+     *  button, which lives OUTSIDE this component, can toggle it). */
+    open?: boolean;
+    /** Stable id for the Collapsible.Content element so HamburgerButton can
+     *  point its `aria-controls` at it. */
+    contentId?: string;
+    /** P3-A: when the sidebar is collapsed, the parent sets `peeking=true` on
+     *  hover-peek. The sidebar element takes `position: absolute` over the
+     *  content area so it does not compress the content while peeking. */
+    peeking?: boolean;
   }
 
   let {
     selectedProjectId = null,
     onSelectProject,
     onSpawnSession,
+    open = true,
+    contentId = 'sidebar-collapsible-content',
+    peeking = false,
   }: Props = $props();
 
   /** Phase 2-B: id of the project whose colour picker is currently open, or
@@ -160,8 +174,16 @@
   }
 </script>
 
-<aside class="sidebar" role="navigation" aria-label="Projects">
+<Collapsible.Root {open}>
+  <Collapsible.Content
+    id={contentId}
+    forceMount
+    class="sidebar-collapsible"
+    data-peeking={peeking ? 'true' : 'false'}
+  >
+    <aside class="sidebar" role="navigation" aria-label="Projects" aria-hidden={!open && !peeking}>
   <header class="sidebar-header">
+
     <h2>Projects</h2>
     <button
       class="btn-icon"
@@ -316,16 +338,70 @@
       Show archived
     </label>
   </footer>
-</aside>
+    </aside>
+  </Collapsible.Content>
+</Collapsible.Root>
 
 <style>
+  /* P3-A: The Collapsible.Content wrapper is the element that animates between
+     the 260 px open state and the 0 px collapsed state. bits-ui emits
+     `data-state="open" | "closed"` attributes on the Content element — we
+     target those directly rather than tracking a separate class.
+
+     `overflow: hidden` prevents the sidebar's children from painting during
+     the transition; `white-space: nowrap` + `min-width: 0` on descendants is
+     handled naturally by the existing flex layout.
+
+     `:global()` is required here because bits-ui renders `.sidebar-collapsible`
+     outside Svelte's component-scoped style boundary. */
+  :global(.sidebar-collapsible) {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    flex-shrink: 0;
+    overflow: hidden;
+    transition:
+      width 200ms ease,
+      border-right-color 200ms ease;
+  }
+
+  :global(.sidebar-collapsible[data-state="open"]) {
+    width: 260px;
+    border-right: 1px solid var(--color-border, #2a2d35);
+  }
+
+  :global(.sidebar-collapsible[data-state="closed"]) {
+    width: 0;
+    border-right: 1px solid transparent;
+  }
+
+  /* Peek overlay: when the sidebar is collapsed AND the parent has marked it
+     as `data-peeking="true"`, reposition the whole wrapper over the content
+     area instead of sliding the main panel. Width snaps to the usual 260 px
+     so the animation origin is consistent. */
+  :global(.sidebar-collapsible[data-peeking="true"]) {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 260px;
+    z-index: 50;
+    border-right: 1px solid var(--color-border, #2a2d35);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :global(.sidebar-collapsible) {
+      transition: none;
+    }
+  }
+
   .sidebar {
     display: flex;
     flex-direction: column;
     height: 100%;
     width: 260px;
     min-width: 200px;
-    border-right: 1px solid var(--color-border, #2a2d35);
     background: var(--color-surface-raised, #15171c);
     overflow: hidden;
   }
