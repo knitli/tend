@@ -436,8 +436,7 @@
     const target = event.target as Node;
     if (overflowPopoverEl?.contains(target)) return;
     if (overflowTriggerEl?.contains(target)) return;
-    overflowOpen = false;
-    overflowFocusedIndex = -1;
+    closeOverflow();
   }
 
   function handleOverflowKeydown(event: KeyboardEvent): void {
