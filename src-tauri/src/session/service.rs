@@ -146,6 +146,8 @@ impl SessionService {
         cwd: &Path,
         command: &[String],
         env: &BTreeMap<String, String>,
+        cols: u16,
+        rows: u16,
     ) -> WorkbenchResult<(Session, LiveSessionHandle)> {
         // Validate working directory.
         if !cwd.is_dir() {
@@ -190,7 +192,7 @@ impl SessionService {
         // Spawn the PTY with the real session id.
         // H2: If spawn or the subsequent pid UPDATE fails, mark the DB row
         // ended immediately so it doesn't remain orphaned as 'working'.
-        let (actor, handle) = match spawn_live_session(session_id, command, cwd, env, 80, 24) {
+        let (actor, handle) = match spawn_live_session(session_id, command, cwd, env, cols, rows) {
             Ok(pair) => pair,
             Err(e) => {
                 let _ = sqlx::query(

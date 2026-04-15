@@ -43,6 +43,8 @@ async fn session_child_exit_marks_ended() {
             tmp_dir.path(),
             &["/bin/true".to_string()],
             &env,
+            80,
+            24,
         )
         .await;
 
@@ -136,6 +138,8 @@ async fn session_killed_child_marks_ended_with_signal() {
             tmp_dir.path(),
             &["/bin/false".to_string()],
             &env,
+            80,
+            24,
         )
         .await;
 

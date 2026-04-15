@@ -12,6 +12,7 @@
   import LayoutSwitcher from '$lib/components/LayoutSwitcher.svelte';
   import { projectsStore } from '$lib/stores/projects.svelte';
   import { sessionsStore } from '$lib/stores/sessions.svelte';
+  import { sessionSetFocus } from '$lib/api/sessions';
   import { scratchpadStore } from '$lib/stores/scratchpad.svelte';
   import { workspaceStore } from '$lib/stores/workspace.svelte';
   import type { Project } from '$lib/api/projects';
@@ -31,6 +32,14 @@
   /** Session ids that were missing after workspace/layout restore. */
   let missingSessions = $state<Set<number>>(new Set());
   const activeSession = $derived(activeSessionId !== null ? sessionsStore.byId(activeSessionId) ?? null : null);
+
+  // Mirror activeSessionId to the backend so its event bridge stops
+  // forwarding PTY output for sessions no pane can render. Overview /
+  // no-selection → null → backend drops all Output/CompanionOutput events.
+  $effect(() => {
+    const id = activeSessionId;
+    sessionSetFocus({ sessionId: overviewOpen ? null : id }).catch(() => {});
+  });
 
   function handleSelectProject(project: Project): void {
     selectedProjectId = project.id;

@@ -54,6 +54,8 @@ async fn session_end_preserves_scratchpad() {
             "echo 'session running'; sleep 0.1; exit 0".to_string(),
         ],
         &env,
+        80,
+        24,
     )
     .await;
 

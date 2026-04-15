@@ -134,5 +134,13 @@
     flex: 1;
     min-height: 0;
     overflow: hidden;
+    /* Horizontal breathing room only — companion header already provides
+       top separation. Padding here is safe because we wrap xterm in an
+       inner div only when used from AgentPane; the companion's xterm fills
+       directly, so keep padding off .terminal-container to avoid clipping. */
+  }
+
+  .companion-pane {
+    padding: 0 6px 0 6px;
   }
 </style>

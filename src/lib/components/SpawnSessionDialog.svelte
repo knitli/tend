@@ -234,6 +234,10 @@
 
     submitting = true;
     try {
+      // Don't pass cols/rows here: any estimate that overshoots what xterm
+      // ends up with causes Claude to render an alt-screen taller/wider than
+      // the visible buffer, clipping rows. The backend spawns at a
+      // conservative default and xterm's onResize reconciles on mount.
       const result = await sessionSpawn({
         projectId: selectedProjectId,
         command,

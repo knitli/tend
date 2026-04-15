@@ -6,6 +6,7 @@ use crate::model::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::AtomicI64;
 use tokio::sync::{Mutex, RwLock, broadcast};
 
 // Re-export so existing callers can use `crate::state::LiveSessionHandle`.
@@ -139,6 +140,17 @@ pub struct WorkbenchState {
     /// agents see the same PATH the user has in their terminal. Populated once
     /// during bootstrap; empty until then.
     pub shell_env: Arc<HashMap<String, String>>,
+    /// Currently focused session id, or 0 for "none" (overview open, no
+    /// session selected). The event bridge reads this on every PTY chunk to
+    /// decide whether to forward Output/CompanionOutput to the webview. Most
+    /// agent UIs emit output at ~20 Hz; with N sessions running, bridging all
+    /// of it through base64 + JSON + Tauri IPC when only one pane can show it
+    /// is wasted CPU. Raw bytes are still captured in the per-session replay
+    /// buffer so switching focus catches up immediately via session_read_backlog.
+    ///
+    /// `AtomicI64` gives a lock-free load on the hot path. Session ids are
+    /// SQLite rowids (≥ 1), so 0 is an unambiguous sentinel for "no focus".
+    pub focused_session_id: Arc<AtomicI64>,
 }
 
 impl WorkbenchState {
@@ -153,6 +165,7 @@ impl WorkbenchState {
             event_bus,
             workspace_debouncer: None,
             shell_env: Arc::new(HashMap::new()),
+            focused_session_id: Arc::new(AtomicI64::new(0)),
         }
     }
 

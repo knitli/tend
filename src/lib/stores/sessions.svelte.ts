@@ -74,6 +74,15 @@ function createSessionsStore() {
 	let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 	const REFRESH_INTERVAL_MS = 5_000;
 
+	// Per-session throttle for last_activity_at updates. TUIs like Claude
+	// emit PTY chunks every ~50 ms (cursor blink, status line). Without
+	// throttling, every chunk clones the sessions Map and re-triggers every
+	// $derived + component that observes it (SessionList / Sidebar / etc.) —
+	// measurable CPU load while a claude session is running. Sub-second
+	// activity-timestamp precision is irrelevant for sorting/display.
+	const ACTIVITY_THROTTLE_MS = 1_000;
+	const lastActivityApplied = new Map<number, number>();
+
 	function scheduleActivityRefresh(store: {
 		hydrate: (opts?: { includeEnded?: boolean }) => Promise<void>;
 	}): void {
@@ -228,12 +237,20 @@ function createSessionsStore() {
 			});
 
 			const output = await onSessionOutput((payload) => {
-				// Update last_activity_at and forward bytes to the output handler
-				this.update(payload.session_id, {
-					last_activity_at: new Date().toISOString(),
-				});
+				// Forward bytes to the active pane's xterm immediately (this
+				// path is hot — TUIs stream chunks continuously).
 				if (outputHandler) {
 					outputHandler(payload.session_id, payload.bytes);
+				}
+				// Throttle the activity-timestamp update so we don't re-clone
+				// the sessions Map on every chunk. See ACTIVITY_THROTTLE_MS.
+				const now = Date.now();
+				const last = lastActivityApplied.get(payload.session_id) ?? 0;
+				if (now - last >= ACTIVITY_THROTTLE_MS) {
+					lastActivityApplied.set(payload.session_id, now);
+					this.update(payload.session_id, {
+						last_activity_at: new Date(now).toISOString(),
+					});
 				}
 				// C2 fix: Schedule a throttled re-hydration to refresh activity_summary.
 				scheduleActivityRefresh(this);

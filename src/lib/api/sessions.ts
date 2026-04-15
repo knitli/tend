@@ -109,6 +109,13 @@ export async function sessionSpawn(opts: {
 	label?: string;
 	workingDirectory?: string;
 	env?: Record<string, string>;
+	/**
+	 * Initial PTY columns. Supply the target pane's measured width so the
+	 * child renders its banner at the right size instead of the vt100 default.
+	 */
+	cols?: number;
+	/** Initial PTY rows. See {@link cols}. */
+	rows?: number;
 }): Promise<{ session: Session }> {
 	return invoke<{ session: Session }>("session_spawn", {
 		args: {
@@ -117,7 +124,26 @@ export async function sessionSpawn(opts: {
 			command: opts.command,
 			working_directory: opts.workingDirectory,
 			env: opts.env,
+			cols: opts.cols,
+			rows: opts.rows,
 		},
+	});
+}
+
+/**
+ * Set the currently-focused session. Only the focused session's raw PTY
+ * bytes (`session:event` / `companion:output`) are forwarded to the
+ * frontend; everything else (spawned/ended/alerts/status) flows regardless.
+ * Pass `null` when no session is active (overview open, empty state).
+ *
+ * Replay buffers on the backend continue to capture bytes for all sessions,
+ * so switching focus catches up the new pane via `sessionReadBacklog`.
+ */
+export async function sessionSetFocus(opts: {
+	sessionId: number | null;
+}): Promise<void> {
+	await invoke<Record<string, never>>("session_set_focus", {
+		args: { session_id: opts.sessionId },
 	});
 }
 

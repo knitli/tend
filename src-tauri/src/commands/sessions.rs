@@ -51,6 +51,14 @@ pub struct SessionSpawnArgs {
     /// Optional extra environment variables.
     #[serde(default)]
     pub env: Option<std::collections::HashMap<String, String>>,
+    /// Initial PTY column count. Frontend passes the target pane's measured
+    /// width so the child process is spawned at the right size — avoids the
+    /// "initial banner rendered at 80x24 then resized" flash.
+    #[serde(default)]
+    pub cols: Option<u16>,
+    /// Initial PTY row count. See [`cols`](Self::cols).
+    #[serde(default)]
+    pub rows: Option<u16>,
 }
 
 /// Spawn a new session (workbench-owned).
@@ -101,10 +109,27 @@ pub async fn session_spawn(
 
     let label = args.label.unwrap_or_else(|| "session".to_string());
 
+    // Initial PTY size: prefer client-provided measurements when present,
+    // but default conservatively (80x24). A default that overshoots the
+    // real pane causes TUI alt-screen content to render past the visible
+    // xterm buffer; it's safer to undershoot and let xterm's onResize
+    // upscale on mount.
+    let cols = args.cols.filter(|c| *c >= 20).unwrap_or(80);
+    let rows = args.rows.filter(|r| *r >= 5).unwrap_or(24);
+
     // spawn_local inserts the handle into live_sessions before starting
     // supervisor tasks, so no separate insert is needed here.
-    let (session, _handle) =
-        SessionService::spawn_local(&state, project_id, &label, &cwd, &args.command, &env).await?;
+    let (session, _handle) = SessionService::spawn_local(
+        &state,
+        project_id,
+        &label,
+        &cwd,
+        &args.command,
+        &env,
+        cols,
+        rows,
+    )
+    .await?;
 
     Ok(serde_json::json!({ "session": session }))
 }
@@ -144,6 +169,33 @@ pub async fn session_activate(
         "session": summary.session,
         "companion": companion,
     }))
+}
+
+/// Args for `session_set_focus`.
+#[derive(Deserialize)]
+pub struct SessionSetFocusArgs {
+    /// Session id to focus, or null/omitted for "no focus".
+    #[serde(default)]
+    pub session_id: Option<i64>,
+}
+
+/// Set the currently-focused session. The event bridge forwards raw PTY
+/// output (`session:event` and `companion:output`) only for the focused
+/// session — non-focused sessions' bytes are still captured in the replay
+/// buffer but not serialized across Tauri IPC, saving significant CPU when
+/// multiple TUIs are running.
+///
+/// Pass `null`/omit `session_id` for overview/empty states.
+#[tauri::command]
+pub async fn session_set_focus(
+    state: State<'_, WorkbenchState>,
+    args: SessionSetFocusArgs,
+) -> Result<serde_json::Value, WorkbenchError> {
+    use std::sync::atomic::Ordering;
+    state
+        .focused_session_id
+        .store(args.session_id.unwrap_or(0), Ordering::Release);
+    Ok(serde_json::json!({}))
 }
 
 /// Args for `session_read_backlog`.

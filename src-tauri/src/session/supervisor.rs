@@ -11,8 +11,22 @@
 use crate::session::live::LiveSessionActor;
 use crate::session::status::{self, StatusUpdate};
 use crate::state::{SessionEventEnvelope, WorkbenchState};
+use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
 use tracing::{info, trace, warn};
+
+/// How long to accumulate PTY bytes before emitting a batched
+/// `SessionEventEnvelope::Output`. ~60 Hz — imperceptible latency for
+/// interactive feel, but cuts IPC / base64 / JSON overhead by 3–10× for TUIs
+/// that emit cursor/status updates at 20+ Hz.
+const OUTPUT_BATCH_WINDOW: Duration = Duration::from_millis(16);
+
+/// Minimum interval between `ActivitySummary::record_chunk` calls for sessions
+/// that are NOT currently focused. The activity summary drives list-row
+/// previews which don't need sub-second precision; parsing ANSI on every
+/// cursor-blink chunk is wasted work.
+const UNFOCUSED_ACTIVITY_INTERVAL: Duration = Duration::from_millis(1000);
 
 /// Handles returned from `spawn_session_tasks`.
 pub struct SessionTaskHandles {
@@ -42,6 +56,7 @@ pub fn spawn_session_tasks(
     } = actor;
 
     let event_bus = state.event_bus.clone();
+    let focused = state.focused_session_id.clone();
 
     // Channels for the status monitor.
     let (activity_tx, activity_rx) = mpsc::unbounded_channel::<()>();
@@ -52,26 +67,101 @@ pub fn spawn_session_tasks(
     // Oneshot for the exit watcher to signal the writer thread.
     let (exit_tx, exit_rx) = oneshot::channel::<Option<i32>>();
 
-    // ---- Reader task (async — output_rx is already bridged from blocking thread) ----
+    // ---- Reader task ----
+    //
+    // Structure (what's on the hot path, per PTY chunk):
+    //   1. Replay-buffer push (required for pane catch-up on focus change).
+    //   2. activity_tx unit-signal (cheap; resets idle timer in status monitor).
+    //   3. heuristic_tx send (needed for needs_input detection).
+    //   4. ActivitySummary::record_chunk — gated: run every chunk while
+    //      focused, otherwise at most once per UNFOCUSED_ACTIVITY_INTERVAL.
+    //   5. Accumulate chunk into a batch buffer.
+    //
+    // Separately, a batched `SessionEventEnvelope::Output` is emitted to the
+    // event bus every OUTPUT_BATCH_WINDOW via a tokio timer + select loop.
+    // The event bridge further filters Output emissions by focus so only the
+    // active pane actually pays IPC cost.
     let reader_output_tx = output_tx;
     let reader_event_bus = event_bus.clone();
     let reader_activity = activity;
     let reader_replay = replay;
+    let reader_focused = focused.clone();
+
+    enum Step {
+        Chunk(Vec<u8>),
+        Flush,
+        Closed,
+    }
+
     tokio::spawn(async move {
-        while let Some(chunk) = output_rx.recv().await {
-            let _ = reader_output_tx.send(chunk.clone());
+        let mut batch: Vec<u8> = Vec::new();
+        let mut deadline: Option<Instant> = None;
+        // Initialize so the first chunk triggers a record regardless of focus.
+        let mut last_recorded = Instant::now()
+            .checked_sub(UNFOCUSED_ACTIVITY_INTERVAL)
+            .unwrap_or_else(Instant::now);
+
+        loop {
+            let step = match deadline {
+                Some(d) => tokio::select! {
+                    biased;
+                    maybe = output_rx.recv() => match maybe {
+                        Some(c) => Step::Chunk(c),
+                        None => Step::Closed,
+                    },
+                    _ = tokio::time::sleep_until(d.into()) => Step::Flush,
+                },
+                None => match output_rx.recv().await {
+                    Some(c) => Step::Chunk(c),
+                    None => Step::Closed,
+                },
+            };
+
+            match step {
+                Step::Chunk(chunk) => {
+                    // Keep the dead local broadcast alive for now (no
+                    // subscribers, but removing it is outside this scope).
+                    let _ = reader_output_tx.send(chunk.clone());
+                    let _ = activity_tx.send(());
+                    reader_replay.lock().await.push(&chunk);
+
+                    // Throttle ANSI-parsing activity record for non-focused
+                    // sessions. Focused sessions get every chunk so the
+                    // active pane's status stays precise.
+                    let is_focused =
+                        reader_focused.load(Ordering::Acquire) == session_id.get();
+                    if is_focused || last_recorded.elapsed() >= UNFOCUSED_ACTIVITY_INTERVAL {
+                        reader_activity.lock().await.record_chunk(&chunk);
+                        last_recorded = Instant::now();
+                    }
+
+                    let _ = heuristic_tx.send(chunk.clone());
+
+                    batch.extend_from_slice(&chunk);
+                    if deadline.is_none() {
+                        deadline = Some(Instant::now() + OUTPUT_BATCH_WINDOW);
+                    }
+                }
+                Step::Flush => {
+                    if !batch.is_empty() {
+                        let _ = reader_event_bus.send(SessionEventEnvelope::Output {
+                            session_id,
+                            bytes: std::mem::take(&mut batch),
+                        });
+                    }
+                    deadline = None;
+                }
+                Step::Closed => break,
+            }
+        }
+
+        // Drain remaining bytes on channel close so short-lived commands
+        // (e.g., `echo hi; exit`) don't lose their final output.
+        if !batch.is_empty() {
             let _ = reader_event_bus.send(SessionEventEnvelope::Output {
                 session_id,
-                bytes: chunk.clone(),
+                bytes: batch,
             });
-            let _ = activity_tx.send(());
-            // Record into the raw-byte replay buffer so a late-attaching UI
-            // can restore initial screen state.
-            reader_replay.lock().await.push(&chunk);
-            // T135: Feed output into the per-session activity summary ring buffer.
-            reader_activity.lock().await.record_chunk(&chunk);
-            // Feed raw bytes to the heuristic detector.
-            let _ = heuristic_tx.send(chunk);
         }
         trace!(%session_id, "reader task: PTY output ended");
     });

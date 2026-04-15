@@ -46,3 +46,6 @@ yarn.lock
 package-lock.json
 bun.lock
 !pnpm-lock.yaml
+
+# Iterative UI debugging screenshots (scripts/snap.sh)
+tmp/

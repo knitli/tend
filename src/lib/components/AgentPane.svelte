@@ -100,6 +100,10 @@
     for (const b of liveQueue) terminal.write(b);
     liveQueue.length = 0;
     replayed = true;
+    // Do NOT force-scroll to bottom here: xterm already auto-scrolls as
+    // the cursor moves during the backlog write, and forcing the viewport
+    // strips the user's ability to scroll up into the main-buffer banner
+    // (Claude's pre-alt-screen output) when the TUI later enters alt mode.
 
     // Wire keystrokes for interactive sessions.
     if (isInteractive) {
@@ -133,7 +137,16 @@
       {readOnlyMessage}
     </div>
   {/if}
-  <div class="terminal-container" bind:this={containerEl} role="application" aria-label="Agent terminal output"></div>
+  <!-- Spacer decouples xterm's top edge from the session header.
+       Using a sibling spacer instead of padding/margin means xterm's
+       container fills its own box exactly — no reliance on padding math
+       inside fit-addon's clientWidth/Height and no risk of xterm's
+       internal absolute-positioned layers escaping the padded area. -->
+  <div class="pane-inset-top" aria-hidden="true"></div>
+  <div class="terminal-wrap">
+    <div class="pane-inset-left" aria-hidden="true"></div>
+    <div class="terminal-container" bind:this={containerEl} role="application" aria-label="Agent terminal output"></div>
+  </div>
 </div>
 
 <style>
@@ -144,6 +157,25 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
+  }
+
+  /* Sibling spacers rather than padding/margin: xterm's container fills
+     its own box exactly, so there's nothing for fit-addon or xterm's
+     internal layers to miscalculate. */
+  .pane-inset-top {
+    flex: 0 0 24px;
+  }
+
+  .terminal-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: row;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .pane-inset-left {
+    flex: 0 0 10px;
   }
 
   .readonly-banner {

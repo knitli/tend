@@ -4,6 +4,7 @@
 
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { type ITerminalOptions, Terminal } from "@xterm/xterm";
 
 import "@xterm/xterm/css/xterm.css";
@@ -16,10 +17,27 @@ export interface CreatedTerminal {
 	dispose(): void;
 }
 
+// Nerd-Font-aware font stack. Most CLI agents (Claude, Codex, aider) and
+// most users' shell prompts use Nerd Font glyphs (powerline symbols, file-type
+// icons, etc.). Prefer common Nerd Font families in order — the browser falls
+// through until it finds one installed locally. `Symbols Nerd Font` is the
+// glyph-only overlay font that works as a fallback next to any monospace.
+const NERD_FONT_STACK = [
+	'"Iosevka Nerd Font"',
+	'"JetBrainsMono Nerd Font"',
+	'"FiraCode Nerd Font"',
+	'"Hack Nerd Font"',
+	'"MesloLGS Nerd Font"',
+	'"Symbols Nerd Font"',
+	'"Symbols Nerd Font Mono"',
+	"ui-monospace",
+	"monospace",
+].join(", ");
+
 const defaultOptions: ITerminalOptions = {
 	convertEol: true,
 	cursorBlink: true,
-	fontFamily: "var(--font-mono), ui-monospace, monospace",
+	fontFamily: NERD_FONT_STACK,
 	fontSize: 13,
 	theme: {
 		background: "#0f1115",
@@ -51,6 +69,25 @@ export function createTerminal(
 	terminal.open(container);
 	fit.fit();
 
+	// GPU-accelerated renderer. The default canvas renderer repaints on the
+	// CPU; under WebKitGTK (Tauri on Linux) that translates to real fan-worthy
+	// load for TUIs that emit 20+ frames/sec. WebGL offloads the raster work
+	// to the GPU. If the GPU context fails (context-lost, driver missing,
+	// headless env, WSL without GPU pass-through), fall back silently to the
+	// default renderer — functionality is identical, just slower.
+	let webgl: WebglAddon | undefined;
+	try {
+		webgl = new WebglAddon();
+		webgl.onContextLoss(() => {
+			// Dispose on context loss so xterm falls back to canvas rendering
+			// rather than displaying a frozen scene.
+			webgl?.dispose();
+		});
+		terminal.loadAddon(webgl);
+	} catch {
+		webgl = undefined;
+	}
+
 	const resizeObserver = new ResizeObserver(() => {
 		try {
 			fit.fit();
@@ -65,6 +102,7 @@ export function createTerminal(
 		fit,
 		dispose() {
 			resizeObserver.disconnect();
+			webgl?.dispose();
 			terminal.dispose();
 		},
 	};

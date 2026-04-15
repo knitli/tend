@@ -36,6 +36,8 @@ async fn triple_activation_creates_exactly_one_companion_row() {
             "sleep 300".to_string(),
         ],
         &env,
+        80,
+        24,
     )
     .await
     .expect("spawn_local");
@@ -102,6 +104,8 @@ async fn concurrent_activations_create_one_companion_row() {
             "sleep 300".to_string(),
         ],
         &env,
+        80,
+        24,
     )
     .await
     .expect("spawn_local");

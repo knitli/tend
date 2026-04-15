@@ -1,8 +1,11 @@
 <!--
-  T098: SplitView — horizontal split with AgentPane (left) + CompanionPane (right).
+  T098: SplitView — vertical stack with AgentPane (top) + CompanionPane (bottom).
 
   Calls sessionActivate on mount to fetch the session + companion,
-  has a draggable divider, cleans up on unmount.
+  has a draggable horizontal divider, cleans up on unmount.
+
+  Horizontal orientation: agent output + companion shell both benefit from
+  line width more than line count, so stacking works better than side-by-side.
 -->
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
@@ -25,8 +28,8 @@
   let activating = $state(true);
   let error = $state<string | null>(null);
 
-  // Divider drag state.
-  let splitPercent = $state(50);
+  // Divider drag state. Agent on top (larger by default), companion below.
+  let splitPercent = $state(65);
   let dragging = $state(false);
   let containerEl: HTMLDivElement | undefined = $state();
 
@@ -71,8 +74,8 @@
     function handleMouseMove(e: MouseEvent) {
       if (!containerEl) return;
       const rect = containerEl.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const pct = Math.max(20, Math.min(80, (x / rect.width) * 100));
+      const y = e.clientY - rect.top;
+      const pct = Math.max(20, Math.min(80, (y / rect.height) * 100));
       splitPercent = pct;
     }
 
@@ -102,10 +105,10 @@
   const SPLIT_STEP = 5;
 
   function handleDividerKeydown(e: KeyboardEvent) {
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
       e.preventDefault();
       splitPercent = Math.max(SPLIT_MIN, splitPercent - SPLIT_STEP);
-    } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
       e.preventDefault();
       splitPercent = Math.min(SPLIT_MAX, splitPercent + SPLIT_STEP);
     } else if (e.key === 'Home') {
@@ -128,32 +131,34 @@
       <p class="muted">Failed to activate: {error}</p>
     </div>
   {:else}
-    <div class="left-pane" style="flex: {splitPercent} 0 0%">
-      <AgentPane {session} />
-    </div>
+    <div class="content-stack">
+      <div class="top-pane" style="flex: {splitPercent} 0 0%">
+        <AgentPane {session} />
+      </div>
 
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div
-      class="divider"
-      role="slider"
-      aria-orientation="vertical"
-      aria-valuenow={Math.round(splitPercent)}
-      aria-valuemin={SPLIT_MIN}
-      aria-valuemax={SPLIT_MAX}
-      aria-label="Resize panes"
-      tabindex="0"
-      onmousedown={handleMouseDown}
-      onkeydown={handleDividerKeydown}
-    ></div>
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <div
+        class="divider"
+        role="slider"
+        aria-orientation="horizontal"
+        aria-valuenow={Math.round(splitPercent)}
+        aria-valuemin={SPLIT_MIN}
+        aria-valuemax={SPLIT_MAX}
+        aria-label="Resize panes"
+        tabindex="0"
+        onmousedown={handleMouseDown}
+        onkeydown={handleDividerKeydown}
+      ></div>
 
-    <div class="right-pane" style="flex: {100 - splitPercent} 0 0%">
-      {#if companion}
-        <CompanionPane {sessionId} />
-      {:else}
-        <div class="no-companion">
-          <p class="muted">No companion terminal available.</p>
-        </div>
-      {/if}
+      <div class="bottom-pane" style="flex: {100 - splitPercent} 0 0%">
+        {#if companion}
+          <CompanionPane {sessionId} />
+        {:else}
+          <div class="no-companion">
+            <p class="muted">No companion terminal available.</p>
+          </div>
+        {/if}
+      </div>
     </div>
 
     {#if scratchpadVisible}
@@ -175,6 +180,16 @@
 <style>
   .split-view {
     display: flex;
+    flex-direction: row;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .content-stack {
+    display: flex;
+    flex-direction: column;
     flex: 1;
     min-width: 0;
     min-height: 0;
@@ -182,12 +197,12 @@
   }
 
   .split-view.dragging {
-    cursor: col-resize;
+    cursor: row-resize;
     user-select: none;
   }
 
-  .left-pane,
-  .right-pane {
+  .top-pane,
+  .bottom-pane {
     display: flex;
     flex-direction: column;
     min-width: 0;
@@ -196,10 +211,10 @@
   }
 
   .divider {
-    width: 4px;
+    height: 4px;
     flex-shrink: 0;
     background: var(--color-border, #2a2d35);
-    cursor: col-resize;
+    cursor: row-resize;
     transition: background-color 150ms;
   }
 

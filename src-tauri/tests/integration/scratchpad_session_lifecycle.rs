@@ -46,6 +46,8 @@ async fn pty_output_does_not_mutate_scratchpad() {
             "echo 'TODO: buy milk'; echo 'reminder: call dentist'; sleep 0.1".to_string(),
         ],
         &env,
+        80,
+        24,
     )
     .await;
 

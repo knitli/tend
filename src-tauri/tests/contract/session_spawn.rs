@@ -34,6 +34,8 @@ async fn spawn_local_happy_path() {
         tmp.path(),
         &["echo".to_string(), "hello".to_string()],
         &env,
+        80,
+        24,
     )
     .await;
 

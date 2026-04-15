@@ -46,6 +46,8 @@ async fn companion_spawns_in_worktree_directory() {
             "sleep 300".to_string(),
         ],
         &env,
+        80,
+        24,
     )
     .await
     .expect("spawn_local in worktree");
@@ -92,6 +94,8 @@ async fn cd_in_companion_survives_resize_and_reactivation() {
             "sleep 300".to_string(),
         ],
         &env,
+        80,
+        24,
     )
     .await
     .expect("spawn_local");

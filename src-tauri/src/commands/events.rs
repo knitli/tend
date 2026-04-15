@@ -7,6 +7,8 @@ use crate::db::Database;
 use crate::model::Session;
 use crate::state::{SessionEventEnvelope, WorkbenchState};
 use serde::Serialize;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 use tauri::{AppHandle, Emitter};
 use tracing::{debug, warn};
 
@@ -15,11 +17,12 @@ use tracing::{debug, warn};
 pub fn spawn_event_bridge(app: AppHandle, state: &WorkbenchState) {
     let mut rx = state.event_bus.subscribe();
     let db = state.db.clone();
+    let focused = state.focused_session_id.clone();
 
     tokio::spawn(async move {
         loop {
             match rx.recv().await {
-                Ok(envelope) => emit_envelope(&app, &db, envelope).await,
+                Ok(envelope) => emit_envelope(&app, &db, &focused, envelope).await,
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                     warn!("event bridge lagged by {n} messages");
                 }
@@ -32,7 +35,12 @@ pub fn spawn_event_bridge(app: AppHandle, state: &WorkbenchState) {
     });
 }
 
-async fn emit_envelope(app: &AppHandle, db: &Database, envelope: SessionEventEnvelope) {
+async fn emit_envelope(
+    app: &AppHandle,
+    db: &Database,
+    focused: &Arc<AtomicI64>,
+    envelope: SessionEventEnvelope,
+) {
     match envelope {
         SessionEventEnvelope::Spawned { session } => {
             let _ = app.emit("session:spawned", SessionSpawnedPayload { session });
@@ -47,6 +55,13 @@ async fn emit_envelope(app: &AppHandle, db: &Database, envelope: SessionEventEnv
             );
         }
         SessionEventEnvelope::Output { session_id, bytes } => {
+            // Drop output for non-focused sessions to save Tauri IPC / JSON /
+            // base64 overhead on the hot path. The replay buffer on the
+            // LiveSessionHandle still captured the bytes, so switching focus
+            // restores state via `session_read_backlog`.
+            if focused.load(Ordering::Acquire) != session_id.get() {
+                return;
+            }
             use base64::Engine;
             let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
             let _ = app.emit(
@@ -101,6 +116,11 @@ async fn emit_envelope(app: &AppHandle, db: &Database, envelope: SessionEventEnv
             );
         }
         SessionEventEnvelope::CompanionOutput { session_id, bytes } => {
+            // Same focus-gate as `Output` — companion panes are only mounted
+            // for the active session.
+            if focused.load(Ordering::Acquire) != session_id.get() {
+                return;
+            }
             use base64::Engine;
             let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
             let _ = app.emit(

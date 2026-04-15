@@ -37,6 +37,8 @@ async fn spawn_test_session(
             "sleep 300".to_string(),
         ],
         &env,
+        80,
+        24,
     )
     .await
     .expect("spawn_local");
