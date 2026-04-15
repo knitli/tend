@@ -306,8 +306,47 @@
     <!-- Phase 5: ghost slot. The session is not in the store (pruned /
          never-hydrated), but the slot's ghost_data carries a snapshot of
          the project + label + command. If a command is recorded, a ▶
-         Restart button re-runs it via `sessionSpawn` through the parent. -->
+         Restart button re-runs it via `sessionSpawn` through the parent.
+         Phase 5 review N3: ghost header gets the same drag handle and ‹/›
+         move buttons as live slots so reorder is symmetric — you can drag
+         a ghost pane just like a live one. -->
     <header class="pane-slot-header pane-slot-header-ghost">
+      <!-- Drag handle + keyboard move buttons: same wiring as the live header.
+           A ghost slot still has a position in the workspace array and must be
+           reorderable so the user can arrange the layout before restarting. -->
+      <span
+        class="pane-slot-drag-handle"
+        data-drag-handle
+        draggable={onReorderDragStart ? 'true' : 'false'}
+        ondragstart={onReorderDragStart}
+        ondragend={onReorderDragEnd}
+        aria-hidden="true"
+        title={onReorderDragStart ? 'Drag to reorder pane' : 'Only one pane open'}
+      >⠿</span>
+      {#if onMoveLeft}
+        <button
+          type="button"
+          class="pane-slot-btn pane-slot-move-btn"
+          onclick={onMoveLeft}
+          disabled={!canMoveLeft}
+          title="Move pane left"
+          aria-label="Move pane left"
+        >
+          ‹
+        </button>
+      {/if}
+      {#if onMoveRight}
+        <button
+          type="button"
+          class="pane-slot-btn pane-slot-move-btn"
+          onclick={onMoveRight}
+          disabled={!canMoveRight}
+          title="Move pane right"
+          aria-label="Move pane right"
+        >
+          ›
+        </button>
+      {/if}
       <span class="pane-slot-dot" aria-hidden="true"></span>
       <span class="pane-slot-title" title={`${ghostProjectName} · ${ghostLabel}`}>
         <strong class="pane-slot-project">{ghostProjectName}</strong>

@@ -221,6 +221,46 @@ describe("PaneSlot", () => {
 		expect(restartBtn!.disabled).toBe(false);
 	});
 
+	it("ghost header has a drag handle and fires onReorderDragEnd (N3 symmetry fix)", () => {
+		// Phase 5 review N3: ghost slots must be drag sources as well as drop
+		// targets. Without this, a layout like [A, ghost(B), C] would allow
+		// reordering A or C via drag but not ghost(B), making the workspace
+		// inconsistently interactive.
+		const onReorderDragStart = vi.fn();
+		const onReorderDragEnd = vi.fn();
+		const target = document.createElement("div");
+		document.body.append(target);
+		component = mount(PaneSlot, {
+			target,
+			props: {
+				sessionId: 999_996, // not in the store → ghost mode
+				onFocus: vi.fn(),
+				onClose: vi.fn(),
+				ghostData: {
+					project_id: 7,
+					label: "feature-branch",
+					command: ["claude"],
+					project_color: "#60a5fa",
+				},
+				onRestart: vi.fn(async () => 42),
+				onReorderDragStart,
+				onReorderDragEnd,
+			},
+		});
+
+		// Ghost header should render a drag handle just like the live header.
+		const ghostHeader = target.querySelector<HTMLElement>(".pane-slot-header-ghost");
+		expect(ghostHeader).not.toBeNull();
+
+		const handle = ghostHeader!.querySelector<HTMLElement>("[data-drag-handle]");
+		expect(handle, "ghost header should have a drag handle").not.toBeNull();
+		expect(handle!.getAttribute("draggable")).toBe("true");
+
+		// dragend on the ghost handle clears PaneWorkspace reorder state.
+		handle!.dispatchEvent(new Event("dragend", { bubbles: true }));
+		expect(onReorderDragEnd).toHaveBeenCalledTimes(1);
+	});
+
 	it("invokes onRestart when the Restart button is clicked", async () => {
 		const onRestart = vi.fn(async () => 101);
 		const target = document.createElement("div");
