@@ -104,7 +104,7 @@ describe("ColorSwatchPicker", () => {
 		expect(onChange).toHaveBeenCalledWith("#34d399");
 	});
 
-	it("calls onClose when Escape is pressed inside the popover", async () => {
+	it("calls onClose when Escape is pressed (document keydown)", async () => {
 		const target = document.createElement("div");
 		document.body.append(target);
 		const onClose = vi.fn();
@@ -118,10 +118,13 @@ describe("ColorSwatchPicker", () => {
 			},
 		});
 
-		const root = target.querySelector<HTMLElement>(".color-swatch-picker");
-		expect(root).not.toBeNull();
+		// Allow onMount to complete so the document keydown listener is registered.
+		await new Promise((r) => setTimeout(r, 0));
 
-		root!.dispatchEvent(
+		// Dispatch at the document level — the listener is now registered there
+		// (capture phase) so that Escape closes the picker regardless of where
+		// focus sits (usually the swatch button, not the popover itself).
+		document.dispatchEvent(
 			new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
 		);
 

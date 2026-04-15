@@ -136,10 +136,9 @@ export async function sessionSpawn(opts: {
  * everything else (spawned/ended/alerts/status) flows regardless. Pass
  * `null` when no session is active (overview open, empty state).
  *
- * Since Phase 4-A this is a thin shim over {@link sessionSetVisible}:
- * `sessionId` of `N` marks `{N}` visible; `null` clears the set. The
- * single-pane flow (`+page.svelte`'s `$effect` on `activeSessionId`) keeps
- * using this wrapper; the multi-pane workspace should call
+ * Since Phase 4-A this is a thin compatibility shim over
+ * {@link sessionSetVisible}: `sessionId` of `N` marks `{N}` visible; `null`
+ * clears the set. Callers that manage visible panes explicitly should prefer
  * {@link sessionSetVisible} directly.
  *
  * Replay buffers on the backend continue to capture bytes for all sessions,

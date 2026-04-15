@@ -26,6 +26,8 @@
   let saving = $state(false);
   /** P1-D: true while the layouts list is being re-fetched. */
   let refreshing = $state(false);
+  /** Monotonic token used to ignore stale refresh completions. */
+  let refreshToken = 0;
   let error = $state<string | null>(null);
   let rootEl: HTMLDivElement | undefined = $state();
   let triggerEl: HTMLButtonElement | undefined = $state();
@@ -33,14 +35,21 @@
   let focusedIndex = $state(-1);
 
   async function refresh(): Promise<void> {
+    const token = ++refreshToken;
     refreshing = true;
     try {
       const result = await layoutList();
-      layouts = result.layouts;
+      if (token === refreshToken) {
+        layouts = result.layouts;
+      }
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      if (token === refreshToken) {
+        error = err instanceof Error ? err.message : String(err);
+      }
     } finally {
-      refreshing = false;
+      if (token === refreshToken) {
+        refreshing = false;
+      }
     }
   }
 

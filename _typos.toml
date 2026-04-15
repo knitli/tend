@@ -27,4 +27,4 @@ unicode = true
 # Intentional misspellings
 
 [files]
-extend-exclude = []
+extend-exclude = ["pnpm-lock.yaml"]

@@ -18,9 +18,9 @@
     onActivateSession?: (session: SessionSummary) => void;
     onSpawnSession?: () => void;
     /** P4-D: keyboard-accessible fallback for the drag-to-pane gesture. When
-     *  set, each SessionRow renders a `⊞` button that calls this with the
-     *  session so a non-mouse user can add it to a pane slot. Defaults to
-     *  the same behaviour as `onActivateSession` when omitted. */
+     *  provided, each SessionRow renders a `⊞` button that calls this with the
+     *  session so a non-mouse user can add it to a pane slot. When omitted,
+     *  no `⊞` button is rendered. */
     onOpenInSlot?: (session: SessionSummary) => void;
   }
 
@@ -61,7 +61,10 @@
       const detail = (event as CustomEvent<{ sessionId: number }>).detail;
       if (!detail) return;
       const el = document.querySelector(`[data-session-id="${detail.sessionId}"]`);
-      el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      const behavior = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+        ? 'auto'
+        : 'smooth';
+      el?.scrollIntoView({ behavior, block: 'nearest' });
     }
     window.addEventListener('tend:session-scroll-to', handleScrollTo);
     return () => {
@@ -154,9 +157,22 @@
   /** Per-group mutable items the zone writes back during a drag. Keyed by
    *  project id. */
   let dndGroupItems = $state<Map<number, DnDSessionItem[]>>(new Map());
+
+  /** P4-D fix: tracks whether a drag is currently in flight. The $effect
+   *  below syncs dndGroupItems from the canonical groupedDndItems derived.
+   *  Without this guard, a session status update arriving mid-drag triggers
+   *  a re-derive of groupedDndItems → $effect fires → dndGroupItems is
+   *  overwritten with canonical ordering, clobbering the in-progress drag's
+   *  consider-phase item positions.  Setting isDragging=true in consider and
+   *  false in finalize freezes the rebuild for the duration of the gesture. */
+  let isDragging = $state(false);
+
   $effect(() => {
-    // Rebuild the mutable map from the canonical derived whenever the
-    // grouping changes (new session arrived, filter changed, etc).
+    // Skip rebuild while a drag is in flight — would clobber the transient
+    // consider-phase ordering and confuse svelte-dnd-action mid-gesture.
+    // When the drag ends (isDragging → false), this effect re-runs with the
+    // post-drag groupedDndItems and refreshes the map cleanly.
+    if (isDragging) return;
     const fresh = new Map<number, DnDSessionItem[]>();
     for (const [projectId, items] of groupedDndItems) {
       fresh.set(projectId, items.slice());
@@ -170,6 +186,7 @@
 
   function makeConsiderHandler(projectId: number) {
     return (e: CustomEvent<DndEvent<DnDSessionItem>>) => {
+      isDragging = true;
       const next = new Map(dndGroupItems);
       next.set(projectId, e.detail.items);
       dndGroupItems = next;
@@ -178,6 +195,7 @@
 
   function makeFinalizeHandler(projectId: number) {
     return (_e: CustomEvent<DndEvent<DnDSessionItem>>) => {
+      isDragging = false;
       // Source-only zones: restore canonical items regardless of outcome.
       // If the drop landed in a sibling zone, that zone handles the side
       // effect (e.g. addSlot). If the drop landed here or outside, the
@@ -306,6 +324,7 @@
       {#each groupedSessions as [projectId, sessions] (projectId)}
         {@const projectColor = getProjectColor(projectId)}
         {@const groupItems = dndItemsForProject(projectId)}
+        {@const sessionById = new Map(sessions.map((session) => [session.id, session]))}
         <div
           class="project-group"
           style={projectColor ? `--project-color: ${projectColor}` : ''}
@@ -325,7 +344,7 @@
             onfinalize={makeFinalizeHandler(projectId)}
           >
             {#each groupItems as item (item.id)}
-              {@const session = sessions.find((s) => s.id === item.sessionId)}
+              {@const session = sessionById.get(item.sessionId)}
               {#if session}
                 <SessionRow
                   {session}

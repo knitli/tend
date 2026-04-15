@@ -64,9 +64,14 @@
   function openPicker(event: MouseEvent, projectId: number): void {
     event.stopPropagation();
     if (pickerProjectId === projectId) {
-      // Let the document-click-capture handler drive the close path so the
-      // ignoreEl check has a single source of truth.
+      // Re-clicking the open swatch explicitly toggles it closed.
+      closePicker();
       return;
+    }
+    // Flush any in-flight debounced write for the previously-open project
+    // before switching, so rapid project switching can't drop colour updates.
+    if (pendingColorProject !== null) {
+      flushPendingColor();
     }
     pickerProjectId = projectId;
     pickerSwatchEl = event.currentTarget as HTMLButtonElement;
@@ -195,8 +200,12 @@
       role="navigation"
       aria-label="Projects"
       aria-hidden={!open && !peeking}
-      onmouseenter={onPeekEnter}
-      onmouseleave={onPeekLeave}
+      inert={!open && !peeking}
+      style:pointer-events={!open && !peeking ? 'none' : undefined}
+      inert={!open && !peeking ? true : undefined}
+      style:pointer-events={!open && !peeking ? 'none' : undefined}
+      onmouseenter={() => onPeekEnter?.()}
+      onmouseleave={() => onPeekLeave?.()}
     >
   <header class="sidebar-header">
 
@@ -257,15 +266,14 @@
     {:else}
       <ul role="listbox" aria-label="Projects">
         {#each displayedProjects as project (project.id)}
+          {@const projectColor = getProjectColor(project)}
           <li
             role="option"
             aria-selected={selectedProjectId === project.id}
             class="project-item"
             class:selected={selectedProjectId === project.id}
             class:archived={project.archived_at !== null}
-            style={getProjectColor(project)
-              ? `--project-color: ${getProjectColor(project)}`
-              : ''}
+            style={projectColor ? `--project-color: ${projectColor}` : ''}
             tabindex="0"
             onclick={() => handleSelectProject(project)}
             onkeydown={(e) => handleKeydown(e, project)}
@@ -288,7 +296,7 @@
               ></button>
               {#if pickerProjectId === project.id}
                 <ColorSwatchPicker
-                  value={pendingColor[project.id] ?? getProjectColor(project) ?? '#60a5fa'}
+                  value={pendingColor[project.id] ?? projectColor ?? '#60a5fa'}
                   ignoreEl={pickerSwatchEl}
                   onChange={(hex) => handleColorChange(project, hex)}
                   onClose={closePicker}
@@ -387,21 +395,21 @@
   }
 
   :global(.sidebar-collapsible[data-state="closed"]) {
-    width: 0;
-    border-right: 1px solid transparent;
-  }
-
-  /* Peek overlay: when the sidebar is collapsed AND the parent has marked it
-     as `data-peeking="true"`, reposition the whole wrapper over the content
-     area instead of sliding the main panel. Width snaps to the usual 260 px
-     so the animation origin is consistent. */
-  :global(.sidebar-collapsible[data-peeking="true"]) {
     position: absolute;
     top: 0;
     left: 0;
     height: 100%;
-    width: 260px;
+    width: 0;
     z-index: 50;
+    border-right: 1px solid transparent;
+  }
+
+  /* Peek overlay: while the collapsed sidebar is being hovered/peeked, expand
+     the already out-of-flow wrapper to the usual 260 px width so the main
+     content never gets compressed during either the peek-open or peek-close
+     transition. */
+  :global(.sidebar-collapsible[data-state="closed"][data-peeking="true"]) {
+    width: 260px;
     border-right: 1px solid var(--color-border, #2a2d35);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   }
@@ -641,6 +649,31 @@
   .project-item:hover .project-actions > .btn-icon,
   .project-item:focus-within .project-actions > .btn-icon {
     opacity: 1;
+  }
+
+  /* Phase 2-B: Colour swatch. Always visible (60% opacity at rest → 100%
+     on hover) so each project's identity colour is legible even without
+     hovering. Uses `--project-color` threaded through the `.project-item`
+     inline style. */
+  .color-swatch {
+    width: 12px;
+    height: 12px;
+    padding: 0;
+    margin: 0 4px 0 0;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 50%;
+    background: var(--project-color, var(--color-accent, #60a5fa));
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 150ms, transform 150ms;
+    flex-shrink: 0;
+  }
+
+  .color-swatch:hover,
+  .color-swatch:focus-visible {
+    opacity: 1;
+    transform: scale(1.15);
+    outline: none;
   }
 
   /* Phase 2-B: Colour swatch. Always visible (60% opacity at rest → 100%
