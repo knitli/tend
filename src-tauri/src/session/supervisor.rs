@@ -128,8 +128,7 @@ pub fn spawn_session_tasks(
                     // Throttle ANSI-parsing activity record for non-focused
                     // sessions. Focused sessions get every chunk so the
                     // active pane's status stays precise.
-                    let is_focused =
-                        reader_focused.load(Ordering::Acquire) == session_id.get();
+                    let is_focused = reader_focused.load(Ordering::Acquire) == session_id.get();
                     if is_focused || last_recorded.elapsed() >= UNFOCUSED_ACTIVITY_INTERVAL {
                         reader_activity.lock().await.record_chunk(&chunk);
                         last_recorded = Instant::now();
