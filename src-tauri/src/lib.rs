@@ -130,6 +130,7 @@ pub fn run() {
             commands::sessions::session_end,
             commands::sessions::session_read_backlog,
             commands::sessions::session_set_focus,
+            commands::sessions::session_set_visible,
             commands::companions::companion_send_input,
             commands::companions::companion_resize,
             commands::companions::companion_respawn,

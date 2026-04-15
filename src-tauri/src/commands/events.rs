@@ -7,8 +7,8 @@ use crate::db::Database;
 use crate::model::Session;
 use crate::state::{SessionEventEnvelope, WorkbenchState};
 use serde::Serialize;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::collections::HashSet;
+use std::sync::{Arc, RwLock as StdRwLock};
 use tauri::{AppHandle, Emitter};
 use tracing::{debug, warn};
 
@@ -17,12 +17,12 @@ use tracing::{debug, warn};
 pub fn spawn_event_bridge(app: AppHandle, state: &WorkbenchState) {
     let mut rx = state.event_bus.subscribe();
     let db = state.db.clone();
-    let focused = state.focused_session_id.clone();
+    let visible = state.visible_session_ids.clone();
 
     tokio::spawn(async move {
         loop {
             match rx.recv().await {
-                Ok(envelope) => emit_envelope(&app, &db, &focused, envelope).await,
+                Ok(envelope) => emit_envelope(&app, &db, &visible, envelope).await,
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                     warn!("event bridge lagged by {n} messages");
                 }
@@ -35,10 +35,22 @@ pub fn spawn_event_bridge(app: AppHandle, state: &WorkbenchState) {
     });
 }
 
+/// Return true if `session_id` is currently in the visible set. The lock is
+/// released before the caller performs any base64/JSON work so contention
+/// stays cheap even under high PTY throughput.
+fn is_visible(visible: &Arc<StdRwLock<HashSet<i64>>>, session_id: i64) -> bool {
+    match visible.read() {
+        Ok(guard) => guard.contains(&session_id),
+        // On poisoning we prefer to drop the chunk rather than panic the
+        // bridge task — the replay buffer still has the bytes.
+        Err(_) => false,
+    }
+}
+
 async fn emit_envelope(
     app: &AppHandle,
     db: &Database,
-    focused: &Arc<AtomicI64>,
+    visible: &Arc<StdRwLock<HashSet<i64>>>,
     envelope: SessionEventEnvelope,
 ) {
     match envelope {
@@ -55,11 +67,11 @@ async fn emit_envelope(
             );
         }
         SessionEventEnvelope::Output { session_id, bytes } => {
-            // Drop output for non-focused sessions to save Tauri IPC / JSON /
+            // Drop output for non-visible sessions to save Tauri IPC / JSON /
             // base64 overhead on the hot path. The replay buffer on the
-            // LiveSessionHandle still captured the bytes, so switching focus
-            // restores state via `session_read_backlog`.
-            if focused.load(Ordering::Acquire) != session_id.get() {
+            // LiveSessionHandle still captured the bytes, so marking a
+            // session visible restores state via `session_read_backlog`.
+            if !is_visible(visible, session_id.get()) {
                 return;
             }
             use base64::Engine;
@@ -116,9 +128,9 @@ async fn emit_envelope(
             );
         }
         SessionEventEnvelope::CompanionOutput { session_id, bytes } => {
-            // Same focus-gate as `Output` — companion panes are only mounted
-            // for the active session.
-            if focused.load(Ordering::Acquire) != session_id.get() {
+            // Same visibility gate as `Output` — companion panes are only
+            // mounted for sessions currently shown in the workspace.
+            if !is_visible(visible, session_id.get()) {
                 return;
             }
             use base64::Engine;

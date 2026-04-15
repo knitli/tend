@@ -202,8 +202,6 @@
       aria-hidden={!open && !peeking}
       inert={!open && !peeking}
       style:pointer-events={!open && !peeking ? 'none' : undefined}
-      inert={!open && !peeking ? true : undefined}
-      style:pointer-events={!open && !peeking ? 'none' : undefined}
       onmouseenter={() => onPeekEnter?.()}
       onmouseleave={() => onPeekLeave?.()}
     >

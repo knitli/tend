@@ -11,7 +11,6 @@
 use crate::session::live::LiveSessionActor;
 use crate::session::status::{self, StatusUpdate};
 use crate::state::{SessionEventEnvelope, WorkbenchState};
-use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
 use tracing::{info, trace, warn};
@@ -56,7 +55,7 @@ pub fn spawn_session_tasks(
     } = actor;
 
     let event_bus = state.event_bus.clone();
-    let focused = state.focused_session_id.clone();
+    let visible = state.visible_session_ids.clone();
 
     // Channels for the status monitor.
     let (activity_tx, activity_rx) = mpsc::unbounded_channel::<()>();
@@ -85,7 +84,7 @@ pub fn spawn_session_tasks(
     let reader_event_bus = event_bus.clone();
     let reader_activity = activity;
     let reader_replay = replay;
-    let reader_focused = focused.clone();
+    let reader_visible = visible.clone();
 
     enum Step {
         Chunk(Vec<u8>),
@@ -125,11 +124,14 @@ pub fn spawn_session_tasks(
                     let _ = activity_tx.send(());
                     reader_replay.lock().await.push(&chunk);
 
-                    // Throttle ANSI-parsing activity record for non-focused
-                    // sessions. Focused sessions get every chunk so the
+                    // Throttle ANSI-parsing activity record for non-visible
+                    // sessions. Visible sessions get every chunk so the
                     // active pane's status stays precise.
-                    let is_focused = reader_focused.load(Ordering::Acquire) == session_id.get();
-                    if is_focused || last_recorded.elapsed() >= UNFOCUSED_ACTIVITY_INTERVAL {
+                    let is_visible = match reader_visible.read() {
+                        Ok(g) => g.contains(&session_id.get()),
+                        Err(_) => false,
+                    };
+                    if is_visible || last_recorded.elapsed() >= UNFOCUSED_ACTIVITY_INTERVAL {
                         reader_activity.lock().await.record_chunk(&chunk);
                         last_recorded = Instant::now();
                     }

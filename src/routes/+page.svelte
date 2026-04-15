@@ -6,46 +6,36 @@
   import SessionList from '$lib/components/SessionList.svelte';
   import AlertBar from '$lib/components/AlertBar.svelte';
   import SplitView from '$lib/components/SplitView.svelte';
+  import PaneWorkspace from '$lib/components/PaneWorkspace.svelte';
   import CrossProjectOverview from '$lib/components/CrossProjectOverview.svelte';
   import SettingsDialog from '$lib/components/SettingsDialog.svelte';
   import SpawnSessionDialog from '$lib/components/SpawnSessionDialog.svelte';
   import LayoutSwitcher from '$lib/components/LayoutSwitcher.svelte';
   import HamburgerButton from '$lib/components/HamburgerButton.svelte';
+  import CommandPalette from '$lib/components/CommandPalette.svelte';
+  import MainTabs, { type TabId } from '$lib/components/MainTabs.svelte';
   import { projectsStore } from '$lib/stores/projects.svelte';
   import { sessionsStore } from '$lib/stores/sessions.svelte';
-  import { sessionSetFocus } from '$lib/api/sessions';
-  import { scratchpadStore } from '$lib/stores/scratchpad.svelte';
+  import { sessionSetVisible, sessionSpawn } from '$lib/api/sessions';
   import { workspaceStore } from '$lib/stores/workspace.svelte';
   import { isEditableTarget } from '$lib/util/isEditableTarget';
   import type { Project } from '$lib/api/projects';
   import type { SessionSummary } from '$lib/api/sessions';
+  import type { GhostSessionData, PaneSlot } from '$lib/types/pane';
   import { getProjectColor } from '$lib/util/projectColor';
 
   let selectedProjectId = $state<number | null>(null);
   let activeSessionId = $state<number | null>(null);
   let settingsOpen = $state(false);
-  let overviewOpen = $state(false);
+  /** P4-F: replaces the old `overviewOpen` boolean. The main panel is now
+   *  divided into three top-level tabs (Sessions / Workspace / Overview)
+   *  persisted via `workspace.ui.active_view`. Overview is no longer a
+   *  toggle button inside the session panel. */
+  let activeView = $state<TabId>('sessions');
   let spawnDialogOpen = $state(false);
   let spawnDialogProject = $state<Project | null>(null);
-  /** P1-B: monotonic token that increments on every session activation. Passed
-   *  to SplitView so it can re-trigger the 1.5 s border flash even when the
-   *  user clicks an already-active session row (setting the same boolean
-   *  `highlighted=true` twice wouldn't restart the CSS animation). Phase 4
-   *  will expand this to support one token per slot. */
-  let highlightToken = $state(0);
-  /** Session id that was most recently activated. Only the pane rendering
-   *  this session receives a non-zero token (so flashes don't bleed across
-   *  slots once Phase 4 lands). */
-  let highlightSessionId = $state<number | null>(null);
-
-  /** P1-A: derived Set of session ids currently visible in a pane. Phase 1 is
-   *  always the single active session; Phase 4 expands to the full slot set. */
-  const activeSessionIds = $derived<Set<number>>(
-    activeSessionId !== null ? new Set([activeSessionId]) : new Set(),
-  );
-
-  let sessionListRef = $state<{ focusFilter: () => void } | undefined>();
-
+  /** P4-E: Ctrl+K / Cmd+K quick-switch palette visibility. */
+  let paletteOpen = $state(false);
   /** P3-A: sidebar collapse state. Hydrated from `workspace.ui.sidebar_collapsed`
    *  on mount (see onMount below) and persisted on every toggle. */
   let sidebarCollapsed = $state(false);
@@ -64,6 +54,52 @@
    *  `single` on the first id in focusSessionIds. */
   let focusMode = $state<'none' | 'single' | 'split-two'>('none');
   let focusSessionIds = $state<number[]>([]);
+  /** P1-B: monotonic token that increments on every session activation. Passed
+   *  to SplitView so it can re-trigger the 1.5 s border flash even when the
+   *  user clicks an already-active session row (setting the same boolean
+   *  `highlighted=true` twice wouldn't restart the CSS animation). Phase 4
+   *  will expand this to support one token per slot. */
+  let highlightToken = $state(0);
+  /** Session id that was most recently activated. Only the pane rendering
+   *  this session receives a non-zero token (so flashes don't bleed across
+   *  slots once Phase 4 lands). */
+  let highlightSessionId = $state<number | null>(null);
+
+  /** Phase 4-B/C: horizontal pane-workspace slots. Derived from either
+   *  `activeSessionId` (single-session compat path) or rehydrated from
+   *  `workspace.ui.workspace_pane_slots` on mount. Every mutation is
+   *  persisted via `workspaceStore.setUi` so layouts survive restarts.
+   *
+   *  The `activeSessionId` scalar is retained as a compatibility shim:
+   *  - spawn dialog / session-row click set it and we mirror into the
+   *    slot set via `handleActivateSession`;
+   *  - focus-mode and no-slot paths still derive visibility from it in the
+   *    `sessionSetVisible` effect below when PaneWorkspace is not mounted.
+   */
+  let slots = $state<PaneSlot[]>([]);
+  /** Persisted per-pane size percentages (paneforge onLayoutChange). */
+  let paneSizes = $state<number[] | undefined>(undefined);
+
+  /** P1-A: Set of session ids currently rendered by a pane. Phase 4 unions
+   *  every visible slot so the SessionList's active-row indicator lights
+   *  up for every pane, not just `activeSessionId`. Falls back to the
+   *  scalar when no slots are open yet (pre-hydrate / empty state). */
+  const activeSessionIds = $derived<Set<number>>(
+    slots.length > 0
+      ? new Set(slots.map((s) => s.session_id))
+      : activeSessionId !== null
+        ? new Set([activeSessionId])
+        : new Set(),
+  );
+
+  /** `bind:this` is set on BOTH the Sessions-tab and Workspace-tab SessionList
+   *  renders below. This is safe because MainTabs gates each snippet with
+   *  `{#if value === '...'}`, so only the active tab mounts its SessionList at
+   *  any time — the two bindings never write to `sessionListRef` simultaneously.
+   *  Focus mode renders neither SessionList (MainTabs itself is hidden), so
+   *  `sessionListRef` is simply `undefined` there and `focusFilter()` is a
+   *  no-op via optional chaining. */
+  let sessionListRef = $state<{ focusFilter: () => void } | undefined>();
 
   function openSpawnDialog(project: Project | null = null): void {
     spawnDialogProject = project;
@@ -81,12 +117,32 @@
     return getProjectColor(projectsStore.byId(activeSession.project_id));
   });
 
-  // Mirror activeSessionId to the backend so its event bridge stops
-  // forwarding PTY output for sessions no pane can render. Overview /
-  // no-selection → null → backend drops all Output/CompanionOutput events.
+  // Phase 4-B/C: PaneWorkspace now owns `session_set_visible` and calls it
+  // with every visible slot id. The old single-session `sessionSetFocus`
+  // effect was REMOVED because it was a backend shim that overwrote the
+  // visible set with a single id, racing PaneWorkspace's multi-id update.
+  //
+  // When overview is open or no slots are mounted, PaneWorkspace isn't
+  // rendered — so we mirror an empty visible set here to silence PTY
+  // forwarding for non-rendered sessions. (Focus mode also renders
+  // SplitView directly outside PaneWorkspace, so it needs its own
+  // single-id call.)
   $effect(() => {
-    const id = activeSessionId;
-    sessionSetFocus({ sessionId: overviewOpen ? null : id }).catch(() => {});
+    // P4-F: Overview tab has no PTY panes, so silence all forwarding while
+    // it's active. Same behaviour as the old `overviewOpen` branch.
+    if (activeView === 'overview') {
+      sessionSetVisible({ sessionIds: [] }).catch(() => {});
+      return;
+    }
+    if (focusMode !== 'none' && activeSessionId !== null) {
+      sessionSetVisible({ sessionIds: [activeSessionId] }).catch(() => {});
+      return;
+    }
+    if (slots.length === 0) {
+      sessionSetVisible({ sessionIds: [] }).catch(() => {});
+    }
+    // When slots.length > 0 and not in overview / focus mode, PaneWorkspace
+    // drives `session_set_visible` itself — don't double-call here.
   });
 
   function handleSelectProject(project: Project): void {
@@ -95,11 +151,40 @@
     workspaceStore.update({ active_project_ids: project.id !== null ? [project.id] : [] });
   }
 
+  /** P4-F: setter for the top-level tab selection. Always routes through
+   *  this helper so the persistence side-effect can't be forgotten. */
+  function setActiveView(v: TabId): void {
+    activeView = v;
+    workspaceStore.setUi('active_view', v);
+  }
+
   function handleActivateSession(session: SessionSummary): void {
     activeSessionId = session.id;
-    overviewOpen = false;
+    // P4-F: activating a session from the alert bar / row click pulls the user
+    // out of the Overview tab back onto a pane-rendering tab. Default to
+    // Sessions since it's the project-scoped view; the Workspace tab remains
+    // a stickier choice that the user must select deliberately.
+    if (activeView === 'overview') {
+      setActiveView('sessions');
+    }
     // T130: persist active session change.
     workspaceStore.update({ focused_session_id: session.id });
+
+    // Phase 4-B/C: activate through the slot set. If the session is already
+    // in a slot we leave the layout alone and just re-flash it; otherwise
+    // we *replace* the first slot (preserves single-session UX before
+    // Phase 4-D adds drag-to-append).
+    const existing = slots.findIndex((s) => s.session_id === session.id);
+    if (existing === -1) {
+      if (slots.length === 0) {
+        slots = [{ session_id: session.id, split_percent: 65, order: 0 }];
+      } else {
+        slots = slots.map((s, i) =>
+          i === 0 ? { ...s, session_id: session.id } : s,
+        );
+      }
+      persistSlots();
+    }
 
     // P1-B: Re-trigger the pane border flash. Incrementing the token — rather
     // than setting a boolean — ensures that clicking an already-active row
@@ -107,6 +192,204 @@
     // The SplitView keys its flash on this token, so a new value = new flash.
     highlightSessionId = session.id;
     highlightToken += 1;
+  }
+
+  /** Phase 4-B/C: persist the current slot list into the workspace ui map
+   *  so layouts survive restarts. Debounced by workspaceStore. */
+  function persistSlots(): void {
+    workspaceStore.setUi('workspace_pane_slots', slots);
+  }
+
+  /** Phase 5: keep each live slot's `ghost_data` snapshot current. Runs on
+   *  every reactive read of `slots`, `sessionsStore.sessions`, and
+   *  `projectsStore.projects`. Writes are diff-guarded: only mutates when
+   *  the computed snapshot differs from what's stored, so the effect does
+   *  NOT self-trigger (no loop). When a live session later transitions to
+   *  ended/error or gets pruned, the most-recent snapshot is already on
+   *  disk, so the ghost pane has full restart context. */
+  $effect(() => {
+    // Depend explicitly on the session list so status changes on any
+    // tracked slot re-run this effect.
+    void sessionsStore.sessions;
+    void projectsStore.projects;
+    let changed = false;
+    const updated = slots.map((slot) => {
+      const session = sessionsStore.byId(slot.session_id);
+      if (!session) return slot; // ghost stays as-is
+      const project = projectsStore.byId(session.project_id) ?? null;
+      // Defensively filter non-string command entries (shouldn't happen with
+      // a well-behaved backend, but metadata is typed as `Record<string,
+      // unknown>` so nothing enforces it at the IPC boundary).
+      const rawCommand = session.metadata?.command;
+      const command = Array.isArray(rawCommand)
+        ? rawCommand.filter((c: unknown): c is string => typeof c === 'string')
+        : [];
+      const nextGhost: GhostSessionData = {
+        project_id: session.project_id,
+        label: session.label,
+        command,
+        project_color: getProjectColor(project),
+      };
+      const current = slot.ghost_data;
+      const diff =
+        !current ||
+        current.project_id !== nextGhost.project_id ||
+        current.label !== nextGhost.label ||
+        current.project_color !== nextGhost.project_color ||
+        current.command.length !== nextGhost.command.length ||
+        current.command.some((c, i) => c !== nextGhost.command[i]);
+      if (diff) {
+        changed = true;
+        return { ...slot, ghost_data: nextGhost };
+      }
+      return slot;
+    });
+    if (changed) {
+      slots = updated;
+      persistSlots();
+    }
+  });
+
+  /** Phase 5: restart a ghost slot. Called by PaneSlot's ▶ Restart button,
+   *  plumbed through PaneWorkspace's `onRestartSlot` prop. Returns the new
+   *  session id on success; re-throws on failure so PaneSlot's `handleRestart`
+   *  can surface the specific error (e.g. "project archived") rather than a
+   *  generic "Failed to restart". */
+  async function restartGhostSlot(oldSessionId: number): Promise<number | null> {
+    const slot = slots.find((s) => s.session_id === oldSessionId);
+    const ghost = slot?.ghost_data;
+    if (!slot || !ghost || ghost.command.length === 0) return null;
+    const result = await sessionSpawn({
+      projectId: ghost.project_id,
+      command: ghost.command,
+      label: ghost.label,
+    });
+    const newSession = result.session;
+    // Insert into the store immediately so the ghost flips to live without
+    // waiting for the `session:spawned` event round-trip. Mirrors the
+    // pattern in SpawnSessionDialog's onSpawned handler.
+    sessionsStore.add({
+      ...newSession,
+      activity_summary: null,
+      alert: null,
+      reattached_mirror: false,
+    });
+    // Replace only session_id and preserve the full slot object (ghost_data
+    // and any future fields) until the snapshot effect refreshes derived data.
+    slots = slots.map((s) =>
+      s.session_id === oldSessionId
+        ? {
+            ...s,
+            session_id: newSession.id,
+          }
+        : s,
+    );
+    persistSlots();
+    // Deliberate: we steal activeSessionId for the newly-restarted session.
+    // The user just initiated the restart, so landing them in that terminal
+    // matches intent — even if a live leftmost slot was active before. The
+    // previous activeSessionId was already the ghost that was just replaced
+    // in the common case (restart is triggered from the ghost itself).
+    activeSessionId = newSession.id;
+    highlightSessionId = newSession.id;
+    highlightToken += 1;
+    workspaceStore.update({ focused_session_id: newSession.id });
+    return newSession.id;
+  }
+
+  function handleSlotClose(sessionId: number): void {
+    const wasActive = sessionId === activeSessionId;
+    slots = slots
+      .filter((s) => s.session_id !== sessionId)
+      .map((s, i) => ({ ...s, order: i }));
+    persistSlots();
+
+    if (wasActive) {
+      // Closing the active slot drops back to the empty state unless
+      // another slot remains, in which case we promote the left-most.
+      if (slots.length === 0) {
+        activeSessionId = null;
+        workspaceStore.update({ focused_session_id: null });
+      } else {
+        const next = slots[0].session_id;
+        activeSessionId = next;
+        workspaceStore.update({ focused_session_id: next });
+        highlightSessionId = next;
+        highlightToken += 1;
+      }
+    }
+  }
+
+  function handleSlotFocus(sessionId: number): void {
+    enterFocusMode(sessionId);
+  }
+
+  function handleSlotResize(sizes: number[]): void {
+    paneSizes = sizes;
+    workspaceStore.setUi('workspace_pane_sizes', sizes);
+  }
+
+  /** P4-D: append a session to the pane workspace as a new slot. If the
+   *  session is already mounted we just re-flash it (no layout change).
+   *  This is invoked by:
+   *    - the AddSlotZone drop target (drag from SessionList),
+   *    - the `⊞` keyboard-accessible button on SessionRow. */
+  function addSlot(sessionId: number): void {
+    const existingIdx = slots.findIndex((s) => s.session_id === sessionId);
+    if (existingIdx === -1) {
+      slots = [
+        ...slots,
+        { session_id: sessionId, split_percent: 65, order: slots.length },
+      ];
+      persistSlots();
+    }
+    activeSessionId = sessionId;
+    // P4-F: same rationale as handleActivateSession — snap back to a
+    // pane-rendering tab when the user pulls a session into a slot from
+    // the Overview tab.
+    if (activeView === 'overview') {
+      setActiveView('sessions');
+    }
+    workspaceStore.update({ focused_session_id: sessionId });
+    highlightSessionId = sessionId;
+    highlightToken += 1;
+  }
+
+  function onDropSession(sessionId: number): void {
+    addSlot(sessionId);
+  }
+
+  function onReorderSlots(next: PaneSlot[]): void {
+    slots = next;
+    persistSlots();
+  }
+
+  function onOpenInSlot(session: SessionSummary): void {
+    addSlot(session.id);
+  }
+
+  /** P4-E: palette activation. If the session is already mounted in a slot
+   *  we just re-focus/flash it via the existing single-session path. If it
+   *  isn't, we *append* a new slot (addSlot) rather than replace — the
+   *  palette is a navigation tool, so losing an already-open pane to swap
+   *  in another one would be surprising. `addSlot` itself no-ops when the
+   *  session is already mounted (it still updates active + re-flashes), so
+   *  the two branches effectively fall through to the same "activate"
+   *  behaviour once a slot exists. The branching exists only to avoid
+   *  growing the slot set when the session is already there. */
+  function handlePaletteActivate(sessionId: number): void {
+    const session = sessionsStore.byId(sessionId);
+    if (!session) {
+      paletteOpen = false;
+      return;
+    }
+    const existing = slots.findIndex((s) => s.session_id === sessionId);
+    if (existing !== -1) {
+      handleActivateSession(session);
+    } else {
+      addSlot(sessionId);
+    }
+    paletteOpen = false;
   }
 
   function handleWindowKeydown(event: KeyboardEvent): void {
@@ -119,6 +402,24 @@
     ) {
       event.preventDefault();
       sessionListRef?.focusFilter();
+      return;
+    }
+
+    // P4-E: Ctrl+K (or Cmd+K on mac) opens the quick-switch palette. Guarded
+    // by isEditableTarget so typing in a text input doesn't steal the shortcut
+    // — but xterm.js also sits inside an editable helper-textarea, so this
+    // means the palette cannot be opened while the terminal has focus (users
+    // must click outside the terminal first). That's the documented trade-off
+    // shared with the `/` filter shortcut above.
+    if (
+      event.key === 'k' &&
+      (event.ctrlKey || event.metaKey) &&
+      !event.altKey &&
+      !event.shiftKey &&
+      !isEditableTarget(event.target)
+    ) {
+      event.preventDefault();
+      paletteOpen = true;
       return;
     }
 
@@ -223,9 +524,20 @@
         activeSessionId = ws.focused_session_id;
       }
 
-      // P3-A / P3-B: restore UI state from the persisted ui map.
+      // P3-A / P3-B / P4-F: restore UI state from the persisted ui map.
       if (typeof ws.ui?.sidebar_collapsed === 'boolean') {
         sidebarCollapsed = ws.ui.sidebar_collapsed;
+      }
+      // P4-F: hydrate the active tab. Guards against older schemas
+      // (including the removed `overviewOpen` boolean) by validating the
+      // union before assigning.
+      const restoredView = ws.ui?.active_view;
+      if (
+        restoredView === 'sessions' ||
+        restoredView === 'workspace' ||
+        restoredView === 'overview'
+      ) {
+        activeView = restoredView;
       }
       if (
         ws.ui?.focus_mode === 'single' ||
@@ -257,6 +569,94 @@
         projectsStore.hydrate({ includeArchived: true }),
         sessionsStore.hydrate(),
       ]);
+
+      // 3. Phase 4-B/C + Phase 5: rehydrate the pane-workspace slot list.
+      //    Phase 4 silently dropped slots whose session_id was no longer in
+      //    the store; Phase 5 keeps them and renders them as ghost slots so
+      //    the user can restart the stored command. Only slots whose shape
+      //    is structurally invalid (missing session_id, etc.) are dropped.
+      const rawSlots = ws.ui?.workspace_pane_slots;
+      if (Array.isArray(rawSlots)) {
+        const kept: PaneSlot[] = [];
+        for (const entry of rawSlots) {
+          if (
+            entry &&
+            typeof entry === 'object' &&
+            typeof (entry as PaneSlot).session_id === 'number'
+          ) {
+            const e = entry as PaneSlot;
+            const ghost = e.ghost_data;
+            const validGhost =
+              ghost &&
+              typeof ghost === 'object' &&
+              typeof ghost.project_id === 'number' &&
+              typeof ghost.label === 'string' &&
+              Array.isArray(ghost.command) &&
+              ghost.command.every((c: unknown) => typeof c === 'string')
+                ? {
+                    project_id: ghost.project_id,
+                    label: ghost.label,
+                    command: ghost.command,
+                    project_color:
+                      typeof ghost.project_color === 'string'
+                        ? ghost.project_color
+                        : null,
+                  }
+                : undefined;
+            kept.push({
+              session_id: e.session_id,
+              split_percent: typeof e.split_percent === 'number' ? e.split_percent : 65,
+              order: typeof e.order === 'number' ? e.order : kept.length,
+              ...(validGhost ? { ghost_data: validGhost } : {}),
+            });
+          }
+        }
+        kept.sort((a, b) => a.order - b.order);
+        slots = kept.map((s, i) => ({ ...s, order: i }));
+      }
+
+      // Fallback: if no stored slots but there IS a focused session,
+      // materialise a single slot so the content panel isn't empty.
+      if (slots.length === 0 && activeSessionId !== null) {
+        slots = [{ session_id: activeSessionId, split_percent: 65, order: 0 }];
+      }
+
+      // Promote to active the first slot whose session is actually live
+      // (not a ghost). If the only slots are ghosts, leave activeSessionId
+      // null so there's no live target for highlight/flash/SessionList. A
+      // ghost's Restart button is the user's path back.
+      if (slots.length === 0) {
+        activeSessionId = null;
+      } else {
+        const firstLive = slots.find(
+          (s) => sessionsStore.byId(s.session_id) !== undefined,
+        );
+        if (firstLive) {
+          if (
+            activeSessionId === null ||
+            !slots.some(
+              (s) =>
+                s.session_id === activeSessionId &&
+                sessionsStore.byId(s.session_id) !== undefined,
+            )
+          ) {
+            activeSessionId = firstLive.session_id;
+          }
+        } else {
+          activeSessionId = null;
+          if (focusMode !== 'none') {
+            focusMode = 'none';
+            focusSessionIds = [];
+            workspaceStore.setUi('focus_mode', focusMode);
+            workspaceStore.setUi('focus_mode_session_ids', focusSessionIds);
+          }
+        }
+      }
+
+      const rawSizes = ws.ui?.workspace_pane_sizes;
+      if (Array.isArray(rawSizes) && rawSizes.every((v) => typeof v === 'number')) {
+        paneSizes = rawSizes as number[];
+      }
     })();
 
     // Subscribe to real-time session events
@@ -352,135 +752,208 @@
       <AlertBar onActivateSession={handleActivateSession} />
     </div>
 
-    <div class="main-panel-body">
-      <div
-        class="session-panel"
-        aria-hidden={focusMode !== 'none'}
-        inert={focusMode !== 'none' ? true : undefined}
-      >
-        <div class="session-panel-header">
-          <button
-            class="overview-btn"
-            onclick={() => { overviewOpen = !overviewOpen; activeSessionId = null; scratchpadStore.clear(); workspaceStore.update({ focused_session_id: null }); }}
-            title="Cross-project reminder overview"
-            aria-label="Open reminder overview"
-            class:active={overviewOpen}
-          >
-            Overview
-          </button>
-          <LayoutSwitcher onMissingSessions={(ids) => { missingSessions = new Set(ids); }} />
-          <button
-            class="settings-btn"
-            onclick={() => settingsOpen = true}
-            title="Notification settings"
-            aria-label="Open notification settings"
-          >
-            Settings
-          </button>
-        </div>
-        <SessionList
-          bind:this={sessionListRef}
-          {selectedProjectId}
-          {missingSessions}
-          {activeSessionIds}
-          onActivateSession={handleActivateSession}
-          onSpawnSession={() => openSpawnDialog(
-            selectedProjectId !== null
-              ? projectsStore.byId(selectedProjectId) ?? null
-              : null,
-          )}
-        />
-      </div>
+    <!-- P4-F: Top-level Sessions / Workspace / Overview tabs own the
+         entire area below the AlertBar. Each tab's body is a snippet so the
+         same state (slots, activeSessionId, focus mode) can be shared and
+         only the ONE tab's body renders at a time.
 
+         Sessions vs Workspace differ in a single line: the `filterProjectId`
+         passed to SessionList. Sessions uses `selectedProjectId`; Workspace
+         forces `null` so the list shows every project. Both share the same
+         `slots` array (persisted as `workspace_pane_slots`) — the spec
+         hinted at separate `sessions_pane_slots`, but for Phase 4-F we
+         collapse to one state to keep the slot set stable when the user
+         toggles between tabs.
+
+         Review fix (Phase 4 UX): when focus mode is active, hide MainTabs
+         entirely and render the focus-mode body directly. Spec §3.2 intent
+         is "reduce peripheral chrome" while zoomed into one session, so the
+         tab strip must also disappear (not just the sidebars / session
+         panel). The `paneContent` snippet already handles the focus-mode
+         branch (renders breadcrumb + × + single SplitView). -->
+    {#if focusMode !== 'none'}
       <div class="content-panel">
-        {#if overviewOpen}
-          <CrossProjectOverview />
-        {:else if activeSession && activeSessionId !== null}
-          <!-- P3-B: In focus mode, replace the normal header with a compact
-               breadcrumb chip so the user retains orientation. The exit `×`
-               button is always rendered when in focus mode so it remains
-               clickable even while xterm has keyboard focus. -->
-          {#if focusMode !== 'none'}
-            <div
-              class="focus-breadcrumb"
-              style={activeProjectColor ? `--project-color: ${activeProjectColor}` : ''}
-            >
-              <span class="focus-dot" aria-hidden="true"></span>
-              <span class="focus-breadcrumb-text">
-                <strong>{projectsStore.byId(activeSession.project_id)?.display_name ?? 'Project'}</strong>
-                <span class="focus-separator">/</span>
-                {activeSession.label}
-                <span class="focus-separator">·</span>
-                <span class="focus-status">{activeSession.status}</span>
-              </span>
-              {#if activeSession.ownership === 'wrapper' || activeSession.reattached_mirror}
-                <span class="readonly-banner">Read-only</span>
-              {/if}
-            </div>
-            <button
-              type="button"
-              class="focus-exit-btn"
-              onclick={exitFocusMode}
-              title="Exit focus mode (Esc)"
-              aria-label="Exit focus mode"
-            >
-              ×
-            </button>
-          {:else}
-            <div
-              class="active-session-header"
-              style={activeProjectColor ? `--project-color: ${activeProjectColor}` : ''}
-            >
-              <h2>{activeSession.label}</h2>
-              <span class="session-status">{activeSession.status}</span>
-              {#if activeSession.ownership === 'wrapper' || activeSession.reattached_mirror}
-                <span class="readonly-banner">Read-only</span>
-              {/if}
-              <button
-                type="button"
-                class="focus-enter-btn"
-                onclick={() => enterFocusMode(activeSessionId!)}
-                title="Focus on this session (Ctrl+Shift+F)"
-                aria-label="Focus on this session"
-              >
-                ⊙
-              </button>
-            </div>
-          {/if}
-          {#key `${activeSessionId}-${activeSession.reattached_mirror}`}
-            <!-- Phase 2-D: thread the project colour onto the SplitView wrapper
-                 so the Phase 1 flash overlay AND the companion pane header (via
-                 CSS cascade) both pick up the same per-project colour. -->
-            <div
-              class="split-view-wrapper"
-              style={activeProjectColor ? `--project-color: ${activeProjectColor}` : ''}
-            >
-              <SplitView
-                sessionId={activeSessionId}
-                session={activeSession}
-                highlightToken={highlightSessionId === activeSessionId ? highlightToken : 0}
-              />
-            </div>
-          {/key}
-        {:else}
-          <div class="empty-content">
-            <h2>tend</h2>
-            <p class="muted">
-              Select a session from the list to view its terminal output.
-            </p>
-            {#if projectsStore.activeProjects.length === 0 && !projectsStore.loading}
-              <p class="muted">
-                Add a project in the sidebar to get started.
-              </p>
-            {/if}
-          </div>
-        {/if}
+        {@render paneContent()}
       </div>
-    </div>
+    {:else}
+      <MainTabs
+        value={activeView}
+        onValueChange={setActiveView}
+        sessionsContent={sessionsTab}
+        workspaceContent={workspaceTab}
+        overviewContent={overviewTab}
+      />
+    {/if}
   </main>
 </div>
 
+{#snippet sessionsTab()}
+  <div class="main-panel-body">
+    <div class="session-panel">
+      <div class="session-panel-header">
+        <button
+          class="settings-btn"
+          onclick={() => settingsOpen = true}
+          title="Notification settings"
+          aria-label="Open notification settings"
+        >
+          Settings
+        </button>
+      </div>
+      <SessionList
+        bind:this={sessionListRef}
+        {selectedProjectId}
+        {missingSessions}
+        {activeSessionIds}
+        onActivateSession={handleActivateSession}
+        {onOpenInSlot}
+        onSpawnSession={() => openSpawnDialog(
+          selectedProjectId !== null
+            ? projectsStore.byId(selectedProjectId) ?? null
+            : null,
+        )}
+      />
+    </div>
+
+    <div class="content-panel">
+      {@render paneContent()}
+    </div>
+  </div>
+{/snippet}
+
+{#snippet workspaceTab()}
+  <div class="main-panel-body">
+    <div class="session-panel">
+      <div class="session-panel-header">
+        <!-- P4-F: LayoutSwitcher lives in the Workspace tab header because
+             saved layouts capture the pane arrangement, which is the
+             central concept of this tab. The wrapping `div` with
+             `margin-right: auto` keeps the Switcher flush-left while
+             Settings stays pinned to the right — the header itself is
+             `justify-content: flex-end` for the Sessions tab case where
+             only Settings renders. -->
+        <div class="layout-slot">
+          <LayoutSwitcher onMissingSessions={(ids) => { missingSessions = new Set(ids); }} />
+        </div>
+        <button
+          class="settings-btn"
+          onclick={() => settingsOpen = true}
+          title="Notification settings"
+          aria-label="Open notification settings"
+        >
+          Settings
+        </button>
+      </div>
+      <SessionList
+        bind:this={sessionListRef}
+        selectedProjectId={null}
+        {missingSessions}
+        {activeSessionIds}
+        onActivateSession={handleActivateSession}
+        {onOpenInSlot}
+        onSpawnSession={() => openSpawnDialog(
+          selectedProjectId !== null
+            ? projectsStore.byId(selectedProjectId) ?? null
+            : null,
+        )}
+      />
+    </div>
+
+    <div class="content-panel">
+      {@render paneContent()}
+    </div>
+  </div>
+{/snippet}
+
+{#snippet overviewTab()}
+  <div class="overview-tab-body">
+    <CrossProjectOverview />
+  </div>
+{/snippet}
+
+{#snippet paneContent()}
+  {#if focusMode !== 'none' && activeSession && activeSessionId !== null}
+    <!-- P3-B focus mode: single-session override that takes precedence
+         over the multi-pane workspace. Keeps the compact breadcrumb
+         chip + exit button since the user has explicitly zoomed in on
+         one session. The SplitView is rendered directly (not through
+         PaneWorkspace) to avoid the pane header chrome stacking. -->
+    <div
+      class="focus-breadcrumb"
+      style={activeProjectColor ? `--project-color: ${activeProjectColor}` : ''}
+    >
+      <span class="focus-dot" aria-hidden="true"></span>
+      <span class="focus-breadcrumb-text">
+        <strong>{projectsStore.byId(activeSession.project_id)?.display_name ?? 'Project'}</strong>
+        <span class="focus-separator">/</span>
+        {activeSession.label}
+        <span class="focus-separator">·</span>
+        <span class="focus-status">{activeSession.status}</span>
+      </span>
+      {#if activeSession.ownership === 'wrapper' || activeSession.reattached_mirror}
+        <span class="readonly-banner">Read-only</span>
+      {/if}
+    </div>
+    <button
+      type="button"
+      class="focus-exit-btn"
+      onclick={exitFocusMode}
+      title="Exit focus mode (Esc)"
+      aria-label="Exit focus mode"
+    >
+      ×
+    </button>
+    <div
+      class="split-view-wrapper"
+      style={activeProjectColor ? `--project-color: ${activeProjectColor}` : ''}
+    >
+      <SplitView
+        sessionId={activeSessionId}
+        session={activeSession}
+        highlightToken={highlightSessionId === activeSessionId ? highlightToken : 0}
+      />
+    </div>
+  {:else if slots.length > 0}
+    <!-- Phase 4-B/C: multi-pane workspace. Replaces the single-
+         SplitView render path. The old `.active-session-header` now
+         lives inside `PaneSlot` so every visible slot carries its own
+         project tint + controls. The `{#key}` on session id +
+         reattached_mirror is preserved inside PaneSlot via
+         SplitView's own mount flow. -->
+    <PaneWorkspace
+      {slots}
+      {paneSizes}
+      highlightedSessionId={highlightSessionId}
+      {highlightToken}
+      onSlotClose={handleSlotClose}
+      onSlotFocus={handleSlotFocus}
+      onResize={handleSlotResize}
+      {onDropSession}
+      {onReorderSlots}
+      onRestartSlot={restartGhostSlot}
+    />
+  {:else}
+    <div class="empty-content">
+      <h2>tend</h2>
+      <p class="muted">
+        Select a session from the list to view its terminal output.
+      </p>
+      {#if projectsStore.activeProjects.length === 0 && !projectsStore.loading}
+        <p class="muted">
+          Add a project in the sidebar to get started.
+        </p>
+      {/if}
+    </div>
+  {/if}
+{/snippet}
+
 <SettingsDialog open={settingsOpen} onclose={() => settingsOpen = false} />
+
+<CommandPalette
+  open={paletteOpen}
+  onClose={() => (paletteOpen = false)}
+  onActivate={handlePaletteActivate}
+/>
 
 <SpawnSessionDialog
   open={spawnDialogOpen}
@@ -499,8 +972,23 @@
     });
     // Activate the new session so the user lands directly in its terminal.
     activeSessionId = session.id;
-    overviewOpen = false;
+    // P4-F: ensure we're on a pane-rendering tab so the new session is
+    // actually visible after spawn.
+    if (activeView === 'overview') {
+      setActiveView('sessions');
+    }
     workspaceStore.update({ focused_session_id: session.id });
+    // Phase 4-B/C: also seed the slot set so PaneWorkspace renders the new
+    // session. If slots is empty → create the first one; otherwise replace
+    // the first slot (matches handleActivateSession's single-session UX).
+    if (slots.length === 0) {
+      slots = [{ session_id: session.id, split_percent: 65, order: 0 }];
+    } else if (!slots.some((s) => s.session_id === session.id)) {
+      slots = slots.map((s, i) => (i === 0 ? { ...s, session_id: session.id } : s));
+    }
+    persistSlots();
+    highlightSessionId = session.id;
+    highlightToken += 1;
     // Reconcile with the backend's full record (timestamps, metadata).
     sessionsStore.hydrate({ includeEnded: false }).catch(() => {});
   }}
@@ -616,26 +1104,25 @@
     border-bottom: 1px solid var(--color-border, #2a2d35);
   }
 
-  .overview-btn {
-    padding: 0.25rem 0.5rem;
-    border: 1px solid var(--color-border, #2a2d35);
-    border-radius: 0.25rem;
-    background: transparent;
-    color: var(--color-text-muted, #8b8fa3);
-    cursor: pointer;
-    font-size: 0.75rem;
+  /* P4-F: the old `.overview-btn` rules were removed — Overview is now a
+     top-level tab (see MainTabs.svelte). The Workspace tab wraps its
+     LayoutSwitcher in a `.layout-slot` div with `margin-right: auto` so
+     the Switcher sticks to the left edge of the header while Settings
+     stays on the right (inherits `justify-content: flex-end` from the
+     .session-panel-header flex row). */
+  .layout-slot {
     margin-right: auto;
+    display: flex;
+    align-items: center;
   }
 
-  .overview-btn:hover {
-    background: var(--color-surface-hover, #1a1d25);
-    color: var(--color-text, #e6e8ef);
-  }
-
-  .overview-btn.active {
-    background: var(--color-accent, #60a5fa);
-    color: var(--color-surface, #0f1115);
-    border-color: var(--color-accent, #60a5fa);
+  .overview-tab-body {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   .settings-btn {
@@ -741,55 +1228,18 @@
     color: var(--color-text, #e6e8ef);
   }
 
-  /* P3-B: maximize button that enters focus mode on the active session. */
-  .focus-enter-btn {
-    margin-left: auto;
-    width: 24px;
-    height: 24px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid var(--color-border, #2a2d35);
-    border-radius: var(--radius-sm, 4px);
-    background: transparent;
-    color: var(--color-text-muted, #8b8fa3);
-    font-size: 0.875rem;
-    line-height: 1;
-    cursor: pointer;
-    transition: background 150ms, color 150ms;
-  }
+  /* Phase 4-B/C: the old `.active-session-header` + `.focus-enter-btn` +
+     `.session-status` selectors lived here to style the single-session
+     header that has now moved into `PaneSlot.svelte`. Focus mode still
+     uses `.split-view-wrapper` (below) and `.readonly-banner` for its
+     breadcrumb chip — the rest were pruned to satisfy svelte-check's
+     unused-selector warnings. */
 
-  .focus-enter-btn:hover,
-  .focus-enter-btn:focus-visible {
-    background: var(--color-surface-hover, #1e2028);
-    color: var(--color-text, #e6e8ef);
-  }
-
-  /* Phase 2-D: project-colour tint on the active-session header. A 4 px left
-     strip carries the full project colour as an identity accent; the header
-     background is a subtle 8% mix so the tint is visible on dark surfaces
-     without reducing text contrast. Both fall back to `--color-accent` for
-     projects without `settings.color`. */
-  .active-session-header {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3, 0.75rem);
-    padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
-    border-bottom: 1px solid var(--color-border, #2a2d35);
-    border-left: 4px solid var(--project-color, var(--color-accent, #60a5fa));
-    background: color-mix(
-      in srgb,
-      var(--project-color, var(--color-accent, #60a5fa)) 8%,
-      var(--color-surface, #0f1115)
-    );
-  }
-
-  /* Layout carrier for the SplitView: `flex: 1; min-height: 0;
-     overflow: hidden;` give the split its bounding box inside the content
-     panel. This wrapper ALSO threads `--project-color` via its inline
-     `style` attribute, so the Phase 1 flash overlay and any future
-     companion-pane tinting can read the per-project colour from the
-     closest ancestor while SplitView itself stays layout-agnostic. */
+  /* Layout carrier for the SplitView in focus mode: `flex: 1;
+     min-height: 0; overflow: hidden;` give the split its bounding box
+     inside the content panel. Threads `--project-color` via the inline
+     `style` attribute so the Phase 1 flash overlay picks up the same
+     per-project colour. */
   .split-view-wrapper {
     display: flex;
     flex-direction: column;
@@ -797,18 +1247,6 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
-  }
-
-  .active-session-header h2 {
-    margin: 0;
-    font-size: 1rem;
-    font-weight: 600;
-  }
-
-  .session-status {
-    font-size: 0.75rem;
-    color: var(--color-text-muted, #8b8fa3);
-    text-transform: capitalize;
   }
 
   .readonly-banner {
