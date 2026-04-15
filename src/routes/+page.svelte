@@ -15,6 +15,7 @@
   import { sessionSetFocus } from '$lib/api/sessions';
   import { scratchpadStore } from '$lib/stores/scratchpad.svelte';
   import { workspaceStore } from '$lib/stores/workspace.svelte';
+  import { isEditableTarget } from '$lib/util/isEditableTarget';
   import type { Project } from '$lib/api/projects';
   import type { SessionSummary } from '$lib/api/sessions';
 
@@ -24,6 +25,24 @@
   let overviewOpen = $state(false);
   let spawnDialogOpen = $state(false);
   let spawnDialogProject = $state<Project | null>(null);
+  /** P1-B: monotonic token that increments on every session activation. Passed
+   *  to SplitView so it can re-trigger the 1.5 s border flash even when the
+   *  user clicks an already-active session row (setting the same boolean
+   *  `highlighted=true` twice wouldn't restart the CSS animation). Phase 4
+   *  will expand this to support one token per slot. */
+  let highlightToken = $state(0);
+  /** Session id that was most recently activated. Only the pane rendering
+   *  this session receives a non-zero token (so flashes don't bleed across
+   *  slots once Phase 4 lands). */
+  let highlightSessionId = $state<number | null>(null);
+
+  /** P1-A: derived Set of session ids currently visible in a pane. Phase 1 is
+   *  always the single active session; Phase 4 expands to the full slot set. */
+  const activeSessionIds = $derived<Set<number>>(
+    activeSessionId !== null ? new Set([activeSessionId]) : new Set(),
+  );
+
+  let sessionListRef = $state<{ focusFilter: () => void } | undefined>();
 
   function openSpawnDialog(project: Project | null = null): void {
     spawnDialogProject = project;
@@ -52,6 +71,26 @@
     overviewOpen = false;
     // T130: persist active session change.
     workspaceStore.update({ focused_session_id: session.id });
+
+    // P1-B: Re-trigger the pane border flash. Incrementing the token — rather
+    // than setting a boolean — ensures that clicking an already-active row
+    // restarts the CSS animation (assigning the same boolean twice would not).
+    // The SplitView keys its flash on this token, so a new value = new flash.
+    highlightSessionId = session.id;
+    highlightToken += 1;
+  }
+
+  function handleWindowKeydown(event: KeyboardEvent): void {
+    if (
+      event.key === '/' &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      !isEditableTarget(event.target)
+    ) {
+      event.preventDefault();
+      sessionListRef?.focusFilter();
+    }
   }
 
   onMount(() => {
@@ -108,6 +147,8 @@
   });
 </script>
 
+<svelte:window onkeydown={handleWindowKeydown} />
+
 <div class="app-layout">
   <Sidebar
     {selectedProjectId}
@@ -139,8 +180,10 @@
       </div>
       <AlertBar onActivateSession={handleActivateSession} />
       <SessionList
+        bind:this={sessionListRef}
         {selectedProjectId}
         {missingSessions}
+        {activeSessionIds}
         onActivateSession={handleActivateSession}
         onSpawnSession={() => openSpawnDialog(
           selectedProjectId !== null
@@ -162,7 +205,11 @@
           {/if}
         </div>
         {#key `${activeSessionId}-${activeSession.reattached_mirror}`}
-          <SplitView sessionId={activeSessionId} session={activeSession} />
+          <SplitView
+            sessionId={activeSessionId}
+            session={activeSession}
+            highlightToken={highlightSessionId === activeSessionId ? highlightToken : 0}
+          />
         {/key}
       {:else}
         <div class="empty-content">
@@ -308,7 +355,7 @@
   .readonly-banner {
     padding: 2px 8px;
     border-radius: var(--radius-sm, 4px);
-    background: var(--color-warning-bg, #713f12);
+    background: var(--color-warning-bg, #3d2e00);
     color: var(--color-warning, #fbbf24);
     font-size: 0.6875rem;
     font-weight: 600;

@@ -8,9 +8,11 @@
   import { sessionAcknowledgeAlert } from '$lib/api/notifications';
   import type { SessionSummary } from '$lib/api/sessions';
 
-  const { onActivateSession } = $props<{
+  interface Props {
     onActivateSession?: (session: SessionSummary) => void;
-  }>();
+  }
+
+  let { onActivateSession }: Props = $props();
 
   const alerts = $derived(sessionsStore.sessionsWithAlerts);
 
@@ -26,6 +28,17 @@
       // Silently ignore — the event bus will update the store when the
       // backend confirms the clear.
     }
+  }
+
+  /** P1-B: activate the session AND emit a scroll-to event so the session list
+   *  scrolls the row into view. The event is handled by SessionList. */
+  function goToSession(session: SessionSummary): void {
+    onActivateSession?.(session);
+    window.dispatchEvent(
+      new CustomEvent('tend:session-scroll-to', {
+        detail: { sessionId: session.id },
+      }),
+    );
   }
 </script>
 
@@ -48,7 +61,7 @@
             {/if}
             <button
               class="alert-go-btn"
-              onclick={() => onActivateSession?.(session)}
+              onclick={() => goToSession(session)}
               title="Jump to session"
             >
               Go to
@@ -69,10 +82,11 @@
 
 <style>
   .alert-bar {
-    background: var(--color-warning-bg, #fef3c7);
-    border-bottom: 1px solid var(--color-warning-border, #f59e0b);
+    background: var(--color-warning-bg, #3d2e00);
+    border-bottom: 1px solid var(--color-warning, #fbbf24);
     padding: 0.5rem 1rem;
     font-size: 0.875rem;
+    color: var(--color-text, #e6e8ef);
   }
 
   .alert-bar-header {
@@ -89,8 +103,8 @@
     justify-content: center;
     width: 1.25rem;
     height: 1.25rem;
-    background: var(--color-warning, #f59e0b);
-    color: white;
+    background: var(--color-warning, #fbbf24);
+    color: var(--color-surface, #0f1115);
     border-radius: 50%;
     font-size: 0.75rem;
     font-weight: 700;
@@ -113,52 +127,53 @@
   }
 
   .alert-project {
-    color: var(--color-text-muted, #6b7280);
+    color: var(--color-text-muted, #8b8fa3);
     font-size: 0.8125rem;
   }
 
   .alert-separator {
-    color: var(--color-text-muted, #6b7280);
+    color: var(--color-text-muted, #8b8fa3);
     opacity: 0.5;
   }
 
   .alert-label {
     font-weight: 500;
+    color: var(--color-text, #e6e8ef);
   }
 
   .alert-reason {
-    color: var(--color-text-muted, #6b7280);
+    color: var(--color-text-muted, #8b8fa3);
     font-style: italic;
   }
 
   .alert-go-btn {
     margin-left: auto;
     padding: 0.125rem 0.5rem;
-    border: 1px solid var(--color-info-border, #3b82f6);
+    border: 1px solid var(--color-accent, #60a5fa);
     border-radius: 0.25rem;
     background: transparent;
-    color: var(--color-info-text, #1d4ed8);
+    color: var(--color-accent, #60a5fa);
     cursor: pointer;
     font-size: 0.75rem;
     transition: background-color 0.15s;
   }
 
   .alert-go-btn:hover {
-    background: var(--color-info-hover, #dbeafe);
+    background: color-mix(in srgb, var(--color-accent, #60a5fa) 15%, transparent);
   }
 
   .alert-ack-btn {
     padding: 0.125rem 0.5rem;
-    border: 1px solid var(--color-warning-border, #f59e0b);
+    border: 1px solid var(--color-warning, #fbbf24);
     border-radius: 0.25rem;
     background: transparent;
-    color: var(--color-warning-text, #92400e);
+    color: var(--color-warning, #fbbf24);
     cursor: pointer;
     font-size: 0.75rem;
     transition: background-color 0.15s;
   }
 
   .alert-ack-btn:hover {
-    background: var(--color-warning-hover, #fde68a);
+    background: color-mix(in srgb, var(--color-warning, #fbbf24) 15%, transparent);
   }
 </style>

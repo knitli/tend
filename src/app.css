@@ -41,6 +41,10 @@ body,
 	--color-accent: #60a5fa;
 	--color-accent-muted: #3b82f6;
 
+	/* Warning (dark-theme compatible — used by AlertBar and needs-input badges) */
+	--color-warning-bg: #3d2e00;
+	--color-warning: #fbbf24;
+
 	/* Spacing */
 	--space-1: 4px;
 	--space-2: 8px;

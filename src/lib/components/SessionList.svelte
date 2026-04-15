@@ -10,6 +10,9 @@
   interface Props {
     selectedProjectId?: number | null;
     missingSessions?: Set<number>;
+    /** Session ids currently visible in a pane slot. In Phase 1 this is always a
+     *  set of zero or one — Phase 4 expands it to the full visible-slot set. */
+    activeSessionIds?: Set<number>;
     onActivateSession?: (session: SessionSummary) => void;
     onSpawnSession?: () => void;
   }
@@ -17,9 +20,40 @@
   let {
     selectedProjectId = null,
     missingSessions = new Set(),
+    activeSessionIds = new Set(),
     onActivateSession,
     onSpawnSession,
   }: Props = $props();
+
+  let filterInputEl: HTMLInputElement | undefined = $state();
+
+  /** Focus the filter input. Called from the parent page when the `/`
+   *  keyboard shortcut is pressed. Exported via Svelte 5 runes module API. */
+  export function focusFilter(): void {
+    filterInputEl?.focus();
+    filterInputEl?.select();
+  }
+
+  /** P1-B: handle AlertBar "Go to" → scroll a session row into view.
+   *  TODO(phase-4): when the Workspace tab mounts a second SessionList, scope
+   *  this listener to the list container (or add instance disambiguation to
+   *  the event payload) so both lists don't scroll independently and fight
+   *  over `document.querySelector`. */
+  $effect(() => {
+    function handleScrollTo(event: Event): void {
+      const detail = (event as CustomEvent<{ sessionId: number }>).detail;
+      if (!detail) return;
+      const el = document.querySelector(`[data-session-id="${detail.sessionId}"]`);
+      const behavior = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+        ? 'auto'
+        : 'smooth';
+      el?.scrollIntoView({ behavior, block: 'nearest' });
+    }
+    window.addEventListener('tend:session-scroll-to', handleScrollTo);
+    return () => {
+      window.removeEventListener('tend:session-scroll-to', handleScrollTo);
+    };
+  });
 
   let filterText = $state('');
   let debouncedFilter = $state('');
@@ -131,6 +165,7 @@
 <div class="session-list" role="region" aria-label="Sessions">
   <div class="session-list-header">
     <input
+      bind:this={filterInputEl}
       type="search"
       placeholder="Filter sessions..."
       bind:value={filterText}
@@ -202,6 +237,8 @@
               {session}
               projectName={selectedProjectId !== null ? '' : getProjectName(session.project_id)}
               missing={missingSessions.has(session.id)}
+              active={activeSessionIds.has(session.id)}
+              anyActive={activeSessionIds.size > 0}
               onActivate={handleActivate}
             />
           {/each}

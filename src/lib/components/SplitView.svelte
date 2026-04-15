@@ -20,9 +20,33 @@
     sessionId: number;
     /** Full session summary from the store — used for display. */
     session: SessionSummary;
+    /** P1-B: monotonic token that increments on every activation. Incrementing
+     *  the token re-triggers the 1.5 s border flash, even when the same
+     *  session is re-activated (clicking an already-active row). A token of 0
+     *  means "never activated" and no flash runs. */
+    highlightToken?: number;
   }
 
-  let { sessionId, session }: Props = $props();
+  let { sessionId, session, highlightToken = 0 }: Props = $props();
+
+  /** Drives the `.split-view-highlighted` class. Toggled off + on across a
+   *  frame whenever `highlightToken` changes so the CSS animation restarts
+   *  (setting the same class twice wouldn't restart it). */
+  let flashing = $state(false);
+
+  $effect(() => {
+    // Subscribe to every token change, including repeats of the same id.
+    const token = highlightToken;
+    if (token === 0) return;
+    // Step 1: remove the class (or leave it off on the first run).
+    flashing = false;
+    // Step 2: re-add the class on the next animation frame so the CSS
+    // animation plays from the start.
+    const raf = requestAnimationFrame(() => {
+      flashing = true;
+    });
+    return () => cancelAnimationFrame(raf);
+  });
 
   let companion = $state<CompanionTerminal | null>(null);
   let activating = $state(true);
@@ -121,7 +145,12 @@
   }
 </script>
 
-<div class="split-view" bind:this={containerEl} class:dragging>
+<div
+  class="split-view"
+  bind:this={containerEl}
+  class:dragging
+  class:split-view-highlighted={flashing}
+>
   {#if activating}
     <div class="loading">
       <p class="muted">Activating session...</p>
@@ -179,12 +208,49 @@
 
 <style>
   .split-view {
+    /* Position relative so the flash overlay (.split-view::before) anchors
+       here. An overlay is used instead of a real border to avoid shrinking
+       the xterm container by 4 px in each dimension — a real 2 px border
+       compresses the terminal (and its fit-addon measurements) at all times.
+       The overlay sits on top of the pane, pointer-events: none so it never
+       intercepts clicks, and only becomes visible during the flash. */
+    position: relative;
     display: flex;
     flex-direction: row;
     flex: 1;
     min-width: 0;
     min-height: 0;
     overflow: hidden;
+  }
+
+  .split-view::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border: 2px solid transparent;
+    z-index: 10;
+  }
+
+  /* P1-B: 1.5 s border flash animation from project colour back to transparent. */
+  .split-view-highlighted::before {
+    animation: flash-border 1500ms ease-out 1;
+  }
+
+  @keyframes flash-border {
+    0% {
+      border-color: var(--project-color, var(--color-accent, #60a5fa));
+    }
+    100% {
+      border-color: transparent;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .split-view-highlighted::before {
+      animation: none;
+      border-color: transparent;
+    }
   }
 
   .content-stack {
