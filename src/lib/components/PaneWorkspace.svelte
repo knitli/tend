@@ -64,8 +64,9 @@
     /** Phase 5: restart a ghost slot. Receives the slot's session_id (which
      *  references a session that no longer exists in the store); the parent
      *  looks up the slot's `ghost_data`, calls `sessionSpawn`, and updates
-     *  the slot's `session_id` to the new one. Returns the new id or null
-     *  on failure so PaneSlot can clear its loading/error state. */
+     *  the slot's `session_id` to the new one. Resolves with the new id on
+     *  success, may resolve with null for a generic failure, and may
+     *  throw/reject with a specific error so PaneSlot can surface it. */
     onRestartSlot?: (slotSessionId: number) => Promise<number | null>;
   }
 

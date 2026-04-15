@@ -193,7 +193,7 @@ impl WorkbenchState {
         let mut g = self
             .visible_session_ids
             .write()
-            .expect("visible_session_ids lock poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         g.clear();
         g.extend(ids);
     }
@@ -202,7 +202,7 @@ impl WorkbenchState {
     pub fn visible_sessions_snapshot(&self) -> HashSet<i64> {
         self.visible_session_ids
             .read()
-            .expect("visible_session_ids lock poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
     }
 

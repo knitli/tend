@@ -79,7 +79,9 @@
     ghostData?: GhostSessionData;
     /** Phase 5: restart a ghost slot. The parent re-runs the stored command
      *  via `sessionSpawn` and updates the slot's `session_id` to the new
-     *  session on success. Returns the new id or `null` on failure. */
+     *  session on success. Returns the new id on success, may return `null`
+     *  for a handled failure, and may throw/reject to surface a specific
+     *  error message. */
     onRestart?: () => Promise<number | null>;
   }
 
@@ -183,7 +185,6 @@
   const canRestart = $derived(
     isGhost && ghostCommand.length > 0 && onRestart !== undefined,
   );
-  const projectColor = $derived(getProjectColor(project));
 
   const statusLabel = $derived.by(() => {
     if (!session) return '';
