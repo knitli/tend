@@ -120,6 +120,11 @@ impl ProjectService {
         // palette definition.
         let mut settings = ProjectSettings::default();
 
+        // Use an explicit transaction so that if the settings UPDATE fails,
+        // the INSERT is rolled back and the caller gets a clean error with no
+        // partially-initialized row.
+        let mut tx = db.pool().begin().await?;
+
         // Insert first so we have the id to derive the palette index from.
         let row: (i64,) = sqlx::query_as(
             r#"
@@ -131,13 +136,12 @@ impl ProjectService {
         .bind(&canonical_str)
         .bind(name)
         .bind(&now_str)
-        .fetch_one(db.pool())
+        .fetch_one(&mut *tx)
         .await?;
 
         let project_id = ProjectId::new(row.0);
 
-        // Auto-assign colour: palette[(id - 1) % 12]. Skipped if an explicit
-        // colour is ever threaded through (future-proof for layout imports).
+        // Auto-assign colour on registration: palette[(id - 1) % 12].
         // Subtracting 1 means id=1 → first palette entry (blue, matches accent).
         let idx = row.0.saturating_sub(1) as usize % COLOR_PALETTE.len();
         settings.color = Some(COLOR_PALETTE[idx].to_string());
@@ -147,8 +151,10 @@ impl ProjectService {
         sqlx::query("UPDATE projects SET settings_json = ?1 WHERE id = ?2")
             .bind(&settings_json)
             .bind(project_id.get())
-            .execute(db.pool())
+            .execute(&mut *tx)
             .await?;
+
+        tx.commit().await?;
 
         let project = Project {
             id: project_id,

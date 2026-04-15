@@ -114,8 +114,19 @@ function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
 let component: ReturnType<typeof mount> | null = null;
 
 describe("SessionList scroll-to event wiring", () => {
+	// jsdom does not implement scrollIntoView. We install a no-op stub in
+	// beforeEach if it isn't present and restore whatever was there in afterEach,
+	// so the prototype is left clean for other test files.
+	let savedScrollIntoView: typeof Element.prototype.scrollIntoView | undefined;
+
 	beforeEach(() => {
 		sessionsStore.add(makeSession({ id: 123 }));
+		savedScrollIntoView = (Element.prototype as unknown as Record<string, unknown>)
+			.scrollIntoView as typeof Element.prototype.scrollIntoView | undefined;
+		if (typeof savedScrollIntoView !== "function") {
+			// eslint-disable-next-line @typescript-eslint/no-empty-function
+			(Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {};
+		}
 	});
 
 	afterEach(() => {
@@ -126,6 +137,12 @@ describe("SessionList scroll-to event wiring", () => {
 		sessionsStore.remove(123);
 		document.body.innerHTML = "";
 		vi.restoreAllMocks();
+		if (typeof savedScrollIntoView === "function") {
+			Element.prototype.scrollIntoView = savedScrollIntoView;
+		} else {
+			delete (Element.prototype as unknown as Record<string, unknown>).scrollIntoView;
+		}
+		savedScrollIntoView = undefined;
 	});
 
 	it("calls scrollIntoView on the matching row when the event fires", () => {
