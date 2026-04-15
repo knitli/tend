@@ -156,14 +156,22 @@
     visibleSlots.length > 0 ? 100 / visibleSlots.length : 100,
   );
 
-  // Call sessionSetVisible whenever the slot id set changes. We re-derive a
-  // join-string so Svelte's dirty-tracking doesn't over-fire on order-only
-  // changes (paneforge layouts should not trigger a backend round-trip).
-  const visibleKey = $derived(slots.map((s) => s.session_id).join(','));
+  // Call sessionSetVisible whenever the set of VISIBLE slot ids changes. We
+  // re-derive a join-string so Svelte's dirty-tracking doesn't over-fire on
+  // order-only changes (paneforge layouts should not trigger a backend
+  // round-trip).
+  //
+  // Review fix (Phase 4 perf): forward only the ids of slots that are
+  // actually mounted (`visibleSlots`), not every slot. Slots in overflow
+  // aren't rendered, so forwarding their PTY bytes across IPC is pure
+  // waste. Bringing an overflow slot into view re-runs this effect and
+  // replay-backlog handles the catch-up, so no data is lost.
+  const visibleKey = $derived(visibleSlots.map((s) => s.session_id).join(','));
   $effect(() => {
-    // Track the key so the effect re-runs on changes.
-    const _ = visibleKey;
-    const ids = untrack(() => slots.map((s) => s.session_id));
+    // Reading `visibleKey` registers the dep; the `untrack` below keeps the
+    // one-id-per-slot read out of the tracking graph so we don't loop.
+    visibleKey;
+    const ids = untrack(() => visibleSlots.map((s) => s.session_id));
     sessionSetVisible({ sessionIds: ids }).catch(() => {});
   });
 

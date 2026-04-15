@@ -96,6 +96,13 @@
         : new Set(),
   );
 
+  /** `bind:this` is set on BOTH the Sessions-tab and Workspace-tab SessionList
+   *  renders below. This is safe because MainTabs gates each snippet with
+   *  `{#if value === '...'}`, so only the active tab mounts its SessionList at
+   *  any time — the two bindings never write to `sessionListRef` simultaneously.
+   *  Focus mode renders neither SessionList (MainTabs itself is hidden), so
+   *  `sessionListRef` is simply `undefined` there and `focusFilter()` is a
+   *  no-op via optional chaining. */
   let sessionListRef = $state<{ focusFilter: () => void } | undefined>();
 
   function openSpawnDialog(project: Project | null = null): void {
@@ -624,14 +631,27 @@
          `slots` array (persisted as `workspace_pane_slots`) — the spec
          hinted at separate `sessions_pane_slots`, but for Phase 4-F we
          collapse to one state to keep the slot set stable when the user
-         toggles between tabs. -->
-    <MainTabs
-      value={activeView}
-      onValueChange={setActiveView}
-      sessionsContent={sessionsTab}
-      workspaceContent={workspaceTab}
-      overviewContent={overviewTab}
-    />
+         toggles between tabs.
+
+         Review fix (Phase 4 UX): when focus mode is active, hide MainTabs
+         entirely and render the focus-mode body directly. Spec §3.2 intent
+         is "reduce peripheral chrome" while zoomed into one session, so the
+         tab strip must also disappear (not just the sidebars / session
+         panel). The `paneContent` snippet already handles the focus-mode
+         branch (renders breadcrumb + × + single SplitView). -->
+    {#if focusMode !== 'none'}
+      <div class="content-panel">
+        {@render paneContent()}
+      </div>
+    {:else}
+      <MainTabs
+        value={activeView}
+        onValueChange={setActiveView}
+        sessionsContent={sessionsTab}
+        workspaceContent={workspaceTab}
+        overviewContent={overviewTab}
+      />
+    {/if}
   </main>
 </div>
 
