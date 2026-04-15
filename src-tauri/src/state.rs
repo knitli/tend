@@ -193,7 +193,7 @@ impl WorkbenchState {
         let mut g = self
             .visible_session_ids
             .write()
-            .expect("visible_session_ids lock poisoned");
+            .unwrap_or_else(|e| e.into_inner());
         g.clear();
         g.extend(ids);
     }

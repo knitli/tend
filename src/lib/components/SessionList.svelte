@@ -7,7 +7,11 @@
   import { getProjectColor as resolveProjectColor } from '$lib/util/projectColor';
   import SessionRow from '$lib/components/SessionRow.svelte';
   import type { SessionSummary } from '$lib/api/sessions';
-  import { dndzone, type DndEvent } from 'svelte-dnd-action';
+  import {
+    dndzone,
+    SHADOW_PLACEHOLDER_ITEM_ID,
+    type DndEvent,
+  } from 'svelte-dnd-action';
 
   interface Props {
     selectedProjectId?: number | null;
@@ -40,7 +44,7 @@
    *  `type: 'session-source'` so the AddSlotZone accepts them equally.
    *  Each zone is source-only (`dropFromOthersDisabled: true`) so drags
    *  from one group cannot reparent into another. */
-  type DnDSessionItem = { id: string; sessionId: number };
+  type DnDSessionItem = { id: string; sessionId?: number };
 
   let filterInputEl: HTMLInputElement | undefined = $state();
 
@@ -344,7 +348,9 @@
             onfinalize={makeFinalizeHandler(projectId)}
           >
             {#each groupItems as item (item.id)}
-              {@const session = sessionById.get(item.sessionId)}
+              {@const session = typeof item.sessionId === 'number'
+                ? sessionById.get(item.sessionId)
+                : undefined}
               {#if session}
                 <SessionRow
                   {session}
@@ -356,6 +362,8 @@
                   onActivate={handleActivate}
                   {onOpenInSlot}
                 />
+              {:else if item.id === SHADOW_PLACEHOLDER_ITEM_ID}
+                <div class="dnd-shadow" data-item-id={item.id} aria-hidden="true"></div>
               {/if}
             {/each}
           </div>
@@ -524,6 +532,10 @@
   .project-group-items {
     display: flex;
     flex-direction: column;
+  }
+
+  .dnd-shadow {
+    display: none;
   }
 
   /* Phase 2-C: group headings carry a 2 px left-strip in the project colour

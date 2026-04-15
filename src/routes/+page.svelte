@@ -37,25 +37,6 @@
   let spawnDialogProject = $state<Project | null>(null);
   /** P4-E: Ctrl+K / Cmd+K quick-switch palette visibility. */
   let paletteOpen = $state(false);
-  /** P1-B: monotonic token that increments on every session activation. Passed
-   *  to SplitView so it can re-trigger the 1.5 s border flash even when the
-   *  user clicks an already-active session row (setting the same boolean
-   *  `highlighted=true` twice wouldn't restart the CSS animation). Phase 4
-   *  will expand this to support one token per slot. */
-  let highlightToken = $state(0);
-  /** Session id that was most recently activated. Only the pane rendering
-   *  this session receives a non-zero token (so flashes don't bleed across
-   *  slots once Phase 4 lands). */
-  let highlightSessionId = $state<number | null>(null);
-
-  /** P1-A: derived Set of session ids currently visible in a pane. Phase 1 is
-   *  always the single active session; Phase 4 expands to the full slot set. */
-  const activeSessionIds = $derived<Set<number>>(
-    activeSessionId !== null ? new Set([activeSessionId]) : new Set(),
-  );
-
-  let sessionListRef = $state<{ focusFilter: () => void } | undefined>();
-
   /** P3-A: sidebar collapse state. Hydrated from `workspace.ui.sidebar_collapsed`
    *  on mount (see onMount below) and persisted on every toggle. */
   let sidebarCollapsed = $state(false);
@@ -717,22 +698,6 @@
              `justify-content: flex-end` for the Sessions tab case where
              only Settings renders. -->
         <div class="layout-slot">
-    <div class="main-panel-body">
-      <div
-        class="session-panel"
-        aria-hidden={focusMode !== 'none'}
-        inert={focusMode !== 'none' ? true : undefined}
-      >
-        <div class="session-panel-header">
-          <button
-            class="overview-btn"
-            onclick={() => { overviewOpen = !overviewOpen; activeSessionId = null; scratchpadStore.clear(); workspaceStore.update({ focused_session_id: null }); }}
-            title="Cross-project reminder overview"
-            aria-label="Open reminder overview"
-            class:active={overviewOpen}
-          >
-            Overview
-          </button>
           <LayoutSwitcher onMissingSessions={(ids) => { missingSessions = new Set(ids); }} />
         </div>
         <button
