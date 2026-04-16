@@ -8,15 +8,45 @@
 import { isValidHexColor, type Project } from "$lib/api/projects";
 
 /**
- * Return the project's display colour as a validated `#rrggbb` hex string,
- * or `null` when the project has no colour set (or an invalid value that we
- * refuse to interpolate). Callers should use the result for the inline CSS
- * custom property and let `var(--project-color, var(--color-accent, ...))`
- * handle the fallback.
+ * 16-colour palette for auto-assignment. Designed for dark backgrounds:
+ * visually distinct, colourblind-friendly, and avoids clashing with the
+ * UI accent blue (#60a5fa). The project's `id` (stable integer PK) is
+ * used as an index so the assignment is deterministic across sessions.
+ */
+const AUTO_PALETTE: readonly string[] = [
+	"#f472b6", // pink
+	"#fb923c", // orange
+	"#a78bfa", // violet
+	"#34d399", // emerald
+	"#fbbf24", // amber
+	"#38bdf8", // sky
+	"#f87171", // red
+	"#4ade80", // green
+	"#c084fc", // purple
+	"#facc15", // yellow
+	"#2dd4bf", // teal
+	"#fb7185", // rose
+	"#818cf8", // indigo
+	"#a3e635", // lime
+	"#22d3ee", // cyan
+	"#e879f9", // fuchsia
+];
+
+/**
+ * Return the project's display colour as a validated `#rrggbb` hex string.
+ *
+ * Resolution order:
+ *  1. `project.settings.color` — user-chosen via the colour picker.
+ *  2. Deterministic palette colour derived from `project.id`.
+ *  3. `null` if the project itself is null/undefined (callers fall through
+ *     to the CSS `var(--project-color, var(--color-accent, ...))` chain).
  */
 export function getProjectColor(
 	project: Project | null | undefined,
 ): string | null {
-	const raw = project?.settings?.color;
-	return isValidHexColor(raw) ? raw : null;
+	if (!project) return null;
+	const raw = project.settings?.color;
+	if (isValidHexColor(raw)) return raw;
+	// Auto-assign from palette using the stable project id.
+	return AUTO_PALETTE[project.id % AUTO_PALETTE.length];
 }

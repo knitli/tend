@@ -79,21 +79,22 @@
   :global(.main-tabs-list) {
     display: flex;
     gap: 0;
-    padding: 0 0.5rem;
+    padding: 0 0.75rem;
     border-bottom: 1px solid var(--color-border, #2a2d35);
     background: var(--color-surface, #0f1115);
     flex-shrink: 0;
   }
 
   :global(.main-tabs-trigger) {
-    padding: 0.375rem 0.75rem;
+    padding: 0.5rem 1rem;
     border: none;
     background: transparent;
     color: var(--color-text-muted, #8b8fa3);
     cursor: pointer;
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     font-family: inherit;
-    line-height: 1.2;
+    font-weight: 500;
+    line-height: 1.3;
     border-bottom: 2px solid transparent;
     margin-bottom: -1px; /* overlap the list border so the active underline
                             replaces it cleanly */
@@ -116,13 +117,26 @@
   }
 
   /* Each Tabs.Content region owns the remaining vertical space when active.
-     bits-ui applies `hidden` to inactive content, so a single rule works. */
+     bits-ui applies `hidden` to inactive content, so a single rule works.
+     `align-items: stretch` ensures children fill the cross-axis (width)
+     and `justify-content: flex-start` keeps content top-aligned instead of
+     centering or end-aligning when the child doesn't fill all vertical space. */
   :global(.main-tabs-content) {
     flex: 1;
     min-width: 0;
     min-height: 0;
     display: flex;
     flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
     overflow: hidden;
+  }
+
+  /* bits-ui toggles the `hidden` attribute on inactive Tabs.Content divs.
+     Some browsers set `hidden` elements to `display: none !important` which
+     overrides our `display: flex`. Override it so the layout rule persists
+     and only `hidden` / aria-hidden controls visibility. */
+  :global(.main-tabs-content[hidden]) {
+    display: none !important;
   }
 </style>

@@ -11,7 +11,7 @@
   import SettingsDialog from '$lib/components/SettingsDialog.svelte';
   import SpawnSessionDialog from '$lib/components/SpawnSessionDialog.svelte';
   import LayoutSwitcher from '$lib/components/LayoutSwitcher.svelte';
-  import HamburgerButton from '$lib/components/HamburgerButton.svelte';
+  // HamburgerButton removed — sidebar edge toggle handles collapse/expand.
   import CommandPalette from '$lib/components/CommandPalette.svelte';
   import MainTabs, { type TabId } from '$lib/components/MainTabs.svelte';
   import { projectsStore } from '$lib/stores/projects.svelte';
@@ -39,13 +39,7 @@
   /** P3-A: sidebar collapse state. Hydrated from `workspace.ui.sidebar_collapsed`
    *  on mount (see onMount below) and persisted on every toggle. */
   let sidebarCollapsed = $state(false);
-  /** P3-A: hover-peek state. When the sidebar is collapsed AND the user is
-   *  hovering the left-edge hot zone (or the peeked sidebar itself), the
-   *  sidebar slides out as an *overlay* (position: absolute) so the content
-   *  area is not compressed. A short leave delay gives the cursor time to
-   *  cross from the hot zone onto the sidebar without collapsing. */
-  let sidebarPeeking = $state(false);
-  let peekLeaveTimer: ReturnType<typeof setTimeout> | null = null;
+  // Peek state removed — sidebar now uses a visible edge toggle instead.
 
   /** P3-B: focus mode state. `'single'` hides both sidebars and fills the
    *  content area with one session's SplitView. `'split-two'` is declared for
@@ -454,38 +448,10 @@
     }
   }
 
-  // ─── P3-A sidebar helpers ──────────────────────────────────────────────
+  // ─── Sidebar toggle ────────────────────────────────────────────────────
   function toggleSidebar(nextOpen: boolean): void {
     sidebarCollapsed = !nextOpen;
     workspaceStore.setUi('sidebar_collapsed', sidebarCollapsed);
-    // Opening the sidebar also cancels any in-flight peek.
-    if (sidebarCollapsed === false) {
-      sidebarPeeking = false;
-      if (peekLeaveTimer !== null) {
-        clearTimeout(peekLeaveTimer);
-        peekLeaveTimer = null;
-      }
-    }
-  }
-
-  function onPeekEnter(): void {
-    if (!sidebarCollapsed) return;
-    if (peekLeaveTimer !== null) {
-      clearTimeout(peekLeaveTimer);
-      peekLeaveTimer = null;
-    }
-    sidebarPeeking = true;
-  }
-
-  function onPeekLeave(): void {
-    if (!sidebarCollapsed) return;
-    // Delay the collapse so the cursor can cross from the hot zone onto the
-    // peeked sidebar overlay (and vice versa) without flicker.
-    if (peekLeaveTimer !== null) clearTimeout(peekLeaveTimer);
-    peekLeaveTimer = setTimeout(() => {
-      sidebarPeeking = false;
-      peekLeaveTimer = null;
-    }, 300);
   }
 
   // ─── P3-B focus mode helpers ──────────────────────────────────────────
@@ -685,10 +651,6 @@
     return () => {
       cleanup?.();
       closeCleanup?.();
-      if (peekLeaveTimer !== null) {
-        clearTimeout(peekLeaveTimer);
-        peekLeaveTimer = null;
-      }
       // Best-effort flush on unmount (fire-and-forget for non-Tauri contexts).
       workspaceStore.flush();
     };
@@ -706,49 +668,15 @@
     {selectedProjectId}
     onSelectProject={handleSelectProject}
     onSpawnSession={(project) => openSpawnDialog(project)}
-    open={focusMode === 'none' && (!sidebarCollapsed || sidebarPeeking)}
-    peeking={focusMode === 'none' && sidebarCollapsed && sidebarPeeking}
+    open={focusMode === 'none' && !sidebarCollapsed}
     contentId="sidebar-collapsible-content"
-    onPeekEnter={onPeekEnter}
-    onPeekLeave={onPeekLeave}
+    onToggle={toggleSidebar}
   />
 
   <main class="main-panel">
-    <!-- P3-A: hamburger button always visible (except in focus mode where
-         the sidebars are deliberately hidden and the user operates only on
-         one session). Toggles the Collapsible's open state. -->
-    {#if focusMode === 'none'}
-      <div class="hamburger-slot">
-        <HamburgerButton
-          open={!sidebarCollapsed}
-          controlsId="sidebar-collapsible-content"
-          onToggle={toggleSidebar}
-        />
-      </div>
-    {/if}
-
-    <!-- P3-A: transparent hover hot zone on the left edge of the main panel.
-         Only active when the sidebar is collapsed AND we're not in focus mode
-         (focus mode intentionally hides the sidebar). Review fix: the peek-
-         keep-alive zone was removed — the mouseenter/mouseleave handlers now
-         live on the `<aside>` element itself inside Sidebar.svelte, so the
-         cursor moving from the 48 px hotzone onto the peeked sidebar body
-         keeps the peek open via the aside's own events. -->
-    {#if sidebarCollapsed && focusMode === 'none'}
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class="sidebar-peek-hotzone"
-        aria-hidden="true"
-        onmouseenter={onPeekEnter}
-        onmouseleave={onPeekLeave}
-      ></div>
-    {/if}
-
-    <!-- P3-B: AlertBar lives at the top of .main-panel (not inside the session
-         panel) so it stays visible in focus mode. Alerts must never be hidden.
-         The alert-bar-frame wrapper reserves left padding so the hamburger
-         button (absolute-positioned at x=4) doesn't overlap alert content. -->
-    <div class="alert-bar-frame" class:with-hamburger={focusMode === 'none'}>
+    <!-- AlertBar lives at the top of .main-panel so it stays visible in
+         focus mode. Alerts must never be hidden. -->
+    <div class="alert-bar-frame">
       <AlertBar onActivateSession={handleActivateSession} />
     </div>
 
@@ -1023,48 +951,14 @@
     overflow: hidden;
   }
 
-  /* P3-A: hamburger button floats over the top-left of the main panel so it
-     remains reachable when the sidebar is collapsed to zero width. z-index
-     sits above the peek overlay (50) so the button is always on top. */
-  .hamburger-slot {
-    position: absolute;
-    top: 4px;
-    left: 4px;
-    z-index: 60;
-  }
+  /* Hamburger button and hover-peek hotzone removed — sidebar edge toggle
+     handles collapse/expand directly. */
 
-  /* P3-A: invisible hover hot zone on the left edge. Activates the peek
-     overlay when the sidebar is collapsed. */
-  .sidebar-peek-hotzone {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 48px;
-    height: 100%;
-    z-index: 30;
-  }
-
-  /* P3-A review fix: the separate peek-zone div was removed because it was
-     occluded by the sidebar overlay (z-index 50) and its events never fired.
-     The `<aside>` element in Sidebar.svelte now carries the mouseenter/leave
-     handlers directly, so the cursor moving from the hotzone onto the
-     peeked sidebar body keeps the peek alive. */
-
-  /* P3-A: AlertBar frame reserves left padding so the absolutely-positioned
-     hamburger button doesn't overlap alert content. 44 px = 32 px button + 8 px
-     margin. Only applied when the hamburger is visible (not in focus mode). */
-  .alert-bar-frame.with-hamburger {
-    padding-left: 44px;
-  }
-
-  /* P3-B: focus mode hides the session panel with a width transition. The
-     collapsed sidebar is already controlled by bits-ui; we force it closed
-     here so the content area expands to full width. */
-  .app-layout.focus-mode :global(.sidebar-collapsible[data-state="open"]),
-  .app-layout.focus-mode :global(.sidebar-collapsible[data-state="closed"]) {
-    width: 0;
-    border-right: 1px solid transparent;
-    overflow: hidden;
+  /* Focus mode hides the sidebar wrapper entirely so the content area
+     expands to full width. The sidebar's `open` prop is already set to
+     false when focus mode is active. */
+  .app-layout.focus-mode :global(.sidebar-wrapper) {
+    display: none;
   }
 
   .app-layout.focus-mode .session-panel {
@@ -1122,6 +1016,8 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
     overflow: hidden;
   }
 

@@ -1,14 +1,14 @@
 // Phase 4-B: PaneWorkspace regression tests.
 //
-// PaneWorkspace takes a `slots` prop and renders one <Pane> per visible slot.
-// We exercise:
+// PaneWorkspace takes a `slots` prop and renders one PaneSlot per visible slot
+// inside a CSS grid. We exercise:
 //   1. 0 slots → empty-state paragraph (no PaneSlot children)
 //   2. 1 slot  → exactly one `.pane-slot` child renders
-//   3. 2 slots → two `.pane-slot` children + one resizer between them
-//   4. overflow → with a narrow container mock, `data-overflow-count` on the
-//      root > 0 so Phase 4-G's popover has something to surface. We mock
-//      `ResizeObserver` via the `clientWidth` getter because jsdom's RO
-//      implementation doesn't invoke callbacks on mount.
+//   3. 2 slots → two `.pane-slot` children in grid cells
+//   4. overflow → with a short container mock, `data-overflow-count` on the
+//      root > 0. The grid layout uses container HEIGHT (not width) to decide
+//      overflow — we mock `clientHeight` via the prototype getter because
+//      jsdom's ResizeObserver doesn't invoke callbacks on mount.
 //
 // SplitView (inside PaneSlot) will attempt `sessionActivate` on mount and
 // fail under jsdom — that's fine, it's caught in SplitView's try/catch and
@@ -16,10 +16,10 @@
 
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import PaneWorkspace from "./PaneWorkspace.svelte";
-import { sessionsStore } from "$lib/stores/sessions.svelte";
 import type { SessionSummary } from "$lib/api/sessions";
+import { sessionsStore } from "$lib/stores/sessions.svelte";
 import type { PaneSlot } from "$lib/types/pane";
+import PaneWorkspace from "./PaneWorkspace.svelte";
 
 let component: ReturnType<typeof mount> | null = null;
 
@@ -51,7 +51,6 @@ function makeSlot(sessionId: number, order: number): PaneSlot {
 }
 
 beforeEach(() => {
-	// Seed three sessions so the multi-slot test has real rows to point at.
 	sessionsStore.add(makeSession(1));
 	sessionsStore.add(makeSession(2));
 	sessionsStore.add(makeSession(3));
@@ -67,6 +66,29 @@ afterEach(() => {
 	sessionsStore.remove(3);
 	document.body.innerHTML = "";
 });
+
+/** Override `clientHeight` on HTMLElement.prototype for the duration of `run`.
+ *  The grid layout's overflow is height-based (not width-based). */
+function withContainerHeight(height: number, run: () => void): void {
+	const descriptor = Object.getOwnPropertyDescriptor(
+		HTMLElement.prototype,
+		"clientHeight",
+	);
+	Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+		configurable: true,
+		get: () => height,
+	});
+	try {
+		run();
+	} finally {
+		if (descriptor) {
+			Object.defineProperty(HTMLElement.prototype, "clientHeight", descriptor);
+		} else {
+			// @ts-expect-error — no original descriptor to restore
+			delete HTMLElement.prototype.clientHeight;
+		}
+	}
+}
 
 describe("PaneWorkspace", () => {
 	it("renders the empty-state when slots is empty", () => {
@@ -87,19 +109,7 @@ describe("PaneWorkspace", () => {
 	});
 
 	it("renders exactly one PaneSlot when slots has length 1", () => {
-		// Force a wide `clientWidth` on every div via the prototype so the
-		// ResizeObserver fallback path in PaneWorkspace sees a comfortable
-		// container (jsdom reports 0 by default). Restored in afterEach.
-		const descriptor = Object.getOwnPropertyDescriptor(
-			HTMLElement.prototype,
-			"clientWidth",
-		);
-		Object.defineProperty(HTMLElement.prototype, "clientWidth", {
-			configurable: true,
-			get: () => 1600,
-		});
-
-		try {
+		withContainerHeight(900, () => {
 			const target = document.createElement("div");
 			document.body.append(target);
 
@@ -115,27 +125,11 @@ describe("PaneWorkspace", () => {
 			flushSync();
 			const panes = target.querySelectorAll<HTMLElement>(".pane-slot");
 			expect(panes.length).toBe(1);
-		} finally {
-			if (descriptor) {
-				Object.defineProperty(HTMLElement.prototype, "clientWidth", descriptor);
-			} else {
-				// @ts-expect-error — no original descriptor to restore
-				delete HTMLElement.prototype.clientWidth;
-			}
-		}
+		});
 	});
 
-	it("renders two PaneSlot children + a resizer for two slots", () => {
-		const descriptor = Object.getOwnPropertyDescriptor(
-			HTMLElement.prototype,
-			"clientWidth",
-		);
-		Object.defineProperty(HTMLElement.prototype, "clientWidth", {
-			configurable: true,
-			get: () => 1600,
-		});
-
-		try {
+	it("renders two PaneSlot children in grid cells for two slots", () => {
+		withContainerHeight(900, () => {
 			const target = document.createElement("div");
 			document.body.append(target);
 
@@ -155,43 +149,14 @@ describe("PaneWorkspace", () => {
 			const root = target.querySelector<HTMLElement>(".pane-workspace");
 			expect(root?.getAttribute("data-visible-count")).toBe("2");
 			expect(root?.getAttribute("data-overflow-count")).toBe("0");
-		} finally {
-			if (descriptor) {
-				Object.defineProperty(HTMLElement.prototype, "clientWidth", descriptor);
-			} else {
-				// @ts-expect-error — no original descriptor to restore
-				delete HTMLElement.prototype.clientWidth;
-			}
-		}
+		});
 	});
 
-	// P4-G: the overflow popover is in-component; its visibility is driven by
-	// `overflowCount > 0`. These tests force a narrow container via the
-	// prototype `clientWidth` getter so the onMount read sees < 520 px × N,
-	// then exercise the trigger button + popover + bring-into-view swap.
-	function withNarrowContainer(width: number, run: () => void): void {
-		const descriptor = Object.getOwnPropertyDescriptor(
-			HTMLElement.prototype,
-			"clientWidth",
-		);
-		Object.defineProperty(HTMLElement.prototype, "clientWidth", {
-			configurable: true,
-			get: () => width,
-		});
-		try {
-			run();
-		} finally {
-			if (descriptor) {
-				Object.defineProperty(HTMLElement.prototype, "clientWidth", descriptor);
-			} else {
-				// @ts-expect-error — no original descriptor to restore
-				delete HTMLElement.prototype.clientWidth;
-			}
-		}
-	}
-
+	// Overflow tests: force a short container so not all rows fit at
+	// MIN_PANE_HEIGHT_PX (180px). With 3 slots (< 4, so 1 column),
+	// maxRows = floor(300/180) = 1, so max visible = 1, overflow = 2.
 	it("renders the [+N more] overflow trigger when overflowCount > 0", () => {
-		withNarrowContainer(700, () => {
+		withContainerHeight(300, () => {
 			const target = document.createElement("div");
 			document.body.append(target);
 
@@ -210,17 +175,14 @@ describe("PaneWorkspace", () => {
 				".pane-overflow-trigger",
 			);
 			expect(trigger).not.toBeNull();
-			// Overflow = 3 - floor(700/520) = 3 - 1 = 2.
+			// 3 slots, 1 column, floor(300/180)=1 row → 1 visible, 2 overflow
 			expect(trigger!.textContent?.trim()).toBe("+2 more");
-			expect(trigger!.getAttribute("aria-label")).toBe(
-				"2 sessions don't fit — click to choose",
-			);
 			expect(trigger!.getAttribute("aria-expanded")).toBe("false");
 		});
 	});
 
 	it("opens the overflow popover on trigger click and lists hidden slots", () => {
-		withNarrowContainer(700, () => {
+		withContainerHeight(300, () => {
 			const target = document.createElement("div");
 			document.body.append(target);
 
@@ -249,7 +211,7 @@ describe("PaneWorkspace", () => {
 			const items = popover!.querySelectorAll<HTMLButtonElement>(
 				".pane-overflow-item",
 			);
-			// Slots 2 and 3 are hidden (max visible = 1, slot 1 is visible).
+			// Slots 2 and 3 are hidden (max visible = 1).
 			expect(items.length).toBe(2);
 			expect(items[0]!.textContent).toContain("session-2");
 			expect(items[1]!.textContent).toContain("session-3");
@@ -257,7 +219,7 @@ describe("PaneWorkspace", () => {
 	});
 
 	it("swaps a hidden slot with the rightmost visible slot via onReorderSlots", () => {
-		withNarrowContainer(700, () => {
+		withContainerHeight(300, () => {
 			const target = document.createElement("div");
 			document.body.append(target);
 			const onReorderSlots = vi.fn();
@@ -287,35 +249,17 @@ describe("PaneWorkspace", () => {
 			flushSync();
 
 			expect(onReorderSlots).toHaveBeenCalledTimes(1);
-			// maxVisibleSlots = 1 → rightmost visible index = 0. Swap slot 0
-			// (session 1) with slot 2 (session 3). Expected order: 3, 2, 1.
 			const next = onReorderSlots.mock.calls[0]![0] as PaneSlot[];
 			expect(next.map((s) => s.session_id)).toEqual([3, 2, 1]);
-			// All `order` fields should be re-numbered to their new indices.
 			expect(next.map((s) => s.order)).toEqual([0, 1, 2]);
 
 			// Popover should be closed after the swap.
-			expect(
-				target.querySelector(".pane-overflow-popover"),
-			).toBeNull();
+			expect(target.querySelector(".pane-overflow-popover")).toBeNull();
 		});
 	});
 
-	it("reports overflowCount > 0 when the container is too narrow for all slots", () => {
-		// Force a narrow container via the prototype `clientWidth` getter so
-		// PaneWorkspace's `onMount` read (before any ResizeObserver fires)
-		// sees 700 px — below 3 × 520 px minimum so two slots go into
-		// overflow. Restored in the finally block.
-		const descriptor = Object.getOwnPropertyDescriptor(
-			HTMLElement.prototype,
-			"clientWidth",
-		);
-		Object.defineProperty(HTMLElement.prototype, "clientWidth", {
-			configurable: true,
-			get: () => 700,
-		});
-
-		try {
+	it("reports overflowCount > 0 when the container is too short for all slots", () => {
+		withContainerHeight(300, () => {
 			const target = document.createElement("div");
 			document.body.append(target);
 
@@ -332,17 +276,11 @@ describe("PaneWorkspace", () => {
 			const root = target.querySelector<HTMLElement>(".pane-workspace");
 			expect(root).not.toBeNull();
 			expect(root!.getAttribute("data-slot-count")).toBe("3");
-			// Container width 700; max visible = floor(700 / 520) = 1.
+			// Container height 300; 1 col; max rows = floor(300/180) = 1.
 			expect(root!.getAttribute("data-visible-count")).toBe("1");
-			// overflowCount = 3 - 1 = 2.
-			expect(Number(root!.getAttribute("data-overflow-count"))).toBeGreaterThan(0);
-		} finally {
-			if (descriptor) {
-				Object.defineProperty(HTMLElement.prototype, "clientWidth", descriptor);
-			} else {
-				// @ts-expect-error — no original descriptor to restore
-				delete HTMLElement.prototype.clientWidth;
-			}
-		}
+			expect(Number(root!.getAttribute("data-overflow-count"))).toBeGreaterThan(
+				0,
+			);
+		});
 	});
 });

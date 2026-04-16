@@ -6,7 +6,7 @@
   resize via FitAddon.
 -->
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { createTerminal, type CreatedTerminal } from '$lib/xterm/createTerminal';
   import { companionSendInput, companionResize, companionRespawn, onCompanionOutput } from '$lib/api/companions';
   import type { UnlistenFn } from '@tauri-apps/api/event';
@@ -25,7 +25,19 @@
   onMount(async () => {
     if (!containerEl) return;
 
+    // Wait a tick so the flex layout has settled and the container has non-zero
+    // dimensions. Without this, createTerminal's initial fit.fit() can compute
+    // 0 rows × 0 cols, producing an invisible terminal that only recovers
+    // after a manual resize or restart.
+    await tick();
+
     created = createTerminal(containerEl);
+
+    // Re-fit after a short delay to catch late layout shifts (e.g. the split
+    // divider settling, bits-ui tab content transitioning from hidden).
+    requestAnimationFrame(() => {
+      try { created?.fit.fit(); } catch { /* teardown race */ }
+    });
 
     // Subscribe to companion output.
     unlisten = await onCompanionOutput((payload) => {

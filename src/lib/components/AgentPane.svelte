@@ -7,7 +7,7 @@
   - reattached-mirror → read-only with "Read-only after restart" banner
 -->
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { createTerminal, type CreatedTerminal } from '$lib/xterm/createTerminal';
   import {
     sessionSendInput,
@@ -57,11 +57,20 @@
   onMount(async () => {
     if (!containerEl) return;
 
+    // Wait a tick so the flex layout has settled and the container has non-zero
+    // dimensions before xterm measures for its initial fit.
+    await tick();
+
     created = createTerminal(containerEl, {
       cursorBlink: isInteractive,
       disableStdin: !isInteractive,
     });
     const terminal = created.terminal;
+
+    // Re-fit after a frame to catch late layout shifts.
+    requestAnimationFrame(() => {
+      try { created?.fit.fit(); } catch { /* teardown race */ }
+    });
 
     // Two-phase setup to handle the race between the supervisor starting
     // to emit PTY bytes and this component's listener being ready:
