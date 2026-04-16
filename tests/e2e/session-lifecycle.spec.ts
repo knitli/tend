@@ -7,7 +7,7 @@
  * Requires: tauri-driver + built Tauri app.
  */
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import {
 	clickSessionRow,
 	endSession,
@@ -21,7 +21,7 @@ test.describe("Session Lifecycle", () => {
 	test("session appears, activates with split view, and ends", async ({
 		page,
 	}) => {
-		await page.goto("http://localhost:1420");
+		await page.goto("/");
 		await waitForAppReady(page);
 
 		// Step 1: Register a project
@@ -61,10 +61,13 @@ test.describe("Session Lifecycle", () => {
 		// Step 6: End the session
 		await endSession(page, sessionId);
 
-		// Step 7: Assert session transitions to "ended"
-		const endedBadge = page.locator(
-			'.session-row:has-text("test-agent") .status-ended',
+		// Step 7: SessionList.svelte hides ended sessions by default
+		// (see src/lib/components/SessionList.svelte:95-99). Assert the
+		// row vanishes from the active list rather than hunting for a
+		// `.status-ended` badge that won't render.
+		const sessionRow = page.locator(
+			'.session-row:has(.session-label:has-text("test-agent"))',
 		);
-		await expect(endedBadge).toBeVisible({ timeout: 5_000 });
+		await expect(sessionRow).toHaveCount(0, { timeout: 5_000 });
 	});
 });

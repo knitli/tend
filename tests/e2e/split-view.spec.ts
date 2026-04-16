@@ -14,10 +14,11 @@
  * Requires: tauri-driver + built Tauri app.
  */
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import {
 	activateSession,
 	clickSessionRow,
+	invoke,
 	registerProject,
 	spawnSession,
 	waitForAppReady,
@@ -26,7 +27,7 @@ import {
 
 test.describe("Split View (US3)", () => {
 	test("activation mounts split view with both panes", async ({ page }) => {
-		await page.goto("http://localhost:1420");
+		await page.goto("/");
 		await waitForAppReady(page);
 
 		const projectId = await registerProject(
@@ -56,7 +57,7 @@ test.describe("Split View (US3)", () => {
 	});
 
 	test("companion respawn creates new companion terminal", async ({ page }) => {
-		await page.goto("http://localhost:1420");
+		await page.goto("/");
 		await waitForAppReady(page);
 
 		const projectId = await registerProject(
@@ -71,12 +72,9 @@ test.describe("Split View (US3)", () => {
 		await activateSession(page, sessionId);
 
 		// Respawn the companion via the companion_respawn command
-		await page.evaluate(async (sid) => {
-			const { invoke } = await import("@tauri-apps/api/core");
-			await invoke("companion_respawn", {
-				args: { session_id: sid },
-			});
-		}, sessionId);
+		await invoke(page, "companion_respawn", {
+			args: { session_id: sessionId },
+		});
 
 		// Click the session row to verify companion pane still renders
 		await clickSessionRow(page, "respawn-agent");
@@ -86,7 +84,7 @@ test.describe("Split View (US3)", () => {
 	});
 
 	test("wrapper-owned session row shows RO badge", async ({ page }) => {
-		await page.goto("http://localhost:1420");
+		await page.goto("/");
 		await waitForAppReady(page);
 
 		const projectId = await registerProject(

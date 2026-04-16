@@ -18,6 +18,7 @@
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@tauri-apps/cli": "^2.1.0",
     "@types/jsdom": "^28.0.1",
+    "canvas": "^3.2.3",
     "esbuild": "^0.28.0",
     "jsdom": "^29.0.2",
     "svelte": "^5.1.9",
@@ -33,6 +34,7 @@
   "name": "tend",
   "pnpm": {
     "onlyBuiltDependencies": [
+      "canvas",
       "esbuild"
     ]
   },

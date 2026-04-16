@@ -11,20 +11,23 @@
  * Requires: tauri-driver + built Tauri app.
  */
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import { registerProject, waitForAppReady } from "./helpers";
 
 test.describe("First Run", () => {
 	test("shows empty state on fresh launch", async ({ page }) => {
-		await page.goto("http://localhost:1420");
+		await page.goto("/");
 		await waitForAppReady(page);
 
-		const emptyState = page.locator("text=No projects registered");
+		// Sidebar.svelte renders this exact copy when project list is empty.
+		const emptyState = page.locator(
+			"text=No active projects. Add one to get started.",
+		);
 		await expect(emptyState).toBeVisible({ timeout: 5_000 });
 	});
 
 	test("can register a project and see it in sidebar", async ({ page }) => {
-		await page.goto("http://localhost:1420");
+		await page.goto("/");
 		await waitForAppReady(page);
 
 		const projectId = await registerProject(
@@ -34,7 +37,12 @@ test.describe("First Run", () => {
 		);
 		expect(projectId).toBeGreaterThan(0);
 
-		// Wait for the sidebar to update with the new project
+		// projectsStore.register is the UI path; backend-side invoke does not
+		// push a project:added event (no such event exists). Reload so the
+		// store re-hydrates from the (mock) backend and the row appears.
+		await page.reload();
+		await waitForAppReady(page);
+
 		await page.waitForSelector("text=E2E Test", {
 			state: "visible",
 			timeout: 5_000,
