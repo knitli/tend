@@ -5,7 +5,9 @@
   import { projectsStore } from '$lib/stores/projects.svelte';
   import { matchesSessionFilter } from '$lib/util/filterSession';
   import { getProjectColor as resolveProjectColor } from '$lib/util/projectColor';
+  import { sessionAgentKind, type AgentKind } from '$lib/util/agentKind';
   import SessionRow from '$lib/components/SessionRow.svelte';
+  import FilterChips from '$lib/components/FilterChips.svelte';
   import type { SessionSummary } from '$lib/api/sessions';
   import { dndzone, SHADOW_PLACEHOLDER_ITEM_ID, type DndEvent } from 'svelte-dnd-action';
 
@@ -22,6 +24,13 @@
      *  session so a non-mouse user can add it to a pane slot. When omitted,
      *  no `⊞` button is rendered. */
     onOpenInSlot?: (session: SessionSummary) => void;
+    /** When true, render the agent-kind filter chips and project dropdown
+     *  above the search row. Used by the full-page Sessions view; the
+     *  embedded session panel (Workspaces tab) keeps the compact header. */
+    showExtendedFilters?: boolean;
+    /** When the project dropdown is visible, a parent-driven setter lets the
+     *  Sessions page sync the scope back to the workspace store. */
+    onProjectScopeChange?: (projectId: number | null) => void;
   }
 
   let {
@@ -31,7 +40,13 @@
     onActivateSession,
     onSpawnSession,
     onOpenInSlot,
+    showExtendedFilters = false,
+    onProjectScopeChange,
   }: Props = $props();
+
+  /** Selected agent-kind chip. `null` = all. Owned here since it is purely a
+   *  display filter; not persisted across restarts by design. */
+  let agentKind = $state<AgentKind | null>(null);
 
   /** P4-D: svelte-dnd-action item shape. Each item needs a string `id` key
    *  (we use `dnd-session-<id>`) plus the payload our drop target cares
@@ -105,6 +120,11 @@
         const project = projectsStore.byId(s.project_id);
         return matchesSessionFilter(debouncedFilter, s.label, project?.display_name ?? '');
       });
+    }
+
+    // Agent-kind chip filter.
+    if (agentKind !== null) {
+      result = result.filter((s) => sessionAgentKind(s) === agentKind);
     }
 
     return result;
@@ -255,15 +275,36 @@
 </script>
 
 <div class="session-list" role="region" aria-label="Sessions">
+  {#if showExtendedFilters}
+    <div class="extended-filters">
+      <FilterChips value={agentKind} onChange={(v) => (agentKind = v)} />
+    </div>
+  {/if}
   <div class="session-list-header">
     <input
       bind:this={filterInputEl}
       type="search"
-      placeholder="Filter sessions..."
+      placeholder="Search sessions…"
       bind:value={filterText}
       class="filter-input"
       aria-label="Filter sessions by name or project"
     />
+    {#if showExtendedFilters}
+      <select
+        class="project-dropdown"
+        value={selectedProjectId ?? ''}
+        onchange={(e) => {
+          const v = (e.currentTarget as HTMLSelectElement).value;
+          onProjectScopeChange?.(v === '' ? null : Number(v));
+        }}
+        aria-label="Filter by project"
+      >
+        <option value="">All projects</option>
+        {#each projectsStore.activeProjects as project (project.id)}
+          <option value={String(project.id)}>{project.display_name}</option>
+        {/each}
+      </select>
+    {/if}
     <label class="toggle-label">
       <input
         type="checkbox"
@@ -385,6 +426,27 @@
     gap: var(--space-3, 0.75rem);
     padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
     border-bottom: 1px solid var(--color-border, #2a2d35);
+  }
+
+  .extended-filters {
+    padding: 0.625rem var(--space-4, 1rem);
+    border-bottom: 1px solid var(--color-border, #2a2d35);
+  }
+
+  .project-dropdown {
+    padding: var(--space-1, 0.25rem) var(--space-2, 0.5rem);
+    border: 1px solid var(--color-border, #2a2d35);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--color-surface-raised, #15171c);
+    color: var(--color-text, #e6e8ef);
+    font-size: 0.75rem;
+    font-family: inherit;
+    max-width: 180px;
+  }
+
+  .project-dropdown:focus {
+    outline: none;
+    border-color: var(--color-accent, #60a5fa);
   }
 
   .filter-input {
