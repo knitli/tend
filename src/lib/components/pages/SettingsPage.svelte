@@ -117,15 +117,20 @@
     }
   }
 
+  function lastPathSeparatorIndex(path: string): number {
+    for (let i = path.length - 1; i >= 0; i -= 1) {
+      const char = path[i];
+      if (char === '/' || char === '\\') return i;
+    }
+    return -1;
+  }
+
   // ── Derived: unique parent directories of registered projects ──────
   const projectParents = $derived.by<string[]>(() => {
     const seen = new Set<string>();
     for (const p of projectsStore.activeProjects) {
       const canonicalPath = p.canonical_path.replace(/[\\/]+$/, '');
-      const idx = Math.max(
-        canonicalPath.lastIndexOf('/'),
-        canonicalPath.lastIndexOf('\\'),
-      );
+      const idx = lastPathSeparatorIndex(canonicalPath);
       if (idx > 0) seen.add(canonicalPath.slice(0, idx));
     }
     return Array.from(seen).sort();

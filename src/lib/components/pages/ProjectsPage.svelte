@@ -12,6 +12,7 @@
   import { getProjectColor } from '$lib/util/projectColor';
 
   type SortKey = 'name' | 'added' | 'active';
+  const COLOR_SAVE_DEBOUNCE_MS = 200;
 
   interface Props {
     selectedProjectId?: number | null;
@@ -117,7 +118,7 @@
     pendingColorTimer = setTimeout(() => {
       pendingColorTimer = null;
       flushPendingColor();
-    }, 200);
+    }, COLOR_SAVE_DEBOUNCE_MS);
   }
 
   $effect(() => {
