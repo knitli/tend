@@ -95,10 +95,12 @@
   let syncError = $state<string | null>(null);
 
   function getSyncErrorMessage(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    if (typeof err === 'string' && err.length > 0) return err;
     return (
       projectsStore.error ||
       sessionsStore.error ||
-      (err instanceof Error ? err.message : String(err))
+      'Re-sync failed.'
     );
   }
 

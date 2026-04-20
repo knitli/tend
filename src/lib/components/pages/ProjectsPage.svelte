@@ -27,6 +27,8 @@
   let addingProject = $state(false);
   let newPath = $state('');
   let newName = $state('');
+  let colorSaveError = $state<string | null>(null);
+  let disposed = false;
 
   const sessionCounts = $derived.by<Map<number, number>>(() => {
     const map = new Map<number, number>();
@@ -87,9 +89,14 @@
     const hex = project ? pendingColor[project.id] : undefined;
     pendingColorProject = null;
     if (project && typeof hex === 'string') {
-      void projectsStore.update(project.id, {
-        settings: { ...project.settings, color: hex },
-      });
+      void (async () => {
+        const updated = await projectsStore.update(project.id, {
+          settings: { ...project.settings, color: hex },
+        });
+        if (!updated && !disposed) {
+          colorSaveError = projectsStore.error ?? 'Failed to save project colour.';
+        }
+      })();
     }
   }
 
@@ -103,6 +110,7 @@
   }
 
   function handleColorChange(project: Project, hex: string): void {
+    colorSaveError = null;
     pendingColor = { ...pendingColor, [project.id]: hex };
     pendingColorProject = project;
     if (pendingColorTimer !== null) clearTimeout(pendingColorTimer);
@@ -113,11 +121,10 @@
   }
 
   $effect(() => {
+    disposed = false;
     return () => {
-      if (pendingColorTimer !== null) {
-        clearTimeout(pendingColorTimer);
-        pendingColorTimer = null;
-      }
+      disposed = true;
+      flushPendingColor();
     };
   });
 </script>
@@ -165,6 +172,9 @@
 
   {#if projectsStore.error}
     <p class="error" role="alert">{projectsStore.error}</p>
+  {/if}
+  {#if colorSaveError}
+    <p class="error" role="alert">{colorSaveError}</p>
   {/if}
 
   <div class="list-wrap">
