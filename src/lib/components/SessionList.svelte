@@ -300,8 +300,10 @@
         aria-label="Filter by project"
       >
         <option value="">All projects</option>
-        {#each projectsStore.activeProjects as project (project.id)}
-          <option value={String(project.id)}>{project.display_name}</option>
+        {#each projectsStore.projects as project (project.id)}
+          <option value={String(project.id)} disabled={project.archived_at !== null}>
+            {project.display_name}
+          </option>
         {/each}
       </select>
     {/if}

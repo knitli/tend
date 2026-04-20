@@ -14,6 +14,7 @@
     type NotificationChannel,
     type QuietHours,
   } from '$lib/api/notifications';
+  import packageJson from '../../../../package.json';
   import { projectsStore } from '$lib/stores/projects.svelte';
   import { sessionsStore } from '$lib/stores/sessions.svelte';
 
@@ -91,13 +92,28 @@
 
   // ── Data Sync ──────────────────────────────────────────────────────
   let syncing = $state(false);
+  let syncError = $state<string | null>(null);
+
+  function getSyncErrorMessage(err: unknown): string {
+    return (
+      projectsStore.error ||
+      sessionsStore.error ||
+      (err instanceof Error ? err.message : String(err))
+    );
+  }
+
   async function resync(): Promise<void> {
     syncing = true;
+    syncError = null;
     try {
       await Promise.all([
         projectsStore.hydrate({ includeArchived: true }),
         sessionsStore.hydrate({ includeEnded: false }),
       ]);
+      const storeError = projectsStore.error || sessionsStore.error;
+      if (storeError) syncError = storeError;
+    } catch (err) {
+      syncError = getSyncErrorMessage(err);
     } finally {
       syncing = false;
     }
@@ -107,11 +123,17 @@
   const projectParents = $derived.by<string[]>(() => {
     const seen = new Set<string>();
     for (const p of projectsStore.activeProjects) {
-      const idx = p.canonical_path.replace(/\/$/, '').lastIndexOf('/');
-      if (idx > 0) seen.add(p.canonical_path.slice(0, idx));
+      const canonicalPath = p.canonical_path.replace(/[\\/]+$/, '');
+      const idx = Math.max(
+        canonicalPath.lastIndexOf('/'),
+        canonicalPath.lastIndexOf('\\'),
+      );
+      if (idx > 0) seen.add(canonicalPath.slice(0, idx));
     }
     return Array.from(seen).sort();
   });
+
+  const appVersion = packageJson.version;
 </script>
 
 <div class="settings-page">
@@ -217,6 +239,7 @@
         <span class="icon" aria-hidden="true">⟳</span> Data Sync
       </h2>
       <p class="card-subtitle">Re-hydrate projects and sessions from the workbench backend.</p>
+      {#if syncError}<p class="error" role="alert">{syncError}</p>{/if}
       <div class="actions">
         <button class="btn primary" onclick={resync} disabled={syncing}>
           {#if syncing}<SpinnerIcon />Syncing…{:else}Re-sync Now{/if}
@@ -231,7 +254,7 @@
       </h2>
       <div class="field">
         <span class="field-label">Version</span>
-        <span>0.1.0</span>
+        <span>{appVersion}</span>
       </div>
       <div class="field">
         <span class="field-label">Data access</span>

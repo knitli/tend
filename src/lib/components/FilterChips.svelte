@@ -16,13 +16,12 @@
   let { value, onChange }: Props = $props();
 </script>
 
-<div class="filter-chips" role="radiogroup" aria-label="Filter by agent">
+<div class="filter-chips" role="group" aria-label="Filter by agent">
   <button
     type="button"
     class="chip chip-all"
     class:active={value === null}
-    role="radio"
-    aria-checked={value === null}
+    aria-pressed={value === null}
     onclick={() => onChange(null)}
   >
     All
@@ -33,8 +32,7 @@
       class="chip"
       class:active={value === meta.id}
       style="--chip-color: {meta.color}"
-      role="radio"
-      aria-checked={value === meta.id}
+      aria-pressed={value === meta.id}
       onclick={() => onChange(meta.id)}
     >
       <span class="dot" aria-hidden="true"></span>

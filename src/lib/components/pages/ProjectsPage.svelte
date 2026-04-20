@@ -75,19 +75,51 @@
   let pickerId = $state<number | null>(null);
   let pickerEl = $state<HTMLButtonElement | null>(null);
   let pendingColor = $state<Record<number, string>>({});
+  let pendingColorTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingColorProject: Project | null = null;
+
+  function flushPendingColor(): void {
+    if (pendingColorTimer !== null) {
+      clearTimeout(pendingColorTimer);
+      pendingColorTimer = null;
+    }
+    const project = pendingColorProject;
+    const hex = project ? pendingColor[project.id] : undefined;
+    pendingColorProject = null;
+    if (project && typeof hex === 'string') {
+      void projectsStore.update(project.id, {
+        settings: { ...project.settings, color: hex },
+      });
+    }
+  }
 
   function openPicker(event: MouseEvent, id: number): void {
     event.stopPropagation();
+    if (pendingColorProject !== null) {
+      flushPendingColor();
+    }
     pickerId = pickerId === id ? null : id;
     pickerEl = event.currentTarget as HTMLButtonElement;
   }
 
-  async function handleColorChange(project: Project, hex: string): Promise<void> {
+  function handleColorChange(project: Project, hex: string): void {
     pendingColor = { ...pendingColor, [project.id]: hex };
-    await projectsStore.update(project.id, {
-      settings: { ...project.settings, color: hex },
-    });
+    pendingColorProject = project;
+    if (pendingColorTimer !== null) clearTimeout(pendingColorTimer);
+    pendingColorTimer = setTimeout(() => {
+      pendingColorTimer = null;
+      flushPendingColor();
+    }, 200);
   }
+
+  $effect(() => {
+    return () => {
+      if (pendingColorTimer !== null) {
+        clearTimeout(pendingColorTimer);
+        pendingColorTimer = null;
+      }
+    };
+  });
 </script>
 
 <div class="projects-page">
@@ -184,7 +216,10 @@
                   value={pendingColor[project.id] ?? color ?? '#60a5fa'}
                   ignoreEl={pickerEl}
                   onChange={(hex) => handleColorChange(project, hex)}
-                  onClose={() => { pickerId = null; }}
+                  onClose={() => {
+                    flushPendingColor();
+                    pickerId = null;
+                  }}
                 />
               {/if}
               {#if !project.archived_at}
