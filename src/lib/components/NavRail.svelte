@@ -68,12 +68,6 @@
     },
   ];
 
-  function handleKeydown(event: KeyboardEvent, id: NavId): void {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      onChange(id);
-    }
-  }
 </script>
 
 <Collapsible.Root {open}>
@@ -94,7 +88,6 @@
                 class:active={value === item.id}
                 aria-current={value === item.id ? 'page' : undefined}
                 onclick={() => onChange(item.id)}
-                onkeydown={(e) => handleKeydown(e, item.id)}
               >
                 <svg
                   class="nav-icon"

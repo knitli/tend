@@ -25,10 +25,24 @@
   let loadError = $state<string | null>(null);
   let saving = $state(false);
   let saved = $state(false);
+  let savedResetTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function clearSavedResetTimer(): void {
+    if (savedResetTimer) {
+      clearTimeout(savedResetTimer);
+      savedResetTimer = null;
+    }
+  }
 
   $effect(() => {
     // Fire-and-forget load on mount.
     loadPreference();
+  });
+
+  $effect(() => {
+    return () => {
+      clearSavedResetTimer();
+    };
   });
 
   async function loadPreference(): Promise<void> {
@@ -63,7 +77,11 @@
         : undefined;
       await notificationPreferenceSet({ channels, quietHours: quiet });
       saved = true;
-      setTimeout(() => (saved = false), 1500);
+      clearSavedResetTimer();
+      savedResetTimer = setTimeout(() => {
+        saved = false;
+        savedResetTimer = null;
+      }, 1500);
     } catch (err) {
       loadError = err instanceof Error ? err.message : String(err);
     } finally {
@@ -101,22 +119,22 @@
 
   <div class="settings-body">
     <!-- Data Source — informational; tend persists sessions via its own
-         workbench DB managed by the Rust backend. Paths here are read-only. -->
+         workbench DB managed by the Rust backend. Locations are read-only. -->
     <section class="card">
       <h2 class="card-title">
         <span class="icon" aria-hidden="true">🗂</span> Data Source
       </h2>
       <div class="field">
         <span class="field-label">Workbench database</span>
-        <code class="path">~/.local/share/tend/workbench.db</code>
+        <code class="path">Managed by tend in your local app data directory</code>
       </div>
       <div class="field">
         <span class="field-label">Daemon socket</span>
-        <code class="path">~/.local/share/tend/daemon.sock</code>
+        <code class="path">Managed by tend in its local runtime/app data location</code>
       </div>
       <p class="field-hint">
-        tend stores all state locally. These paths are managed by the
-        workbench — read-only.
+        tend stores all state locally. Exact locations are platform-dependent
+        and managed by the workbench — read-only.
       </p>
     </section>
 
@@ -145,7 +163,7 @@
       <h2 class="card-title">
         <span class="icon" aria-hidden="true">🔔</span> Notifications
       </h2>
-      <p class="card-subtitle">Global defaults. Per-project overrides live on the project page.</p>
+      <p class="card-subtitle">Configure default notification preferences for tend.</p>
 
       {#if loadError}<p class="error" role="alert">{loadError}</p>{/if}
 
