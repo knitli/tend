@@ -94,7 +94,7 @@
           settings: { ...project.settings, color: hex },
         });
         if (!updated && !disposed) {
-          colorSaveError = projectsStore.error ?? 'Failed to save project colour.';
+          colorSaveError = projectsStore.error ?? 'Failed to save project color.';
         }
       })();
     }
@@ -121,7 +121,6 @@
   }
 
   $effect(() => {
-    disposed = false;
     return () => {
       disposed = true;
       flushPendingColor();

@@ -97,11 +97,7 @@
   function getSyncErrorMessage(err: unknown): string {
     if (err instanceof Error) return err.message;
     if (typeof err === 'string' && err.length > 0) return err;
-    return (
-      projectsStore.error ||
-      sessionsStore.error ||
-      'Re-sync failed.'
-    );
+    return 'Re-sync failed.';
   }
 
   async function resync(): Promise<void> {
