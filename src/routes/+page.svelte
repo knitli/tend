@@ -7,13 +7,14 @@
   import AlertBar from '$lib/components/AlertBar.svelte';
   import SplitView from '$lib/components/SplitView.svelte';
   import PaneWorkspace from '$lib/components/PaneWorkspace.svelte';
-  import CrossProjectOverview from '$lib/components/CrossProjectOverview.svelte';
-  import SettingsDialog from '$lib/components/SettingsDialog.svelte';
   import SpawnSessionDialog from '$lib/components/SpawnSessionDialog.svelte';
   import LayoutSwitcher from '$lib/components/LayoutSwitcher.svelte';
-  // HamburgerButton removed — sidebar edge toggle handles collapse/expand.
   import CommandPalette from '$lib/components/CommandPalette.svelte';
-  import MainTabs, { type TabId } from '$lib/components/MainTabs.svelte';
+  import NavRail, { type NavId } from '$lib/components/NavRail.svelte';
+  import PageHeader from '$lib/components/PageHeader.svelte';
+  import DashboardPage from '$lib/components/pages/DashboardPage.svelte';
+  import ProjectsPage from '$lib/components/pages/ProjectsPage.svelte';
+  import SettingsPage from '$lib/components/pages/SettingsPage.svelte';
   import { projectsStore } from '$lib/stores/projects.svelte';
   import { sessionsStore } from '$lib/stores/sessions.svelte';
   import { sessionSetVisible, sessionSpawn } from '$lib/api/sessions';
@@ -26,19 +27,21 @@
 
   let selectedProjectId = $state<number | null>(null);
   let activeSessionId = $state<number | null>(null);
-  let settingsOpen = $state(false);
-  /** P4-F: replaces the old `overviewOpen` boolean. The main panel is now
-   *  divided into three top-level tabs (Sessions / Workspace / Overview)
-   *  persisted via `workspace.ui.active_view`. Overview is no longer a
-   *  toggle button inside the session panel. */
-  let activeView = $state<TabId>('sessions');
+  /** Left-rail nav section. Persisted via `workspace.ui.active_view`. The
+   *  old MainTabs union of `sessions | workspace | overview` is migrated
+   *  on hydrate (workspace → workspaces, overview → dashboard). */
+  let activeView = $state<NavId>('sessions');
   let spawnDialogOpen = $state(false);
   let spawnDialogProject = $state<Project | null>(null);
   /** P4-E: Ctrl+K / Cmd+K quick-switch palette visibility. */
   let paletteOpen = $state(false);
-  /** P3-A: sidebar collapse state. Hydrated from `workspace.ui.sidebar_collapsed`
-   *  on mount (see onMount below) and persisted on every toggle. */
+  /** Project sidebar collapse state (inner rail). Hydrated from
+   *  `workspace.ui.sidebar_collapsed` on mount. Only rendered on sessions
+   *  / workspaces views. */
   let sidebarCollapsed = $state(false);
+  /** Primary left nav rail collapse state. Persisted via
+   *  `workspace.ui.nav_rail_collapsed`. */
+  let navRailOpen = $state(true);
   // Peek state removed — sidebar now uses a visible edge toggle instead.
 
   /** P3-B: focus mode state. `'single'` hides both sidebars and fills the
@@ -86,13 +89,12 @@
         : new Set(),
   );
 
-  /** `bind:this` is set on BOTH the Sessions-tab and Workspace-tab SessionList
-   *  renders below. This is safe because MainTabs gates each snippet with
-   *  `{#if value === '...'}`, so only the active tab mounts its SessionList at
-   *  any time — the two bindings never write to `sessionListRef` simultaneously.
-   *  Focus mode renders neither SessionList (MainTabs itself is hidden), so
-   *  `sessionListRef` is simply `undefined` there and `focusFilter()` is a
-   *  no-op via optional chaining. */
+  /** `bind:this` is set on BOTH the Sessions-view and Workspaces-view
+   *  SessionList renders below. Safe because the outer `{#if activeView
+   *  === '…'}` guards mount exactly one at a time — the two bindings never
+   *  write to `sessionListRef` simultaneously. Focus mode and non-pane views
+   *  render neither, so `sessionListRef` is `undefined` and `focusFilter()`
+   *  is a no-op via optional chaining. */
   let sessionListRef = $state<{ focusFilter: () => void } | undefined>();
 
   function openSpawnDialog(project: Project | null = null): void {
@@ -122,9 +124,14 @@
   // SplitView directly outside PaneWorkspace, so it needs its own
   // single-id call.)
   $effect(() => {
-    // P4-F: Overview tab has no PTY panes, so silence all forwarding while
-    // it's active. Same behaviour as the old `overviewOpen` branch.
-    if (activeView === 'overview') {
+    // Non-pane views (dashboard/projects/settings) render no terminals, so
+    // silence PTY forwarding while they're active. Mirrors the old
+    // `activeView === 'overview'` branch but covers all three new sections.
+    if (
+      activeView === 'dashboard' ||
+      activeView === 'projects' ||
+      activeView === 'settings'
+    ) {
       sessionSetVisible({ sessionIds: [] }).catch(() => {});
       return;
     }
@@ -135,7 +142,7 @@
     if (slots.length === 0) {
       sessionSetVisible({ sessionIds: [] }).catch(() => {});
     }
-    // When slots.length > 0 and not in overview / focus mode, PaneWorkspace
+    // When slots.length > 0 and on a pane-rendering view, PaneWorkspace
     // drives `session_set_visible` itself — don't double-call here.
   });
 
@@ -145,20 +152,31 @@
     workspaceStore.update({ active_project_ids: project.id !== null ? [project.id] : [] });
   }
 
-  /** P4-F: setter for the top-level tab selection. Always routes through
-   *  this helper so the persistence side-effect can't be forgotten. */
-  function setActiveView(v: TabId): void {
+  /** Setter for the top-level nav selection. Always routes through this
+   *  helper so the persistence side-effect can't be forgotten. */
+  function setActiveView(v: NavId): void {
     activeView = v;
     workspaceStore.setUi('active_view', v);
   }
 
+  function toggleNavRail(nextOpen: boolean): void {
+    navRailOpen = nextOpen;
+    workspaceStore.setUi('nav_rail_collapsed', !nextOpen);
+  }
+
+  /** Views that render PTY panes. Used to decide whether to re-route
+   *  session activations back to a terminal view. */
+  function isPaneView(v: NavId): boolean {
+    return v === 'sessions' || v === 'workspaces';
+  }
+
   function handleActivateSession(session: SessionSummary): void {
     activeSessionId = session.id;
-    // P4-F: activating a session from the alert bar / row click pulls the user
-    // out of the Overview tab back onto a pane-rendering tab. Default to
-    // Sessions since it's the project-scoped view; the Workspace tab remains
-    // a stickier choice that the user must select deliberately.
-    if (activeView === 'overview') {
+    // Activating a session from the alert bar / row click pulls the user
+    // out of a non-pane view back onto a pane-rendering one. Default to
+    // Sessions since it's project-scoped; Workspaces remains a stickier
+    // choice the user must select deliberately.
+    if (!isPaneView(activeView)) {
       setActiveView('sessions');
     }
     // T130: persist active session change.
@@ -338,10 +356,10 @@
       persistSlots();
     }
     activeSessionId = sessionId;
-    // P4-F: same rationale as handleActivateSession — snap back to a
-    // pane-rendering tab when the user pulls a session into a slot from
-    // the Overview tab.
-    if (activeView === 'overview') {
+    // Same rationale as handleActivateSession — snap back to a
+    // pane-rendering view when the user pulls a session into a slot from
+    // a non-pane view (Dashboard / Projects / Settings).
+    if (!isPaneView(activeView)) {
       setActiveView('sessions');
     }
     workspaceStore.update({ focused_session_id: sessionId });
@@ -490,19 +508,29 @@
         activeSessionId = ws.focused_session_id;
       }
 
-      // P3-A / P3-B / P4-F: restore UI state from the persisted ui map.
+      // Restore UI state from the persisted ui map.
       if (typeof ws.ui?.sidebar_collapsed === 'boolean') {
         sidebarCollapsed = ws.ui.sidebar_collapsed;
       }
-      // P4-F: hydrate the active tab. Guards against older schemas
-      // (including the removed `overviewOpen` boolean) by validating the
-      // union before assigning.
+      if (typeof ws.ui?.nav_rail_collapsed === 'boolean') {
+        navRailOpen = !ws.ui.nav_rail_collapsed;
+      }
+      // Hydrate the active view. Migrates the old MainTabs union
+      // (`workspace` / `overview`) to the new NavRail ids.
       const restoredView = ws.ui?.active_view;
-      if (
-        restoredView === 'sessions' ||
-        restoredView === 'workspace' ||
-        restoredView === 'overview'
-      ) {
+      if (restoredView === 'sessions') {
+        activeView = 'sessions';
+      } else if (restoredView === 'workspace' || restoredView === 'workspaces') {
+        activeView = 'workspaces';
+        if (restoredView === 'workspace') {
+          workspaceStore.setUi('active_view', 'workspaces');
+        }
+      } else if (restoredView === 'overview' || restoredView === 'dashboard') {
+        activeView = 'dashboard';
+        if (restoredView === 'overview') {
+          workspaceStore.setUi('active_view', 'dashboard');
+        }
+      } else if (restoredView === 'projects' || restoredView === 'settings') {
         activeView = restoredView;
       }
       if (
@@ -664,14 +692,29 @@
   class:focus-mode={focusMode !== 'none'}
   class:sidebar-collapsed={sidebarCollapsed}
 >
-  <Sidebar
-    {selectedProjectId}
-    onSelectProject={handleSelectProject}
-    onSpawnSession={(project) => openSpawnDialog(project)}
-    open={focusMode === 'none' && !sidebarCollapsed}
-    contentId="sidebar-collapsible-content"
-    onToggle={toggleSidebar}
-  />
+  {#if focusMode === 'none'}
+    <NavRail
+      value={activeView}
+      onChange={setActiveView}
+      open={navRailOpen}
+      onToggle={toggleNavRail}
+    />
+  {/if}
+
+  <!-- Project sidebar is only meaningful for session-oriented views. On
+       Dashboard / Projects / Settings the whole nav is horizontal-first,
+       so we don't render the project rail there. Focus mode hides it
+       unconditionally. -->
+  {#if focusMode === 'none' && isPaneView(activeView)}
+    <Sidebar
+      {selectedProjectId}
+      onSelectProject={handleSelectProject}
+      onSpawnSession={(project) => openSpawnDialog(project)}
+      open={!sidebarCollapsed}
+      contentId="sidebar-collapsible-content"
+      onToggle={toggleSidebar}
+    />
+  {/if}
 
   <main class="main-panel">
     <!-- AlertBar lives at the top of .main-panel so it stays visible in
@@ -680,122 +723,91 @@
       <AlertBar onActivateSession={handleActivateSession} />
     </div>
 
-    <!-- P4-F: Top-level Sessions / Workspace / Overview tabs own the
-         entire area below the AlertBar. Each tab's body is a snippet so the
-         same state (slots, activeSessionId, focus mode) can be shared and
-         only the ONE tab's body renders at a time.
-
-         Sessions vs Workspace differ in a single line: the `filterProjectId`
-         passed to SessionList. Sessions uses `selectedProjectId`; Workspace
-         forces `null` so the list shows every project. Both share the same
-         `slots` array (persisted as `workspace_pane_slots`) — the spec
-         hinted at separate `sessions_pane_slots`, but for Phase 4-F we
-         collapse to one state to keep the slot set stable when the user
-         toggles between tabs.
-
-         Review fix (Phase 4 UX): when focus mode is active, hide MainTabs
-         entirely and render the focus-mode body directly. Spec §3.2 intent
-         is "reduce peripheral chrome" while zoomed into one session, so the
-         tab strip must also disappear (not just the sidebars / session
-         panel). The `paneContent` snippet already handles the focus-mode
-         branch (renders breadcrumb + × + single SplitView). -->
     {#if focusMode !== 'none'}
       <div class="content-panel">
         {@render paneContent()}
       </div>
-    {:else}
-      <MainTabs
-        value={activeView}
-        onValueChange={setActiveView}
-        sessionsContent={sessionsTab}
-        workspaceContent={workspaceTab}
-        overviewContent={overviewTab}
+    {:else if activeView === 'sessions'}
+      {@render sessionsView()}
+    {:else if activeView === 'workspaces'}
+      {@render workspacesView()}
+    {:else if activeView === 'dashboard'}
+      <DashboardPage />
+    {:else if activeView === 'projects'}
+      <ProjectsPage
+        {selectedProjectId}
+        onSelectProject={(p) => {
+          handleSelectProject(p);
+          setActiveView('sessions');
+        }}
+        onSpawnSession={(p) => openSpawnDialog(p)}
       />
+    {:else if activeView === 'settings'}
+      <SettingsPage />
     {/if}
   </main>
 </div>
 
-{#snippet sessionsTab()}
-  <div class="main-panel-body">
-    <div class="session-panel">
-      <div class="session-panel-header">
-        <button
-          class="settings-btn"
-          onclick={() => settingsOpen = true}
-          title="Notification settings"
-          aria-label="Open notification settings"
-        >
-          Settings
-        </button>
+{#snippet sessionsView()}
+  <div class="page-with-header">
+    <PageHeader title="Sessions" subtitle="Browse all your agent conversations" />
+    <div class="main-panel-body">
+      <div class="session-panel">
+        <SessionList
+          bind:this={sessionListRef}
+          {selectedProjectId}
+          {missingSessions}
+          {activeSessionIds}
+          onActivateSession={handleActivateSession}
+          {onOpenInSlot}
+          showExtendedFilters
+          onProjectScopeChange={(id) => {
+            selectedProjectId = id;
+            workspaceStore.update({ active_project_ids: id !== null ? [id] : [] });
+          }}
+          onSpawnSession={() => openSpawnDialog(
+            selectedProjectId !== null
+              ? projectsStore.byId(selectedProjectId) ?? null
+              : null,
+          )}
+        />
       </div>
-      <SessionList
-        bind:this={sessionListRef}
-        {selectedProjectId}
-        {missingSessions}
-        {activeSessionIds}
-        onActivateSession={handleActivateSession}
-        {onOpenInSlot}
-        onSpawnSession={() => openSpawnDialog(
-          selectedProjectId !== null
-            ? projectsStore.byId(selectedProjectId) ?? null
-            : null,
-        )}
-      />
-    </div>
 
-    <div class="content-panel">
-      {@render paneContent()}
+      <div class="content-panel">
+        {@render paneContent()}
+      </div>
     </div>
   </div>
 {/snippet}
 
-{#snippet workspaceTab()}
-  <div class="main-panel-body">
-    <div class="session-panel">
-      <div class="session-panel-header">
-        <!-- P4-F: LayoutSwitcher lives in the Workspace tab header because
-             saved layouts capture the pane arrangement, which is the
-             central concept of this tab. The wrapping `div` with
-             `margin-right: auto` keeps the Switcher flush-left while
-             Settings stays pinned to the right — the header itself is
-             `justify-content: flex-end` for the Sessions tab case where
-             only Settings renders. -->
-        <div class="layout-slot">
-          <LayoutSwitcher onMissingSessions={(ids) => { missingSessions = new Set(ids); }} />
-        </div>
-        <button
-          class="settings-btn"
-          onclick={() => settingsOpen = true}
-          title="Notification settings"
-          aria-label="Open notification settings"
-        >
-          Settings
-        </button>
+{#snippet workspacesView()}
+  <div class="page-with-header">
+    <PageHeader title="Workspaces" subtitle="Saved layouts and multi-pane arrangements">
+      {#snippet trailing()}
+        <LayoutSwitcher onMissingSessions={(ids) => { missingSessions = new Set(ids); }} />
+      {/snippet}
+    </PageHeader>
+    <div class="main-panel-body">
+      <div class="session-panel">
+        <SessionList
+          bind:this={sessionListRef}
+          selectedProjectId={null}
+          {missingSessions}
+          {activeSessionIds}
+          onActivateSession={handleActivateSession}
+          {onOpenInSlot}
+          onSpawnSession={() => openSpawnDialog(
+            selectedProjectId !== null
+              ? projectsStore.byId(selectedProjectId) ?? null
+              : null,
+          )}
+        />
       </div>
-      <SessionList
-        bind:this={sessionListRef}
-        selectedProjectId={null}
-        {missingSessions}
-        {activeSessionIds}
-        onActivateSession={handleActivateSession}
-        {onOpenInSlot}
-        onSpawnSession={() => openSpawnDialog(
-          selectedProjectId !== null
-            ? projectsStore.byId(selectedProjectId) ?? null
-            : null,
-        )}
-      />
-    </div>
 
-    <div class="content-panel">
-      {@render paneContent()}
+      <div class="content-panel">
+        {@render paneContent()}
+      </div>
     </div>
-  </div>
-{/snippet}
-
-{#snippet overviewTab()}
-  <div class="overview-tab-body">
-    <CrossProjectOverview />
   </div>
 {/snippet}
 
@@ -875,8 +887,6 @@
   {/if}
 {/snippet}
 
-<SettingsDialog open={settingsOpen} onclose={() => settingsOpen = false} />
-
 <CommandPalette
   open={paletteOpen}
   onClose={() => (paletteOpen = false)}
@@ -900,9 +910,9 @@
     });
     // Activate the new session so the user lands directly in its terminal.
     activeSessionId = session.id;
-    // P4-F: ensure we're on a pane-rendering tab so the new session is
+    // Ensure we're on a pane-rendering view so the new session is
     // actually visible after spawn.
-    if (activeView === 'overview') {
+    if (!isPaneView(activeView)) {
       setActiveView('sessions');
     }
     workspaceStore.update({ focused_session_id: session.id });
@@ -990,50 +1000,13 @@
     flex-direction: column;
   }
 
-  .session-panel-header {
+  .page-with-header {
     display: flex;
-    justify-content: flex-end;
-    gap: 0.375rem;
-    padding: 0.375rem 0.5rem;
-    border-bottom: 1px solid var(--color-border, #2a2d35);
-  }
-
-  /* P4-F: the old `.overview-btn` rules were removed — Overview is now a
-     top-level tab (see MainTabs.svelte). The Workspace tab wraps its
-     LayoutSwitcher in a `.layout-slot` div with `margin-right: auto` so
-     the Switcher sticks to the left edge of the header while Settings
-     stays on the right (inherits `justify-content: flex-end` from the
-     .session-panel-header flex row). */
-  .layout-slot {
-    margin-right: auto;
-    display: flex;
-    align-items: center;
-  }
-
-  .overview-tab-body {
+    flex-direction: column;
     flex: 1;
     min-width: 0;
     min-height: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: flex-start;
     overflow: hidden;
-  }
-
-  .settings-btn {
-    padding: 0.25rem 0.5rem;
-    border: 1px solid var(--color-border, #2a2d35);
-    border-radius: 0.25rem;
-    background: transparent;
-    color: var(--color-text-muted, #8b8fa3);
-    cursor: pointer;
-    font-size: 0.75rem;
-  }
-
-  .settings-btn:hover {
-    background: var(--color-surface-hover, #1a1d25);
-    color: var(--color-text, #e6e8ef);
   }
 
   .content-panel {
